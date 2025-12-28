@@ -1,0 +1,42 @@
+[
+    {
+        "id": 1,
+        "name": "40.81.229.132",
+        "icon": "fa-brands fa-linux",
+        "color": "#d6336c",
+        "protocol": "ssh",
+        "username": "Microsoft_Azure_Education"
+    },
+    {
+        "id": 2,
+        "name": "Azure",
+        "icon": "fa-brands fa-ubuntu",
+        "color": "#f97316",
+        "protocol": "ssh",
+        "username": "Kubilay"
+    },
+    {
+        "id": 3,
+        "name": "google",
+        "icon": "fa-brands fa-ubuntu",
+        "color": "#f97316",
+        "protocol": "ssh",
+        "username": "root"
+    },
+    {
+        "id": 4,
+        "name": "aws",
+        "icon": "fa-solid fa-server",
+        "color": "#3b82f6",
+        "protocol": "ssh",
+        "username": "ec2-user"
+    },
+    {
+        "id": 5,
+        "name": "ahmet",
+        "icon": "fa-brands fa-linux",
+        "color": "#d6336c",
+        "protocol": "ssh",
+        "username": "hookheahmet_tr"
+    }
+]
