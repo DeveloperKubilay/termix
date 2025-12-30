@@ -1,8 +1,14 @@
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
+const kubitdb = require('kubitdb');
+const db = new kubitdb();
+
+const { loadIPC } = require('./util/ipc-loader');
 
 app.whenReady().then(() => {
   main();
+  const channels = loadIPC();
+  console.log('Loaded IPC channels:', channels);
 });
 
 app.on('window-all-closed', () => {
@@ -15,8 +21,10 @@ function main() {
     height: 600,
     autoHideMenuBar: true,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false
+      preload: path.join(__dirname, 'util/ipc-preloader.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
     }
   });
 
