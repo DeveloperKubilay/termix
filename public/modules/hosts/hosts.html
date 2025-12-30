@@ -1,0 +1,93 @@
+<div class="top-bar">
+    <div class="search-bar">
+        <i class="fa-solid fa-magnifying-glass" style="color: #a6adc8;"></i>
+        <input type="text" placeholder="Find a host or ssh user@hostname...">
+    </div>
+    <button class="btn btn-connect">CONNECT</button>
+</div>
+
+<div style="padding: 10px 20px; display: flex; gap: 10px; position: relative;">
+    <button class="btn btn-primary" id="btn-new-host"><i class="fa-solid fa-plus"></i> NEW HOST</button>
+    <button class="btn btn-primary"><i class="fa-solid fa-terminal"></i> TERMINAL</button>
+    <button class="btn btn-primary"><i class="fa-solid fa-microchip"></i> SERIAL</button>
+    <button class="btn btn-primary" id="btn-tags"><i class="fa-solid fa-tags"></i> TAGS</button>
+    
+    <div class="tags-popup" id="tags-popup">
+        <div class="search-tags">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input type="text" placeholder="Search tags">
+        </div>
+        <div class="tags-list">
+            <label class="tag-item">
+                <input type="radio" name="tag-filter">
+                <span>sa</span>
+            </label>
+            <label class="tag-item">
+                <input type="radio" name="tag-filter">
+                <span>test</span>
+            </label>
+        </div>
+        <div class="tags-footer">
+            Clear selection
+        </div>
+    </div>
+</div>
+
+<div class="content-area">
+    <h2 class="section-title">Hosts</h2>
+    <div class="hosts-grid" id="hosts-grid"></div>
+</div>
+
+<template id="host-details-template">
+    <div class="form-group">
+        <label>Address</label>
+        <div class="input-with-icon">
+            <div class="icon-box" style="background-color: #d6336c;"><i class="fa-brands fa-linux"></i></div>
+            <input type="text" placeholder="IP Address or Hostname">
+        </div>
+    </div>
+
+    <div class="form-section-title">General</div>
+    
+    <div class="form-group">
+        <input type="text" placeholder="Label">
+    </div>
+    
+    <div class="form-group">
+        <div class="input-with-icon-left">
+            <i class="fa-solid fa-tag"></i>
+            <input type="text" placeholder="Tags">
+        </div>
+    </div>
+
+    <div class="form-group" style="display: flex; align-items: center; gap: 10px;">
+        <label style="white-space: nowrap;">SSH on</label>
+        <input type="number" value="22" style="width: 60px;">
+        <label>port</label>
+    </div>
+
+    <div class="form-section-title">Credentials</div>
+
+    <div class="form-group">
+        <div class="input-with-icon-left">
+            <i class="fa-solid fa-user"></i>
+            <input type="text" placeholder="Username">
+        </div>
+    </div>
+
+    <div class="form-group">
+        <div class="input-with-icon-left">
+            <i class="fa-solid fa-key"></i>
+            <input type="password" placeholder="Password">
+        </div>
+    </div>
+
+    <div class="form-group">
+        <div class="input-with-icon-left">
+            <i class="fa-solid fa-file-certificate"></i>
+            <input type="text" placeholder="Certificate, FIDO2">
+        </div>
+    </div>
+
+    <button class="btn-connect-large">Connect</button>
+</template>
