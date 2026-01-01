@@ -19,6 +19,17 @@ const Drawer = {
         if (this.overlay) {
             this.overlay.addEventListener('click', () => this.close());
         }
+
+        const drawerCheck = document.getElementById('drawer-check');
+        if (drawerCheck) {
+            drawerCheck.addEventListener('click', () => {
+                // Find the primary action button inside the drawer content
+                const primaryBtn = this.contentElement.querySelector('.btn-drawer-primary');
+                if (primaryBtn) {
+                    primaryBtn.click();
+                }
+            });
+        }
     },
 
     open(title, contentHtml) {
@@ -38,6 +49,214 @@ const Drawer = {
     }
 };
 
+window.Drawer = Drawer;
+
+const TabManager = {
+    tabs: [],
+    activeTabId: null,
+    tabBar: null,
+    contentArea: null,
+    sidebar: null,
+    sidebarToggle: null,
+
+    init() {
+        this.tabBar = document.getElementById('tab-bar');
+        this.contentArea = document.getElementById('content-area');
+        this.sidebar = document.querySelector('.sidebar');
+        this.sidebarToggle = document.getElementById('sidebar-toggle');
+
+        if (this.sidebarToggle) {
+            this.sidebarToggle.addEventListener('click', () => {
+                this.sidebar.classList.toggle('collapsed');
+            });
+        }
+        
+        // Create default Dashboard tab
+        this.addTab({
+            id: 'dashboard',
+            title: 'Dashboard',
+            icon: 'fa-solid fa-house',
+            contentId: 'module-container',
+            closable: false
+        });
+
+        // Keyboard Shortcuts
+        document.addEventListener('keydown', (e) => {
+            // Ctrl + W to close active tab
+            if (e.ctrlKey && e.key === 'w') {
+                e.preventDefault();
+                e.stopPropagation();
+                if (this.activeTabId) {
+                    const tab = this.tabs.find(t => t.id === this.activeTabId);
+                    if (tab && tab.closable) {
+                        this.closeTab(this.activeTabId);
+                    }
+                }
+            }
+
+            // Ctrl + 1-9 to switch tabs
+            if (e.ctrlKey && e.key >= '1' && e.key <= '9') {
+                const index = parseInt(e.key) - 1;
+                if (index < this.tabs.length) {
+                    this.activateTab(this.tabs[index].id);
+                }
+            }
+        });
+    },
+
+    syncTabsOrder() {
+        const newOrder = [];
+        const tabElements = this.tabBar.querySelectorAll('.tab');
+        tabElements.forEach(el => {
+            const id = el.dataset.id;
+            const tab = this.tabs.find(t => t.id === id);
+            if (tab) newOrder.push(tab);
+        });
+        this.tabs = newOrder;
+    },
+
+    addTab(options) {
+        // options: { id, title, icon, contentId, contentHtml, closable }
+        const id = options.id || 'tab-' + Date.now();
+        
+        // Check if tab already exists
+        const existingTab = this.tabs.find(t => t.id === id);
+        if (existingTab) {
+            this.activateTab(id);
+            return;
+        }
+
+        const tab = {
+            id: id,
+            title: options.title || 'New Tab',
+            icon: options.icon || 'fa-solid fa-terminal',
+            contentId: options.contentId,
+            closable: options.closable !== false
+        };
+
+        // Create Tab Element
+        const tabEl = document.createElement('div');
+        tabEl.className = 'tab';
+        tabEl.dataset.id = id;
+        tabEl.draggable = true;
+        tabEl.innerHTML = `
+            <i class="tab-icon ${tab.icon}"></i>
+            <span class="tab-title">${tab.title}</span>
+            ${tab.closable ? '<i class="tab-close fa-solid fa-xmark"></i>' : ''}
+        `;
+
+        // Drag and Drop Events
+        tabEl.addEventListener('dragstart', (e) => {
+            tabEl.classList.add('dragging');
+        });
+
+        tabEl.addEventListener('dragend', () => {
+            tabEl.classList.remove('dragging');
+            this.syncTabsOrder();
+        });
+
+        tabEl.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            const draggingTab = this.tabBar.querySelector('.tab.dragging');
+            if (draggingTab && draggingTab !== tabEl) {
+                const bounding = tabEl.getBoundingClientRect();
+                const offset = bounding.x + bounding.width / 2;
+                if (e.clientX - offset > 0) {
+                    tabEl.after(draggingTab);
+                } else {
+                    tabEl.before(draggingTab);
+                }
+            }
+        });
+
+        tabEl.addEventListener('click', (e) => {
+            if (e.target.classList.contains('tab-close')) {
+                e.stopPropagation();
+                this.closeTab(id);
+            } else {
+                this.activateTab(id);
+            }
+        });
+
+        this.tabBar.appendChild(tabEl);
+        this.tabs.push(tab);
+
+        // Create Content Element if not provided via ID
+        if (!options.contentId) {
+            const contentEl = document.createElement('div');
+            contentEl.id = 'content-' + id;
+            contentEl.className = 'tab-content';
+            contentEl.innerHTML = options.contentHtml || '';
+            this.contentArea.appendChild(contentEl);
+            tab.contentId = contentEl.id;
+        }
+
+        this.activateTab(id);
+    },
+
+    activateTab(id) {
+        if (this.activeTabId === id) return;
+
+        // Deactivate current
+        const currentTab = this.tabBar.querySelector('.tab.active');
+        if (currentTab) currentTab.classList.remove('active');
+        
+        const currentContent = this.contentArea.querySelector('.tab-content.active');
+        if (currentContent) currentContent.classList.remove('active');
+
+        // Activate new
+        const newTab = this.tabBar.querySelector(`.tab[data-id="${id}"]`);
+        if (newTab) newTab.classList.add('active');
+
+        const tabData = this.tabs.find(t => t.id === id);
+        if (tabData) {
+            const newContent = document.getElementById(tabData.contentId);
+            if (newContent) newContent.classList.add('active');
+        }
+
+        this.activeTabId = id;
+
+        // Auto-collapse sidebar logic
+        if (this.sidebar) {
+            if (id === 'dashboard') {
+                this.sidebar.classList.remove('collapsed');
+                if (this.sidebarToggle) this.sidebarToggle.style.display = 'none';
+            } else {
+                this.sidebar.classList.add('collapsed');
+                if (this.sidebarToggle) this.sidebarToggle.style.display = 'flex';
+            }
+        }
+    },
+
+    closeTab(id) {
+        const tabIndex = this.tabs.findIndex(t => t.id === id);
+        if (tabIndex === -1) return;
+
+        const tab = this.tabs[tabIndex];
+        
+        // Remove elements
+        const tabEl = this.tabBar.querySelector(`.tab[data-id="${id}"]`);
+        if (tabEl) tabEl.remove();
+
+        const contentEl = document.getElementById(tab.contentId);
+        if (contentEl && tab.contentId !== 'module-container') {
+            contentEl.remove();
+        }
+
+        this.tabs.splice(tabIndex, 1);
+
+        // Activate another tab if this was active
+        if (this.activeTabId === id) {
+            const newIndex = Math.max(0, tabIndex - 1);
+            if (this.tabs.length > 0) {
+                this.activateTab(this.tabs[newIndex].id);
+            }
+        }
+    }
+};
+
+window.TabManager = TabManager;
+
 const ModuleLoader = {
     currentModule: null,
     container: null,
@@ -56,6 +275,11 @@ const ModuleLoader = {
                 item.classList.add('active');
                 const moduleName = item.getAttribute('data-module');
                 this.loadModule(moduleName);
+                
+                // Switch to Dashboard tab when a menu item is clicked
+                if (window.TabManager) {
+                    window.TabManager.activateTab('dashboard');
+                }
             });
         });
     },
@@ -86,5 +310,6 @@ const ModuleLoader = {
 
 document.addEventListener('DOMContentLoaded', () => {
     Drawer.init();
+    TabManager.init();
     ModuleLoader.init();
 });

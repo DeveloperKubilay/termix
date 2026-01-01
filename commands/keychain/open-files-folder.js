@@ -18,7 +18,7 @@ module.exports = function openFilesFolder(filesPath) {
   }
 
   exec(command, (error) => {
-    if (error) {
+    if (error && error.code !== 1) { // explorer'ın hata kodunu göz ardı et
       console.error('Failed to open folder:', error);
     }
   });

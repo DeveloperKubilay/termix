@@ -1,14 +1,12 @@
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
-const kubitdb = require('kubitdb');
-const db = new kubitdb();
 
 const { loadIPC } = require('./util/ipc-loader');
 
 app.whenReady().then(() => {
   main();
   const channels = loadIPC();
-  console.log('Loaded IPC channels:', channels);
+  console.log('Loaded IPC channels:', channels.length);
 });
 
 app.on('window-all-closed', () => {
@@ -17,7 +15,7 @@ app.on('window-all-closed', () => {
 
 function main() {
   let mainWindow = new BrowserWindow({
-    width: 800,
+    width: 900,
     height: 600,
     autoHideMenuBar: true,
     webPreferences: {
