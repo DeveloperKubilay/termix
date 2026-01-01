@@ -1,3 +1,4 @@
 node_modules
-kubitdb.json
+./kubitdb.json
 .env
+./files
