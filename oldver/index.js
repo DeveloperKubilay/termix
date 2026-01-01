@@ -25,18 +25,11 @@ function createWindow() {
 
   mainWindow.loadFile('index.html');
 
-  if (!ip || !username || !password) {
-    mainWindow.webContents.once('did-finish-load', () => {
-      mainWindow.webContents.send('term-data', '\r\n*** Eksik konfig: SSH_IP/SSH_USER/SSH_PASS ayarla veya ortam değişkenlerini kullan. ***\r\n');
-    });
-    return;
-  }
-
   const conn = new Client();
   
   conn.on('ready', () => {
     console.log('SSH Bağlantısı Hazır');
-    mainWindow.setTitle(`${ip} - Bağlandı`);
+    mainWindow.setTitle('40.81.229.132 - Bağlandı');
     mainWindow.webContents.send('term-data', '\r\n*** SSH BAĞLANTISI KURULDU ***\r\n');
     
     // Renkler ve düzgün terminal davranışı için xterm-256color kullanıyoruz
@@ -52,7 +45,7 @@ function createWindow() {
       stream.on('close', () => {
         console.log('Stream kapandı');
         conn.end();
-        mainWindow.setTitle(`${ip} - Bağlantı Koptu`);
+        mainWindow.setTitle('40.81.229.132 - Bağlantı Koptu');
         mainWindow.webContents.send('term-data', '\r\n*** BAĞLANTI KOPTU ***\r\n');
       }).on('data', (data) => {
         mainWindow.webContents.send('term-data', data.toString());
@@ -67,7 +60,7 @@ function createWindow() {
 
   // TCP Soketini manuel oluşturup Nagle algoritmasını kapatıyoruz (setNoDelay)
   // Bu, tuş vuruşlarının sunucuya anında gitmesini sağlar.
-  const sock = net.createConnection(SSH_PORT, ip);
+  const sock = net.createConnection(64732, '20.199.18.171');
   
   sock.on('connect', () => {
       sock.setNoDelay(true); // Gecikmeyi önleyen sihirli ayar
@@ -82,8 +75,8 @@ function createWindow() {
 
   conn.connect({
     sock: sock,
-    username: username,
-    password: password,
+    username: 'Kubilay',
+    password: 'Pornhub.com90',
     readyTimeout: 20000,
     keepaliveInterval: 1000, // Daha sık kontrol etsin
     algorithms: {
