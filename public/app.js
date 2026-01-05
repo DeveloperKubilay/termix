@@ -65,6 +65,16 @@ const TabManager = {
         this.sidebar = document.querySelector('.sidebar');
         this.sidebarToggle = document.getElementById('sidebar-toggle');
 
+        // Allow horizontal scrolling with mouse wheel
+        if (this.tabBar) {
+            this.tabBar.addEventListener('wheel', (e) => {
+                if (e.deltaY !== 0) {
+                    this.tabBar.scrollLeft += e.deltaY;
+                    e.preventDefault();
+                }
+            });
+        }
+
         if (this.sidebarToggle) {
             this.sidebarToggle.addEventListener('click', () => {
                 this.sidebar.classList.toggle('collapsed');
