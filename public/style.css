@@ -410,7 +410,7 @@ body {
     display: flex;
     background-color: var(--bg-sidebar);
     border-bottom: 1px solid var(--border);
-    overflow-x: auto;
+    overflow-x: hidden;
     height: 40px;
 }
 
@@ -435,14 +435,16 @@ body {
 .tab {
     display: flex;
     align-items: center;
-    padding: 0 15px;
+    padding: 0 10px;
     cursor: pointer;
     color: var(--text-muted);
     border-right: 1px solid var(--border);
-    min-width: 120px;
+    min-width: 50px;
     max-width: 200px;
+    flex: 1 1 auto;
     user-select: none;
     transition: background 0.2s;
+    overflow: hidden;
 }
 
 .tab:hover {
