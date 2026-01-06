@@ -21,7 +21,9 @@ window.ConnectionModule = {
         const fitAddon = new window.FitAddon.FitAddon();
         term.loadAddon(fitAddon);
 
-        // WebGL Addon for better rendering performance and font sharpness
+        term.open(container);
+
+        // WebGL Addon'u terminal açıldıktan sonra yüklemek performansı artırır ve takılmaları önler
         try {
             const webglAddon = new window.WebglAddon.WebglAddon();
             webglAddon.onContextLoss(e => {
@@ -32,18 +34,120 @@ window.ConnectionModule = {
             console.warn("WebGL addon could not be loaded", e);
         }
 
-        term.open(container);
+        // --- SERIAL BAUD RATE PROMPT ---
+        if (hostInfo.protocol === 'SERIAL') {
+            term.write('Baud Rate (default 9600): ');
 
+            const baudRateInput = await new Promise(resolve => {
+                let buffer = '';
+                const disposable = term.onData(e => {
+                    const charCode = e.charCodeAt(0);
 
+                    if (e === '\r') { // Enter
+                        term.writeln('');
+                        disposable.dispose();
+                        resolve(buffer);
+                    } else if (e === '\u007f') { // Backspace
+                        if (buffer.length > 0) {
+                            buffer = buffer.slice(0, -1);
+                            term.write('\b \b');
+                        }
+                    } else if (charCode >= 32 && charCode <= 126) { // Printable
+                        buffer += e;
+                        term.write(e);
+                    }
+                });
+            });
 
-        term.writeln(`Connecting to ${hostInfo.username}@${hostInfo.hostname || hostInfo.name}...`);
+            if (baudRateInput.trim()) {
+                const parsed = parseInt(baudRateInput.trim());
+                if (!isNaN(parsed)) {
+                    hostInfo.baudRate = parsed;
+                }
+            }
+            if (!hostInfo.baudRate) hostInfo.baudRate = 9600;
+            term.writeln(`\x1b[32mSelected Baud Rate: ${hostInfo.baudRate}\x1b[0m`);
+            term.writeln('');
+        }
+        // -------------------------------
+
+        let connectMsg = "";
+        if (hostInfo.protocol === 'SERIAL') {
+            connectMsg = `Connecting to ${hostInfo.path} at ${hostInfo.baudRate} baud...`;
+        } else if (hostInfo.protocol === 'LOCAL') {
+            connectMsg = `Starting Local Terminal...`;
+        } else {
+            connectMsg = `Connecting to ${hostInfo.username}@${hostInfo.hostname || hostInfo.address || hostInfo.name}...`;
+        }
+        term.write('');
+        const msgTimer = setTimeout(() => {
+            term.writeln(connectMsg);
+        }, 3000);
+
         const sessionResult = await window.electronAPI.connection.connect(hostInfo);
+        clearTimeout(msgTimer);
+
+        if (sessionResult.status === 'error') {
+            term.writeln(`\x1b[31mConnection Error: ${sessionResult.message}\x1b[0m`);
+            return {
+                dispose: () => {
+                    term.dispose();
+                    if (resizeObserver) resizeObserver.disconnect();
+                }
+            };
+        }
+
         const currentSessionId = sessionResult.sessionId;
 
         // Backend -> Frontend (Output)
         window.electronAPI.on('term-data', (event, msg) => {
             if (msg && msg.sessionId === currentSessionId) {
                 term.write(msg.data);
+            }
+        });
+
+        // Backend -> Frontend (Disconnected)
+        window.electronAPI.on('term-disconnected', (event, msg) => {
+            if (msg && msg.sessionId === currentSessionId) {
+                term.clear();
+                term.writeln('\x1b[33mConnection lost. Retrying in 3 seconds...\x1b[0m');
+                
+                setTimeout(async () => {
+                   term.writeln('Reconnecting...');
+                   // Retry connection by calling init recursively but we need to handle cleanup first
+                   // Or simpler: reload the module/tab content
+                   // Best approach: Just reconnect logic here
+                   
+                   try {
+                        const newSessionResult = await window.electronAPI.connection.connect(hostInfo);
+                        if (newSessionResult.status !== 'error') {
+                             // Update session Id references
+                             // WARNING: This is tricky because listeners are bound to old ID.
+                             // It is safer to reload the tab/drawer content or re-init logic.
+                             // Let's trigger a re-init if possible or just inform user to reconnect manually if complex
+                             // User asked for auto retry.
+                             
+                             // Since listeners are bound to `currentSessionId` variable which is const, we cannot update it easily to affect existing listeners.
+                             // We should ideally reload the tab.
+                             const tabId = containerId.replace('terminal-', '');
+                             const tab = window.TabManager.tabs.find(t => t.id === tabId);
+                             if (tab && tab.sessionObj && typeof tab.sessionObj.dispose === 'function') {
+                                 tab.sessionObj.dispose();
+                             }
+                             
+                             // Re-init
+                             term.clear();
+                             if (window.ConnectionModule) {
+                                 const newSessionObj = await window.ConnectionModule.init(containerId, hostInfo);
+                                 if(tab) tab.sessionObj = newSessionObj;
+                             }
+                        } else {
+                            term.writeln(`\x1b[31mReconnect failed: ${newSessionResult.message}\x1b[0m`);
+                        }
+                   } catch (e) {
+                       term.writeln(`\x1b[31mReconnect error: ${e.message}\x1b[0m`);
+                   }
+                }, 3000);
             }
         });
 
@@ -75,17 +179,18 @@ window.ConnectionModule = {
             // RequestAnimationFrame ile UI thread'i boğmadan resize yap
             requestAnimationFrame(() => sendResize());
         });
-        
+
         resizeObserver.observe(container);
-        
+
         // İlk yüklemede ve SSH hazır olduğunda da tetikle
         window.electronAPI.on('ssh-ready', (event, msg) => {
             if (msg && msg.sessionId === currentSessionId) {
+                term.clear(); // Connecting mesajlarını temizle
                 sendResize();
             }
         });
         // window.addEventListener('resize', sendResize); // ResizeObserver bunu zaten halleder
-        
+
         // İlk bir kez çalıştır (zamanlama sorunu olmaması için kısa gecikme)
         setTimeout(sendResize, 100);
 

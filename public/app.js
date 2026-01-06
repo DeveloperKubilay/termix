@@ -93,7 +93,7 @@ const TabManager = {
         // Keyboard Shortcuts
         document.addEventListener('keydown', (e) => {
             // Ctrl + Shift + W to close active tab
-            if (e.ctrlKey && e.shiftKey && e.key === 'w') {
+            if (e.ctrlKey && e.shiftKey && (e.key === 'w' || e.key === 'W')) {
                 e.preventDefault();
                 e.stopPropagation();
                 if (this.activeTabId) {
@@ -244,6 +244,9 @@ const TabManager = {
     },
 
     closeTab(id) {
+        // Dashboard should never be closed via this method normally, but as a safeguard
+        if (id === 'dashboard') return;
+
         const tabIndex = this.tabs.findIndex(t => t.id === id);
         if (tabIndex === -1) return;
 
@@ -251,7 +254,11 @@ const TabManager = {
         
         // --- Cleanup Hook: Eğer tab bir objeye sahipse cleanup yap ---
         if (tab.sessionObj && typeof tab.sessionObj.dispose === 'function') {
-             tab.sessionObj.dispose();
+             try {
+                 tab.sessionObj.dispose();
+             } catch (err) {
+                 console.error('Error disposing tab session:', err);
+             }
         }
         // -----------------------------------------------------------
 
