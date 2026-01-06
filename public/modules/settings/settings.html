@@ -1,0 +1,113 @@
+<div class="content-area">
+    <h2 class="section-title">Settings</h2>
+
+    <div style="max-width: 900px; margin: 0 auto;">
+        
+        <!-- Profile Section -->
+        <div class="card" style="margin-bottom: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 15px; margin-bottom: 15px;">
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <div style="width: 50px; height: 50px; border-radius: 50%; background: var(--accent); display: flex; align-items: center; justify-content: center; color: var(--bg-dark); font-size: 1.5em;">
+                        <i class="fa-solid fa-user"></i>
+                    </div>
+                    <div>
+                        <h3 style="margin: 0; font-size: 1.2em;" id="current-user-name">Loading...</h3>
+                        <p style="margin: 5px 0 0 0; color: var(--text-muted); font-size: 0.9em;">
+                            <i class="fa-solid fa-database" style="margin-right: 5px;"></i> <span id="storage-type">...</span>
+                        </p>
+                    </div>
+                </div>
+                <button class="btn btn-primary" id="btn-open-profile-folder" style="height: 40px; border: 1px solid var(--border);">
+                    <i class="fa-solid fa-folder-open" style="margin-right: 8px;"></i> Data Folder
+                </button>
+            </div>
+            
+            <!-- Firebase Sync Options -->
+            <div id="firebase-sync-options" style="display: none; background: rgba(137, 180, 250, 0.05); padding: 15px; border-radius: 8px; border: 1px solid var(--border);">
+                <h4 style="font-size: 0.95em; margin: 0 0 10px 0; color: var(--accent);"><i class="fa-solid fa-cloud"></i> Cloud Sync</h4>
+                <p style="font-size: 0.9em; color: var(--text-muted); margin-bottom: 15px;">Sync your local data with Firebase.</p>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn btn-secondary" id="btn-sync-pull">
+                        <i class="fa-solid fa-cloud-arrow-down" style="margin-right: 5px;"></i> Pull from Cloud
+                    </button>
+                    <button class="btn btn-secondary" id="btn-sync-push">
+                        <i class="fa-solid fa-cloud-arrow-up" style="margin-right: 5px;"></i> Push to Cloud
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <!-- Tags Management -->
+            <div class="card">
+                <h3 style="margin-top: 0; margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
+                    <i class="fa-solid fa-tags" style="color: var(--accent);"></i> Host Tags
+                </h3>
+                <div style="background: var(--bg-dark); padding: 15px; border-radius: 8px; border: 1px solid var(--border); min-height: 150px;">
+                    <div id="tags-list" style="display: flex; flex-wrap: wrap; gap: 8px;">
+                        <span style="color: var(--text-muted);">Loading tags...</span>
+                    </div>
+                </div>
+                <p style="color: var(--text-muted); font-size: 0.85em; margin-top: 10px; text-align: right;">
+                    <i class="fa-solid fa-circle-info"></i> Click X to delete tags from all hosts.
+                </p>
+            </div>
+
+            <!-- AI Settings -->
+            <div class="card">
+                <h3 style="margin-top: 0; margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
+                    <i class="fa-solid fa-robot" style="color: var(--accent);"></i> AI Integration
+                </h3>
+                
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; margin-bottom: 8px; font-size: 0.9em; color: var(--text-muted);">Endpoint</label>
+                    <div style="display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden;">
+                        <select id="ai-method" style="background: var(--bg-card); color: var(--accent); border: none; padding: 10px; border-right: 1px solid var(--border); outline: none; font-weight: 600; cursor: pointer;">
+                            <option value="GET">GET</option>
+                            <option value="POST">POST</option>
+                        </select>
+                        <input type="text" id="ai-url" placeholder="https://api.example.com/v1/chat" style="flex: 1; border: none; background: var(--bg-dark); padding: 10px; color: var(--text-main); outline: none;">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label style="display: block; margin-bottom: 8px; font-size: 0.9em; color: var(--text-muted);">Headers (JSON)</label>
+                    <textarea id="ai-headers" placeholder='{"Authorization": "Bearer token"}' style="width: 100%; height: 120px; padding: 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-dark); color: var(--text-main); font-family: "JetBrains Mono", monospace; resize: none; outline: none; font-size: 0.9em;"></textarea>
+                </div>
+            </div>
+        </div>
+
+        <button id="btn-save-settings" class="btn btn-primary" style="width: 100%; padding: 14px; margin-top: 20px; font-size: 1.1em; display: flex; align-items: center; justify-content: center; gap: 10px;">
+            <i class="fa-solid fa-floppy-disk"></i> Save All Settings
+        </button>
+
+    </div>
+</div>
+
+<style>
+    .tag-item {
+        background: rgba(137, 180, 250, 0.1);
+        border: 1px solid var(--accent);
+        color: var(--accent);
+        padding: 5px 12px;
+        border-radius: 15px;
+        font-size: 0.9em;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        transition: all 0.2s;
+    }
+    .tag-item:hover {
+        background: rgba(137, 180, 250, 0.2);
+    }
+    .tag-delete {
+        cursor: pointer;
+        opacity: 0.6;
+        transition: 0.2s;
+        font-size: 0.9em;
+    }
+    .tag-delete:hover {
+        opacity: 1;
+        color: #ff4444;
+    }
+</style>

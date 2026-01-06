@@ -767,32 +767,34 @@
                         
                         if (Drawer && Drawer.close) Drawer.close();
 
-                        // Auto-connect
-                        if (!window.ConnectionModule) {
-                            await new Promise((resolve, reject) => {
-                                const script = document.createElement('script');
-                                script.src = 'public/modules/connection/connection.js';
-                                script.onload = resolve;
-                                script.onerror = reject;
-                                document.head.appendChild(script);
-                            });
-                        }
-
-                        const tabId = 'connection-' + Date.now();
-                        window.TabManager.addTab({
-                            id: tabId,
-                            title: hostData.name,
-                            icon: hostData.icon,
-                            contentHtml: `<div id="terminal-${tabId}" style="height: 100%; width: 100%; background: #1e1e1e; overflow: hidden;"></div>`
-                        });
-
-                        setTimeout(async () => {
-                            if (window.ConnectionModule) {
-                                const sessionObj = await window.ConnectionModule.init(`terminal-${tabId}`, hostData);
-                                const tab = window.TabManager.tabs.find(t => t.id === tabId);
-                                if(tab) tab.sessionObj = sessionObj;
+                        // Auto-connect only if NOT editing
+                        if (!hostToEdit) {
+                            if (!window.ConnectionModule) {
+                                await new Promise((resolve, reject) => {
+                                    const script = document.createElement('script');
+                                    script.src = 'public/modules/connection/connection.js';
+                                    script.onload = resolve;
+                                    script.onerror = reject;
+                                    document.head.appendChild(script);
+                                });
                             }
-                        }, 50);
+
+                            const tabId = 'connection-' + Date.now();
+                            window.TabManager.addTab({
+                                id: tabId,
+                                title: hostData.name,
+                                icon: hostData.icon,
+                                contentHtml: `<div id="terminal-${tabId}" style="height: 100%; width: 100%; background: #1e1e1e; overflow: hidden;"></div>`
+                            });
+
+                            setTimeout(async () => {
+                                if (window.ConnectionModule) {
+                                    const sessionObj = await window.ConnectionModule.init(`terminal-${tabId}`, hostData);
+                                    const tab = window.TabManager.tabs.find(t => t.id === tabId);
+                                    if(tab) tab.sessionObj = sessionObj;
+                                }
+                            }, 50);
+                        }
                     } catch (error) {
                         console.error('Error saving host:', error);
                         alert('Failed to save host');

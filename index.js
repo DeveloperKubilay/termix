@@ -1,5 +1,6 @@
 const { app, BrowserWindow, screen } = require('electron');
 const path = require('path');
+const fs = require('fs');
 
 const { loadIPC } = require('./util/ipc-loader');
 

@@ -29,7 +29,7 @@
                     <td>${new Date(host.firstSeen).toLocaleString()}</td>
                     <td><span class="code-snippet" title="${host.key}">${host.key.substring(0, 20)}...</span></td>
                     <td style="text-align: right;">
-                        <button class="btn btn-danger btn-sm" onclick="deleteKnownHost('${host.address}', ${host.port})">
+                        <button class="btn btn-primary btn-sm" onclick="deleteKnownHost('${host.address}', ${host.port})">
                             <i class="fas fa-trash"></i> Forget
                         </button>
                     </td>
