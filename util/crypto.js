@@ -3,7 +3,7 @@ const { machineIdSync } = require('node-machine-id');
 
 const machineID = machineIdSync();
 
-const key = crypto.createHash('sha256').update(machineID).digest().slice(0, 32);
+const key = crypto.createHash('sha256').update(machineID+"Termix").digest().slice(0, 32);
 
 function encrypt(text) {
     const iv = crypto.randomBytes(16);

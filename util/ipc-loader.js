@@ -47,7 +47,7 @@ function loadIPC() {
       const handler = require(handlerPath);
       
       ipcMain.handle(channelName, async (event, ...args) => {
-        return handler(filesPath, ...args);
+        return handler(filesPath, ...args, event);
       });
       
       loaded.push(channelName);

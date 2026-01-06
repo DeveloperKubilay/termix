@@ -16,15 +16,22 @@ app.on('window-all-closed', () => {
 const kubitdb = require('kubitdb');
 const db = new kubitdb();
 
-if (!db.get('terminalSettings')) {
+global.Terminals = {}
+
+if (!db.get('terminalSettings') || db.get('terminalSettings').fontFamily.includes('Consolas')) {
+  // Force update if old defaults or missing
   db.set("terminalSettings", {
     cursorBlink: true,
-    fontFamily: 'Consolas, "Courier New", monospace',
+    fontFamily: '"JetBrains Mono", "Fira Code", Consolas, "Courier New", monospace',
+    rightClickCopyPaste: true,
     fontSize: 14,
-    scrollback: 5000, // Geriye dönük satır sayısı
+    fontWeight: 500,
+    letterSpacing: 0,
+    lineHeight: 1.2,
+    scrollback: 5000, 
     theme: {
-      background: '#000000',
-      foreground: '#cccccc', // Standart yazı rengi (White)
+      background: '#1e1e1e', // VS Code Dark+ benzeri
+      foreground: '#d4d4d4', // Standart yazı rengi (White)
       cursor: '#cccccc',
       selectionBackground: '#797979',
 
@@ -76,3 +83,38 @@ function main() {
   mainWindow.setMenuBarVisibility(false);
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
 }
+
+// Global Terminal Input Handler
+const { ipcMain } = require('electron');
+
+// Frontend -> Backend (Input)
+ipcMain.on('term-input', (event, payload) => {
+    const { sessionId, data } = payload;
+    const session = global.Terminals[sessionId];
+    if (session) {
+        session.write({ type: 'input', message: data });
+    }
+});
+
+// Frontend -> Backend (Resize)
+ipcMain.on('term-resize', (event, payload) => {
+    const { sessionId, cols, rows } = payload;
+    const session = global.Terminals[sessionId];
+    if (session) {
+        session.write({ type: 'resize', cols, rows });
+    }
+});
+
+// Frontend -> Backend (Close/Disconnect)
+ipcMain.on('term-close', (event, payload) => {
+    const { sessionId } = payload;
+    const session = global.Terminals[sessionId];
+    if (session) {
+        try {
+            session.end(); // SSH bağlantısını kapat
+            delete global.Terminals[sessionId]; // Listeden sil
+        } catch (e) {
+            console.error("Error closing session:", e);
+        }
+    }
+});
