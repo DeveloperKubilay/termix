@@ -1,0 +1,50 @@
+<div class="content-area">
+    <h2 class="section-title">Create New User</h2>
+    <div style="padding: 20px; max-width: 800px;">
+        
+        <div class="form-group" style="margin-bottom: 25px;">
+            <label style="display: block; margin-bottom: 10px; font-weight: 500;">User Name</label>
+            <input type="text" id="profile-name" class="input-field" placeholder="Enter user name" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-main); outline: none;">
+        </div>
+    
+        <div class="form-group" style="margin-bottom: 25px;">
+            <label style="display: block; margin-bottom: 10px; font-weight: 500;">Storage Type</label>
+            <div style="display: flex; gap: 20px;">
+                <label class="radio-card selected" id="type-json-label" style="flex: 1; padding: 15px; border: 1px solid var(--accent); border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 10px; background: rgba(137, 180, 250, 0.1);">
+                    <input type="radio" name="storageType" value="local" checked style="display: none;">
+                    <i class="fa-solid fa-file-code" style="color: var(--accent);"></i>
+                    <span>JSON Based (Local)</span>
+                </label>
+                <label class="radio-card" id="type-firebase-label" style="flex: 1; padding: 15px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 10px;">
+                    <input type="radio" name="storageType" value="firebase" style="display: none;">
+                    <i class="fa-brands fa-google" style="color: #FFA611;"></i>
+                    <span>Firebase</span>
+                </label>
+            </div>
+        </div>
+    
+        <!-- Firebase Specific Section -->
+        <div id="firebase-section" style="display: none; border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 25px; background: var(--bg-sidebar);">
+            <h4 style="margin-bottom: 15px; color: var(--text-muted);"><i class="fa-solid fa-fire"></i> Firebase Configuration</h4>
+            
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 8px; font-size: 0.9em;">Firebase Config JSON</label>
+                <textarea id="firebase-config" placeholder="{}" style="width: 100%; height: 150px; padding: 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-main); font-family: 'JetBrains Mono', monospace; resize: vertical; outline: none;"></textarea>
+                <small style="color: var(--text-muted); font-size: 0.8em;">Paste your firebase configuration object here.</small>
+            </div>
+    
+            <div class="form-group">
+                <label style="display: block; margin-bottom: 10px; font-size: 0.9em;">Permissions</label>
+                <div style="display: flex; gap: 15px;">
+                    <button type="button" class="perm-btn active" id="perm-write" style="padding: 8px 16px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent); color: var(--bg-dark); cursor: pointer; display: flex; align-items: center; gap: 8px;">
+                        <i class="fa-solid fa-pen"></i> Write
+                    </button>
+                </div>
+            </div>
+        </div>
+    
+        <button id="create-profile-btn" style="width: 100%; padding: 14px; background: var(--accent); color: var(--bg-dark); border: none; border-radius: 8px; font-size: 1em; font-weight: 600; cursor: pointer; margin-top: 10px;">
+            Create User
+        </button>
+    </div>
+</div>

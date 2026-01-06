@@ -29,11 +29,17 @@ body {
     background-color: var(--bg-sidebar);
     display: flex;
     flex-direction: column;
-    padding: 10px;
+    padding: 10px 10px 0 10px; /* Reduced bottom padding */
     border-right: 1px solid var(--border);
     transition: width 0.3s ease, padding 0.3s ease, opacity 0.3s ease;
     overflow: hidden;
     white-space: nowrap;
+}
+
+#sidebar-nav {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
 }
 
 .sidebar.collapsed {
@@ -572,3 +578,87 @@ body {
 
 /* Xterm scrollbar fix */
 .xterm-viewport::-webkit-scrollbar { display: none; }
+/* Profile Section Styles */
+.profile-section {
+    padding: 10px;
+    border-top: 1px solid var(--border);
+    position: relative;
+}
+
+.profile-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: background-color 0.2s;
+}
+
+.profile-header:hover {
+    background-color: var(--bg-card);
+}
+
+.profile-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.profile-icon {
+    width: 32px;
+    height: 32px;
+    background-color: var(--accent);
+    color: var(--bg-dark);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+}
+
+.profile-name {
+    font-weight: 500;
+}
+
+.profile-menu {
+    position: absolute;
+    bottom: 100%; /* Position above the profile header */
+    left: 10px;
+    right: 10px;
+    background-color: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 5px;
+    overflow: hidden;
+    display: none;
+    flex-direction: column;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    z-index: 100;
+}
+
+.profile-menu.open {
+    display: flex;
+}
+
+.profile-menu-item {
+    padding: 10px 15px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: background-color 0.2s;
+}
+
+.profile-menu-item:hover {
+    background-color: var(--bg-sidebar);
+}
+
+#profile-chevron {
+    transition: transform 0.3s;
+}
+
+#profile-chevron.open {
+    transform: rotate(180deg);
+}
+
