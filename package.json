@@ -4,7 +4,21 @@
   "main": "index.js",
   "scripts": {
     "start": "electron .",
+    "build": "electron-builder",
     "giiiiiit": "git reset --hard HEAD && git clean -fd"
+  },
+  "build": {
+    "appId": "com.termix.app",
+    "productName": "Termix",
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    },
+    "mac": {
+      "target": "dmg"
+    }
   },
   "dependencies": {
     "kubitdb": "^1.5.5",
@@ -15,6 +29,7 @@
     "xterm-addon-webgl": "^0.16.0"
   },
   "devDependencies": {
-    "electron": "^28.0.0"
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
   }
 }
