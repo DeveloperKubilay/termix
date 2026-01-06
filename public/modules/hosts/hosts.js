@@ -4,6 +4,33 @@
     const btnTags = document.getElementById('btn-tags');
     const tagsPopup = document.getElementById('tags-popup');
 
+    // Select buttons by icon
+    const btnTerminal = document.querySelector('button i.fa-terminal').closest('button');
+    const btnSerial = document.querySelector('button i.fa-microchip').closest('button');
+    
+    // Create Serial Popup
+    const serialPopup = document.createElement('div');
+    serialPopup.className = 'tags-popup'; // Reuse tags popup style
+    serialPopup.id = 'serial-popup';
+    serialPopup.innerHTML = `
+        <div class="search-tags">
+            <i class="fa-solid fa-sync"></i> <!-- Refresh icon -->
+            <input type="text" placeholder="Scanning ports..." disabled>
+        </div>
+        <div class="tags-list" style="max-height: 200px; overflow-y: auto;">
+        </div>
+    `;
+    // Append to the parent container of buttons to position it correctly relative to btnSerial
+    if(btnSerial && btnSerial.parentElement) {
+        btnSerial.parentElement.style.position = 'relative'; // Ensure parent is relative
+        btnSerial.parentElement.appendChild(serialPopup);
+        
+        // Adjust position logic in CSS or here
+        // Usually tags-popup is absolute. Let's position it under the Serial button manually via JS on click or assume CSS handles generic .tags-popup
+        serialPopup.style.left = 'auto'; // Reset
+        // We will calculate position on click
+    }
+
     const tagsListContainer = document.querySelector('.tags-list');
     const tagsFooter = document.querySelector('.tags-footer');
 
@@ -501,12 +528,180 @@
 
     btnNewHost.addEventListener('click', () => openHostDrawer());
 
+    // --- Terminal Button Listener ---
+    if (btnTerminal) {
+        btnTerminal.addEventListener('click', async () => {
+             // Ensure ConnectionModule is loaded
+             if (!window.ConnectionModule) {
+                await new Promise((resolve, reject) => {
+                    const script = document.createElement('script');
+                    script.src = 'public/modules/connection/connection.js';
+                    script.onload = resolve;
+                    script.onerror = reject;
+                    document.head.appendChild(script);
+                });
+            }
+
+            const tabId = 'local-' + Date.now();
+            window.TabManager.addTab({
+                id: tabId,
+                title: 'Local Terminal',
+                icon: 'fa-solid fa-terminal',
+                contentHtml: `<div id="terminal-${tabId}" style="height: 100%; width: 100%; background: #1e1e1e; overflow: hidden;"></div>`
+            });
+
+            setTimeout(async () => {
+                const hostInfo = {
+                    protocol: 'LOCAL',
+                    name: 'Local Terminal',
+                    username: 'user', // dummy
+                    hostname: 'localhost'
+                };
+                if (window.ConnectionModule) {
+                    const sessionObj = await window.ConnectionModule.init(`terminal-${tabId}`, hostInfo);
+                    const tab = window.TabManager.tabs.find(t => t.id === tabId);
+                    if(tab) tab.sessionObj = sessionObj;
+                }
+            }, 50);
+        });
+    }
+
+    // --- Serial Button Listener ---
+    if (btnSerial) {
+        btnSerial.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            
+            // Toggle visibility
+            const isVisible = serialPopup.classList.contains('show');
+            
+            // Close other popups
+            tagsPopup.classList.remove('show');
+            
+            if (isVisible) {
+                serialPopup.classList.remove('show');
+                return;
+            }
+
+            // Position popup under the button
+            const rect = btnSerial.getBoundingClientRect();
+            const parentRect = btnSerial.parentElement.getBoundingClientRect();
+            serialPopup.style.left = (rect.left - parentRect.left) + 'px';
+            serialPopup.style.top = (rect.bottom - parentRect.top + 5) + 'px'; // +5px margin
+            
+            serialPopup.classList.add('show');
+
+            // Load Ports
+            const listContainer = serialPopup.querySelector('.tags-list');
+            const input = serialPopup.querySelector('input');
+            const refreshIcon = serialPopup.querySelector('.fa-sync');
+            
+            async function scanPorts() {
+                listContainer.innerHTML = '<div style="padding: 10px; color: #a6adc8;">Scanning...</div>';
+                input.value = "Scanning ports...";
+                refreshIcon.classList.add('fa-spin');
+
+                try {
+                    const ports = await window.electronAPI.hosts.getSerialPorts() || [];
+                    
+                    listContainer.innerHTML = '';
+                    input.value = `${ports.length} ports found`;
+                    refreshIcon.classList.remove('fa-spin');
+
+                    if (ports.length === 0) {
+                        listContainer.innerHTML = '<div style="padding: 10px; color: #f38ba8;">No serial ports found</div>';
+                    }
+
+                    ports.forEach(port => {
+                        const item = document.createElement('div');
+                        item.className = 'tag-item';
+                        item.style.cursor = 'pointer';
+                        item.style.display = 'flex';
+                        item.style.flexDirection = 'column';
+                        item.style.alignItems = 'flex-start';
+                        item.style.padding = '8px 12px';
+                        
+                        item.innerHTML = `
+                            <span style="font-weight: bold; color: #cdd6f4;">${port.path}</span>
+                            <span style="font-size: 11px; color: #a6adc8;">${port.manufacturer || 'Unknown'}</span>
+                        `;
+                        
+                        item.addEventListener('mouseover', () => item.style.background = '#313244');
+                        item.addEventListener('mouseout', () => item.style.background = 'transparent');
+                        
+                        item.addEventListener('click', async () => {
+                            // Connect to Serial
+                            if (!window.ConnectionModule) {
+                                await new Promise((resolve, reject) => {
+                                    const script = document.createElement('script');
+                                    script.src = 'public/modules/connection/connection.js';
+                                    script.onload = resolve;
+                                    script.onerror = reject;
+                                    document.head.appendChild(script);
+                                });
+                            }
+
+                            const tabId = 'serial-' + Date.now();
+                            window.TabManager.addTab({
+                                id: tabId,
+                                title: port.path,
+                                icon: 'fa-solid fa-microchip',
+                                contentHtml: `<div id="terminal-${tabId}" style="height: 100%; width: 100%; background: #1e1e1e; overflow: hidden;"></div>`
+                            });
+
+                            setTimeout(async () => {
+                                const hostInfo = {
+                                    protocol: 'SERIAL',
+                                    name: port.path,
+                                    path: port.path,
+                                    address: port.path,
+                                    baudRate: 9600 // default
+                                };
+                                if (window.ConnectionModule) {
+                                    const sessionObj = await window.ConnectionModule.init(`terminal-${tabId}`, hostInfo);
+                                    const tab = window.TabManager.tabs.find(t => t.id === tabId);
+                                    if(tab) tab.sessionObj = sessionObj;
+                                }
+                            }, 50);
+                            
+                            serialPopup.classList.remove('show');
+                        });
+
+                        listContainer.appendChild(item);
+                    });
+
+                } catch (err) {
+                    console.error("Serial port error", err);
+                    listContainer.innerHTML = '<div style="padding: 10px; color: #f38ba8;">Error scanning ports</div>';
+                    input.value = "Error";
+                    refreshIcon.classList.remove('fa-spin');
+                }
+            }
+            
+            // Refresh on icon click
+            refreshIcon.style.cursor = 'pointer'; // Ensure it looks clickable
+            refreshIcon.onclick = (e) => {
+                 e.stopPropagation();
+                 scanPorts();
+            };
+
+            // Initial scan
+            scanPorts();
+
+        });
+    }
+
     btnTags.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (serialPopup) serialPopup.classList.remove('show'); // Close serial popup
         tagsPopup.classList.toggle('show');
     });
 
     document.addEventListener('click', (e) => {
+         // Close serial popup on outside click
+        if (serialPopup && !serialPopup.contains(e.target) && !btnSerial.contains(e.target)) {
+            serialPopup.classList.remove('show');
+        }
+
         if (!tagsPopup.contains(e.target) && !btnTags.contains(e.target)) {
             tagsPopup.classList.remove('show');
         }

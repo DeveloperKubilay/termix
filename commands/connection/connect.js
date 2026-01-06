@@ -1,7 +1,10 @@
 const newConnection = require('../../util/terminal/newconnection');
 
 module.exports = async (filesPath, hostInfo, event) => {
-    console.log('Connect request:', hostInfo.name);
+    // Better logging
+    const protocol = hostInfo.protocol ? hostInfo.protocol.toUpperCase() : 'SSH';
+    const target = hostInfo.address || hostInfo.path || 'localhost';
+    console.log(`Connect request: ${protocol}@${target}`);
 
     try {
         const connection = await newConnection(hostInfo);
@@ -18,6 +21,8 @@ module.exports = async (filesPath, hostInfo, event) => {
                 event.sender.send('ssh-ready', { sessionId: connection.sessionId });
             } else if (msg.type === 'error') {
                 event.sender.send('term-error', { sessionId: connection.sessionId, message: msg.message });
+            } else if (msg.type === 'disconnected') {
+                event.sender.send('term-disconnected', { sessionId: connection.sessionId });
             }
         });
 
