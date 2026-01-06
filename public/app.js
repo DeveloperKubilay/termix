@@ -51,6 +51,92 @@ const Drawer = {
 
 window.Drawer = Drawer;
 
+const ProfileManager = {
+    init() {
+        this.profileBtn = document.getElementById('profile-btn');
+        this.profileMenu = document.getElementById('profile-menu');
+        this.chevron = document.getElementById('profile-chevron');
+        this.createUserBtn = document.getElementById('create-user-btn');
+
+        if (this.profileBtn) {
+            this.profileBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.toggleMenu();
+            });
+        }
+
+        document.addEventListener('click', (e) => {
+            if (this.profileMenu && this.profileMenu.classList.contains('open')) {
+                if (!this.profileBtn.contains(e.target) && !this.profileMenu.contains(e.target)) {
+                    this.closeMenu();
+                }
+            }
+        });
+
+        if (this.createUserBtn) {
+            this.createUserBtn.addEventListener('click', () => {
+                this.closeMenu();
+                this.openCreateUserTab();
+            });
+        }
+    },
+
+    async openCreateUserTab() {
+        // window.ModuleLoader might not be exposed, but we can check if container exists
+        const container = document.getElementById('module-container');
+        if (!container) return;
+        
+        // Deselect sidebar items
+        const menuItems = document.querySelectorAll('.sidebar-menu li');
+        menuItems.forEach(i => i.classList.remove('active'));
+
+        try {
+            const response = await fetch('public/modules/profiles/create-user.html');
+            const html = await response.text();
+            container.innerHTML = html;
+
+            // Load Script manually
+            const script = document.createElement('script');
+            script.src = 'public/modules/profiles/create-user.js?v=' + Date.now(); // Cache busting
+            
+            // Remove old script if exists
+            // Note: src matching is stricter with query params, so we might not find old ones easily
+            // simplified cleanup
+            const oldScripts = document.querySelectorAll('script[src*="create-user.js"]');
+            oldScripts.forEach(s => s.remove());
+            
+            document.body.appendChild(script);
+            
+            // Switch to Dashboard tab if not active
+            if (window.TabManager) {
+                window.TabManager.activateTab('dashboard');
+            }
+
+            // Update ModuleLoader state if possible
+            if (window.ModuleLoader) {
+                window.ModuleLoader.currentModule = 'create-user';
+            }
+
+        } catch (err) {
+            console.error('Failed to load Create User module', err);
+            container.innerHTML = `<div style="padding: 20px; color: #f38ba8;">Error loading module</div>`;
+        }
+    },
+
+    toggleMenu() {
+        if (!this.profileMenu) return;
+        this.profileMenu.classList.toggle('open');
+        if (this.chevron) this.chevron.classList.toggle('open');
+    },
+
+    closeMenu() {
+        if (!this.profileMenu) return;
+        this.profileMenu.classList.remove('open');
+        if (this.chevron) this.chevron.classList.remove('open');
+    }
+};
+window.ProfileManager = ProfileManager;
+
 const TabManager = {
     tabs: [],
     activeTabId: null,
@@ -304,11 +390,22 @@ const ModuleLoader = {
     
     setupSidebarNavigation() {
         const menuItems = document.querySelectorAll('.sidebar-menu li');
+        
+        // Initialize AI Manager if available
+        if (window.AiManager) {
+            window.AiManager.init();
+        }
+
         menuItems.forEach(item => {
             item.addEventListener('click', () => {
+                const moduleName = item.getAttribute('data-module');
+                
+                // If it is AI, do nothing here (handled by AiManager)
+                if (moduleName === 'ai') return;
+                
                 menuItems.forEach(i => i.classList.remove('active'));
                 item.classList.add('active');
-                const moduleName = item.getAttribute('data-module');
+                
                 this.loadModule(moduleName);
                 
                 // Switch to Dashboard tab when a menu item is clicked
@@ -342,9 +439,12 @@ const ModuleLoader = {
         }
     }
 };
+window.ModuleLoader = ModuleLoader;
 
 document.addEventListener('DOMContentLoaded', () => {
     Drawer.init();
     TabManager.init();
     ModuleLoader.init();
+    if (window.AiManager) window.AiManager.init();
+    if (window.ProfileManager) window.ProfileManager.init();
 });
