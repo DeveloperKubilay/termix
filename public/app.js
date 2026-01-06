@@ -102,6 +102,13 @@ const TabManager = {
                         this.closeTab(this.activeTabId);
                     }
                 }
+                return;
+            }
+
+            // Prevent Ctrl+W from closing the app (Electron default) when in terminal
+            if (e.ctrlKey && !e.shiftKey && (e.key === 'w' || e.key === 'W')) {
+                e.preventDefault();
+                return;
             }
 
             // Ctrl + 1-9 to switch tabs

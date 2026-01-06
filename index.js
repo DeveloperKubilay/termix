@@ -63,7 +63,7 @@ function main() {
   const savedBounds = db.get('windowBounds') || {};
   
   let mainWindow = new BrowserWindow({
-    width: savedBounds.width || Math.round(width * 0.70),
+    width: savedBounds.width || Math.round(width * 0.60),
     height: savedBounds.height || Math.round(height * 0.75),
     x: savedBounds.x,
     y: savedBounds.y,

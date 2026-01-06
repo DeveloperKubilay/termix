@@ -3,6 +3,8 @@
     const btnNewHost = document.getElementById('btn-new-host');
     const btnTags = document.getElementById('btn-tags');
     const tagsPopup = document.getElementById('tags-popup');
+    const searchInput = document.querySelector('.search-bar input');
+    const btnTopConnect = document.querySelector('.top-bar .btn-connect');
 
     // Select buttons by icon
     const btnTerminal = document.querySelector('button i.fa-terminal').closest('button');
@@ -36,6 +38,179 @@
 
     let allHosts = [];
     let selectedTags = new Set();
+
+    function parseSSHCommand(cmd) {
+        const trimmed = cmd.trim();
+        if (!trimmed.startsWith('ssh ')) return null;
+        
+        // Remove 'ssh' and parse args
+        let args = trimmed.slice(4).trim();
+        let port = '22';
+        
+        // Find port (-p 1234 or -p1234)
+        const portMatch = args.match(/-p\s*(\d+)/);
+        if (portMatch) {
+            port = portMatch[1];
+            // Remove port flag from string to isolate user@host
+            args = args.replace(portMatch[0], '').trim();
+        }
+
+        // Get the destination part (should be what's left, taking first token)
+        // Handles cases where there might be other flags ignored or trailing spaces
+        const parts = args.split(/\s+/);
+        const destination = parts.find(p => p && !p.startsWith('-'));
+        
+        if (!destination) return null;
+
+        let username = 'root';
+        let hostname = destination;
+
+        if (destination.includes('@')) {
+            const destParts = destination.split('@');
+            username = destParts[0];
+            hostname = destParts[1];
+        }
+
+        return {
+            port: port,
+            username: username,
+            hostname: hostname
+        };
+    }
+
+    function openSSHPasswordDrawer(sshInfo) {
+        const template = document.getElementById('ssh-password-template');
+        if (!template) return;
+
+        Drawer.open('SSH Connection', template.innerHTML);
+
+        setTimeout(() => {
+            const infoDiv = document.getElementById('ssh-connection-info');
+            const passwordInput = document.getElementById('ssh-password-input');
+            const togglePasswordBtn = document.querySelector('.toggle-password');
+            const btnSaveExit = document.getElementById('btn-save-exit');
+            const btnConnect = document.getElementById('btn-connect-now');
+
+            if (infoDiv) {
+                infoDiv.textContent = `ssh -p ${sshInfo.port} ${sshInfo.username}@${sshInfo.hostname}`;
+            }
+
+            if (togglePasswordBtn && passwordInput) {
+                togglePasswordBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+                    passwordInput.setAttribute('type', type);
+                    togglePasswordBtn.classList.toggle('fa-eye');
+                    togglePasswordBtn.classList.toggle('fa-eye-slash');
+                });
+            }
+
+            if (passwordInput) {
+                passwordInput.focus();
+                passwordInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter' && btnConnect) {
+                        btnConnect.click();
+                    }
+                });
+            }
+
+            async function connectToHost(shouldConnect = true) {
+                const password = passwordInput ? passwordInput.value : '';
+                
+                if (!password) {
+                    if (passwordInput) passwordInput.style.border = '1px solid #f38ba8';
+                    return;
+                }
+
+                const hostData = {
+                    id: Date.now(),
+                    name: `${sshInfo.username}@${sshInfo.hostname}`,
+                    icon: 'fa-brands fa-linux',
+                    color: '#89b4fa',
+                    protocol: 'ssh',
+                    username: sshInfo.username,
+                    password: password,
+                    address: sshInfo.hostname,
+                    port: sshInfo.port,
+                    tags: [],
+                    certPath: ''
+                };
+
+                // Always save
+                try {
+                    const currentHosts = await window.electronAPI.hosts.getData() || [];
+                    currentHosts.push(hostData);
+                    await window.electronAPI.hosts.setData(currentHosts);
+                    allHosts = currentHosts;
+                    filterHosts();
+                } catch (error) {
+                    console.error('Error saving host:', error);
+                }
+
+                if (Drawer && Drawer.close) Drawer.close();
+
+                if (shouldConnect) {
+                    if (!window.ConnectionModule) {
+                        await new Promise((resolve, reject) => {
+                            const script = document.createElement('script');
+                            script.src = 'public/modules/connection/connection.js';
+                            script.onload = resolve;
+                            script.onerror = reject;
+                            document.head.appendChild(script);
+                        });
+                    }
+
+                    const tabId = 'connection-' + Date.now();
+                    window.TabManager.addTab({
+                        id: tabId,
+                        title: hostData.name,
+                        icon: hostData.icon,
+                        contentHtml: `<div id="terminal-${tabId}" style="height: 100%; width: 100%; background: #1e1e1e; overflow: hidden;"></div>`
+                    });
+
+                    setTimeout(async () => {
+                        if (window.ConnectionModule) {
+                            const sessionObj = await window.ConnectionModule.init(`terminal-${tabId}`, hostData);
+                            const tab = window.TabManager.tabs.find(t => t.id === tabId);
+                            if(tab) tab.sessionObj = sessionObj;
+                        }
+                    }, 50);
+                }
+
+                if (searchInput) searchInput.value = '';
+            }
+
+            if (btnSaveExit) {
+                btnSaveExit.addEventListener('click', () => connectToHost(false));
+            }
+
+            if (btnConnect) {
+                btnConnect.addEventListener('click', () => connectToHost(true));
+            }
+        }, 100);
+    }
+
+    if (btnTopConnect && searchInput) {
+        btnTopConnect.addEventListener('click', () => {
+            const cmd = searchInput.value.trim();
+            const sshInfo = parseSSHCommand(cmd);
+            if (sshInfo) {
+                openSSHPasswordDrawer(sshInfo);
+            }
+        });
+    }
+
+    if (searchInput) {
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                const cmd = searchInput.value.trim();
+                const sshInfo = parseSSHCommand(cmd);
+                if (sshInfo) {
+                    openSSHPasswordDrawer(sshInfo);
+                }
+            }
+        });
+    }
 
     if (tagsFooter) {
         tagsFooter.addEventListener('click', () => {
