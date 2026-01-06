@@ -33,9 +33,10 @@
 <template id="host-details-template">
     <div class="form-group">
         <label>Address</label>
-        <div class="input-with-icon">
-            <div class="icon-box" style="background-color: #d6336c;"><i class="fa-brands fa-linux"></i></div>
+        <div class="input-with-icon os-picker-anchor">
+            <div class="icon-box host-os-icon" role="button" tabindex="0"><i class="fa-brands fa-linux"></i></div>
             <input type="text" placeholder="IP Address or Hostname">
+            <div class="os-picker-panel"></div>
         </div>
     </div>
 
@@ -82,5 +83,7 @@
         </div>
     </div>
 
-    <button class="btn-connect-large btn-drawer-primary">Connect</button>
+    <div style="margin-top: auto; padding-top: 20px;">
+        <button class="btn-connect-large btn-drawer-primary">Connect</button>
+    </div>
 </template>

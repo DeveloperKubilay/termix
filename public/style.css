@@ -283,9 +283,67 @@ body {
     overflow: hidden;
 }
 
+.input-with-icon.os-picker-anchor {
+    position: relative;
+    overflow: visible;
+}
+
 .input-with-icon .icon-box {
     padding: 10px 15px;
     color: white;
+}
+
+.input-with-icon .icon-box.host-os-icon {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 46px;
+}
+
+.os-picker-panel {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    width: 240px;
+    background-color: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px;
+    display: none;
+    flex-direction: column;
+    gap: 6px;
+    z-index: 10000;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+}
+
+.os-picker-panel.show {
+    display: flex;
+}
+
+.os-picker-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--text-main);
+}
+
+.os-picker-item:hover {
+    background-color: #3b3e52;
+}
+
+.os-picker-swatch {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    flex: 0 0 28px;
 }
 
 .input-with-icon input {
