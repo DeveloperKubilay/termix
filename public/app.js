@@ -92,8 +92,8 @@ const TabManager = {
 
         // Keyboard Shortcuts
         document.addEventListener('keydown', (e) => {
-            // Ctrl + W to close active tab
-            if (e.ctrlKey && e.key === 'w') {
+            // Ctrl + Shift + W to close active tab
+            if (e.ctrlKey && e.shiftKey && e.key === 'w') {
                 e.preventDefault();
                 e.stopPropagation();
                 if (this.activeTabId) {
