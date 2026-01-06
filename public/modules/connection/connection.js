@@ -167,13 +167,13 @@ window.ConnectionModule = {
                     });
                 } else {
                     term.clear();
-                    term.writeln(`\x1b[31mConnection lost (Code: ${msg.exitCode}). Retrying in 3 seconds...\x1b[0m`);
+                    term.writeln(`\x1b[31mConnection lost (Code: ${msg.exitCode}). Retrying in 5 seconds...\x1b[0m`);
                     setTimeout(() => {
                         if (isUserDisconnected) return;
                         triggerReload().catch(e => {
                             if (!isUserDisconnected) term.writeln(`\x1b[31mReconnect failed: ${e && e.message ? e.message : e}\x1b[0m`);
                         });
-                    }, 3000);
+                    }, 5000);
                 }
             }
         };
