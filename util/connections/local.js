@@ -56,8 +56,8 @@ module.exports = (data) => {
                 sendToFrontend({ type: "data", data: data });
             });
 
-            ptyProcess.onExit(() => {
-                sendToFrontend({ type: "disconnected" });
+            ptyProcess.onExit((e) => {
+                sendToFrontend({ type: "disconnected", exitCode: e.exitCode });
             });
 
             const writeToStream = (msg) => {

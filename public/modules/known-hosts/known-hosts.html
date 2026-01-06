@@ -1,8 +1,62 @@
 <div class="content-area">
-    <h2 class="section-title">Known Hosts</h2>
-    <div style="padding: 20px;">
-        <div style="color: var(--text-muted);">
-            <p>SSH known hosts will appear here.</p>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2 class="section-title" style="margin: 0;">Known Hosts</h2>
+        <button class="btn btn-secondary" onclick="loadKnownHosts()">
+            <i class="fas fa-sync"></i> Refresh
+        </button>
+    </div>
+
+    <div class="card">
+        <div class="table-container">
+            <table class="table" id="known-hosts-table">
+                <thead>
+                    <tr>
+                        <th>Address</th>
+                        <th>Port</th>
+                        <th>First Seen</th>
+                        <th>Key Fingerprint</th>
+                        <th style="text-align: right;">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="known-hosts-list">
+                    <tr>
+                        <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 20px;">
+                            Loading hosts...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
     </div>
 </div>
+
+<style>
+    .table-container {
+        overflow-x: auto;
+    }
+    .table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+    }
+    .table th, .table td {
+        text-align: left;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border-color);
+    }
+    .table th {
+        color: var(--text-muted);
+        font-weight: 500;
+    }
+    .table tr:last-child td {
+        border-bottom: none;
+    }
+    .code-snippet {
+        font-family: 'JetBrains Mono', monospace;
+        background: rgba(0,0,0,0.2);
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 12px;
+        color: var(--accent-color);
+    }
+</style>

@@ -11,7 +11,7 @@ const api = {
         }
     },
     on: (channel, func) => {
-        let validChannels = ['term-data', 'ssh-ready', 'term-error'];
+        let validChannels = ['term-data', 'ssh-ready', 'term-error', 'term-disconnected'];
         if (validChannels.includes(channel)) {
             // Remove existing listeners to avoid duplicates if any (basic implementation)
             // ipcRenderer.removeAllListeners(channel); 

@@ -22,7 +22,14 @@ module.exports = async (filesPath, hostInfo, event) => {
             } else if (msg.type === 'error') {
                 event.sender.send('term-error', { sessionId: connection.sessionId, message: msg.message });
             } else if (msg.type === 'disconnected') {
-                event.sender.send('term-disconnected', { sessionId: connection.sessionId });
+                event.sender.send('term-disconnected', { sessionId: connection.sessionId, exitCode: msg.exitCode });
+                try {
+                    if (global.Terminals && global.Terminals[connection.sessionId]) {
+                        delete global.Terminals[connection.sessionId];
+                    }
+                } catch (e) {
+                    console.error('Error cleaning session:', e);
+                }
             }
         });
 

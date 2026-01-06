@@ -1,6 +1,8 @@
 window.ConnectionModule = {
     init: async function (containerId, hostInfo) {
         if (!containerId) return;
+        let isUserDisconnected = false;
+        let reconnecting = false;
         const container = document.getElementById(containerId);
         if (!container) return;
 
@@ -22,6 +24,10 @@ window.ConnectionModule = {
         term.loadAddon(fitAddon);
 
         term.open(container);
+
+        container.addEventListener('mousedown', () => {
+            try { term.focus(); } catch (_) {}
+        });
 
         // WebGL Addon'u terminal açıldıktan sonra yüklemek performansı artırır ve takılmaları önler
         try {
@@ -84,7 +90,12 @@ window.ConnectionModule = {
             term.writeln(connectMsg);
         }, 3000);
 
-        const sessionResult = await window.electronAPI.connection.connect(hostInfo);
+        let sessionResult;
+        try {
+            sessionResult = await window.electronAPI.connection.connect(hostInfo);
+        } catch (err) {
+            sessionResult = { status: 'error', message: err.message };
+        }
         clearTimeout(msgTimer);
 
         if (sessionResult.status === 'error') {
@@ -100,59 +111,77 @@ window.ConnectionModule = {
         const currentSessionId = sessionResult.sessionId;
 
         // Backend -> Frontend (Output)
-        window.electronAPI.on('term-data', (event, msg) => {
+        const outputHandler = (event, msg) => {
             if (msg && msg.sessionId === currentSessionId) {
                 term.write(msg.data);
             }
-        });
+        };
+        window.electronAPI.on('term-data', outputHandler);
+
+        const triggerReload = async () => {
+            if (reconnecting || isUserDisconnected) return;
+            reconnecting = true;
+            try {
+                try { window.electronAPI.send('term-close', { sessionId: currentSessionId }); } catch (_) {}
+                if (resizeObserver) resizeObserver.disconnect();
+                try { term.dispose(); } catch (_) {}
+                try { container.innerHTML = ''; } catch (_) {}
+
+                if (window.ConnectionModule && !isUserDisconnected) {
+                    const newSession = await window.ConnectionModule.init(containerId, hostInfo);
+                    if (!newSession) return;
+                    const tabId = containerId.replace('terminal-', '');
+                    if (window.TabManager && window.TabManager.tabs) {
+                        const tab = window.TabManager.tabs.find(t => t.id === tabId);
+                        if (tab) tab.sessionObj = newSession;
+                    }
+                }
+            } finally {
+                reconnecting = false;
+            }
+        };
 
         // Backend -> Frontend (Disconnected)
-        window.electronAPI.on('term-disconnected', (event, msg) => {
+        const disconnectHandler = (event, msg) => {
             if (msg && msg.sessionId === currentSessionId) {
-                term.clear();
-                term.writeln('\x1b[33mConnection lost. Retrying in 3 seconds...\x1b[0m');
-                
-                setTimeout(async () => {
-                   term.writeln('Reconnecting...');
-                   // Retry connection by calling init recursively but we need to handle cleanup first
-                   // Or simpler: reload the module/tab content
-                   // Best approach: Just reconnect logic here
-                   
-                   try {
-                        const newSessionResult = await window.electronAPI.connection.connect(hostInfo);
-                        if (newSessionResult.status !== 'error') {
-                             // Update session Id references
-                             // WARNING: This is tricky because listeners are bound to old ID.
-                             // It is safer to reload the tab/drawer content or re-init logic.
-                             // Let's trigger a re-init if possible or just inform user to reconnect manually if complex
-                             // User asked for auto retry.
-                             
-                             // Since listeners are bound to `currentSessionId` variable which is const, we cannot update it easily to affect existing listeners.
-                             // We should ideally reload the tab.
-                             const tabId = containerId.replace('terminal-', '');
-                             const tab = window.TabManager.tabs.find(t => t.id === tabId);
-                             if (tab && tab.sessionObj && typeof tab.sessionObj.dispose === 'function') {
-                                 tab.sessionObj.dispose();
-                             }
-                             
-                             // Re-init
-                             term.clear();
-                             if (window.ConnectionModule) {
-                                 const newSessionObj = await window.ConnectionModule.init(containerId, hostInfo);
-                                 if(tab) tab.sessionObj = newSessionObj;
-                             }
-                        } else {
-                            term.writeln(`\x1b[31mReconnect failed: ${newSessionResult.message}\x1b[0m`);
+                if (isUserDisconnected) return;
+
+                if (msg.exitCode === 0) {
+                    term.writeln('');
+                    term.writeln('\x1b[33mSession ended.\x1b[0m');
+                    term.writeln('Press Enter to restart...');
+                    try { term.focus(); } catch (_) {}
+                    
+                    const restartHandler = term.onData(data => {
+                        if (isUserDisconnected) {
+                            restartHandler.dispose();
+                            return;
                         }
-                   } catch (e) {
-                       term.writeln(`\x1b[31mReconnect error: ${e.message}\x1b[0m`);
-                   }
-                }, 3000);
+                        if (typeof data === 'string' && (data.includes('\r') || data.includes('\n'))) {
+                            restartHandler.dispose();
+                            term.writeln('Restarting...');
+                            triggerReload().catch(e => {
+                                if (!isUserDisconnected) term.writeln(`\x1b[31mRestart failed: ${e && e.message ? e.message : e}\x1b[0m`);
+                            });
+                        }
+                    });
+                } else {
+                    term.clear();
+                    term.writeln(`\x1b[31mConnection lost (Code: ${msg.exitCode}). Retrying in 3 seconds...\x1b[0m`);
+                    setTimeout(() => {
+                        if (isUserDisconnected) return;
+                        triggerReload().catch(e => {
+                            if (!isUserDisconnected) term.writeln(`\x1b[31mReconnect failed: ${e && e.message ? e.message : e}\x1b[0m`);
+                        });
+                    }, 3000);
+                }
             }
-        });
+        };
+        window.electronAPI.on('term-disconnected', disconnectHandler);
 
         // Frontend -> Backend (Input)
         term.onData(data => {
+            if (isUserDisconnected) return;
             window.electronAPI.send('term-input', { sessionId: currentSessionId, data });
         });
 
@@ -203,6 +232,7 @@ window.ConnectionModule = {
                     term.options.fontSize = term.options.fontSize + 1;
                     fitAddon.fit();
                     window.electronAPI.send('term-resize', { sessionId: currentSessionId, cols: term.cols, rows: term.rows });
+                    window.electronAPI.connection.saveSettings({ fontSize: term.options.fontSize });
                 }
                 // Ctrl - (Numpad - dahil)
                 else if (e.key === '-' || e.code === 'NumpadSubtract') {
@@ -211,6 +241,7 @@ window.ConnectionModule = {
                         term.options.fontSize = term.options.fontSize - 1;
                         fitAddon.fit();
                         window.electronAPI.send('term-resize', { sessionId: currentSessionId, cols: term.cols, rows: term.rows });
+                        window.electronAPI.connection.saveSettings({ fontSize: term.options.fontSize });
                     }
                 }
             }
@@ -239,10 +270,12 @@ window.ConnectionModule = {
             term: term,
             fitAddon: fitAddon,
             dispose: () => {
+                isUserDisconnected = true;
+                clearTimeout(msgTimer);
                 // Observer'ı durdur
                 if (resizeObserver) resizeObserver.disconnect();
                 // Terminali temizle
-                term.dispose();
+                try { term.dispose(); } catch (_) {}
                 // Backend'e kapat isteği gönder (İstenirse)
                 window.electronAPI.send('term-close', { sessionId: currentSessionId });
             }

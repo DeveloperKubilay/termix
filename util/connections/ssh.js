@@ -1,6 +1,8 @@
 const { Client } = require('ssh2');
 const net = require('net');
 const { EventEmitter } = require('events');
+const kubitdb = require('kubitdb');
+const db = new kubitdb();
 
 module.exports = (data) => {
     return new Promise((resolve, reject) => {
@@ -31,9 +33,9 @@ module.exports = (data) => {
                     }
                 };
 
-                stream.on('close', () => {
+                stream.on('close', (code, signal) => {
                     conn.end();
-                    sendToFrontend({ type: "disconnected" });
+                    sendToFrontend({ type: "disconnected", exitCode: code });
                 }).on('data', (d) => {
                     sendToFrontend({ type: "data", data: d.toString() });
                 });
@@ -67,6 +69,40 @@ module.exports = (data) => {
                 password: data.password,
                 readyTimeout: 20000,
                 keepaliveInterval: 1000,
+                hostVerifier: (hashedKey) => {
+                    const key = hashedKey.toString('hex');
+                    let knownHosts;
+                    try {
+                        knownHosts = db.get("knownHosts");
+                    } catch (e) {
+                        knownHosts = [];
+                    }
+                    if (!Array.isArray(knownHosts)) knownHosts = [];
+
+                    const hostEntry = knownHosts.find(h => h.address === data.address && h.port === data.port);
+
+                    if (hostEntry) {
+                        if (hostEntry.key === key) return true;
+                        sendToFrontend({ type: "error", message: `SECURITY WARNING: Host key verification failed! Connection rejected as a security precaution.` });
+                        return false;
+                    }
+
+                    // Trust On First Use (TOFU)
+                    knownHosts.push({
+                        address: data.address,
+                        port: data.port,
+                        key: key,
+                        firstSeen: Date.now()
+                    });
+                    
+                    try {
+                        db.set("knownHosts", knownHosts);
+                    } catch(e) {
+                        console.error('Failed to save known_hosts:', e);
+                    }
+                    
+                    return true;
+                },
                 algorithms: {
                     cipher: [
                         'aes128-ctr',
