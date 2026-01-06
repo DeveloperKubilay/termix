@@ -115,6 +115,9 @@
             const card = document.createElement('div');
             card.className = 'host-card';
             card.style.position = 'relative';
+
+            const hostIcon = host && host.icon ? host.icon : 'fa-brands fa-linux';
+            const hostColor = host && host.color ? host.color : '#d6336c';
             
             let detailsText = `${host.protocol}, ${host.username}`;
             if (host.tags && host.tags.length > 0) {
@@ -122,8 +125,8 @@
             }
 
             card.innerHTML = `
-                <div class="host-icon" style="background-color: ${host.color}">
-                    <i class="${host.icon}"></i>
+                <div class="host-icon" style="background-color: ${hostColor}">
+                    <i class="${hostIcon}"></i>
                 </div>
                 <div class="host-info">
                     <div class="host-name">${host.name}</div>
@@ -178,7 +181,7 @@
                 window.TabManager.addTab({
                     id: tabId,
                     title: host.name,
-                    icon: host.icon,
+                    icon: hostIcon,
                     contentHtml: `<div id="terminal-${tabId}" style="height: 100%; width: 100%; background: #1e1e1e; overflow: hidden;"></div>`
                 });
 
@@ -212,6 +215,77 @@
             const usernameInput = document.querySelector('input[placeholder="Username"]');
             const passwordInput = document.querySelector('input[placeholder="Password"]');
             const togglePasswordBtn = document.querySelector('.toggle-password');
+
+            const osIconBox = document.querySelector('.host-os-icon');
+            const osPickerPanel = document.querySelector('.os-picker-panel');
+
+            const osOptions = [
+                { key: 'linux', label: 'Linux', icon: 'fa-brands fa-linux', color: '#d6336c' },
+                { key: 'ubuntu', label: 'Ubuntu', icon: 'fa-brands fa-ubuntu', color: '#fab387' },
+                { key: 'debian', label: 'Debian', icon: 'fa-brands fa-linux', color: '#89b4fa' },
+                { key: 'arch', label: 'Arch Linux', icon: 'fa-brands fa-linux', color: '#1793d1' }
+            ];
+
+            let selectedOs = osOptions[0];
+
+            function applySelectedOs() {
+                if (!osIconBox) return;
+                osIconBox.style.backgroundColor = selectedOs.color;
+                const iconEl = osIconBox.querySelector('i');
+                if (iconEl) iconEl.className = selectedOs.icon;
+            }
+
+            function closeOsPicker() {
+                if (osPickerPanel) osPickerPanel.classList.remove('show');
+            }
+
+            function renderOsPicker() {
+                if (!osPickerPanel) return;
+                osPickerPanel.innerHTML = '';
+
+                osOptions.forEach(opt => {
+                    const item = document.createElement('div');
+                    item.className = 'os-picker-item';
+                    item.innerHTML = `
+                        <div class="os-picker-swatch" style="background: ${opt.color}"><i class="${opt.icon}"></i></div>
+                        <div>${opt.label}</div>
+                    `;
+                    item.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        selectedOs = opt;
+                        applySelectedOs();
+                        closeOsPicker();
+                    });
+                    osPickerPanel.appendChild(item);
+                });
+            }
+
+            if (osIconBox && osPickerPanel) {
+                renderOsPicker();
+
+                const existingIcon = hostToEdit && hostToEdit.icon ? hostToEdit.icon : null;
+                const fromIcon = existingIcon ? osOptions.find(o => o.icon === existingIcon) : null;
+                selectedOs = fromIcon || osOptions[0];
+                if (hostToEdit && hostToEdit.color) {
+                    selectedOs = { ...selectedOs, color: hostToEdit.color };
+                }
+                applySelectedOs();
+
+                osIconBox.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    osPickerPanel.classList.toggle('show');
+                });
+
+                if (window.__hostsOsPickerDocClick) {
+                    document.removeEventListener('click', window.__hostsOsPickerDocClick);
+                }
+                window.__hostsOsPickerDocClick = (e) => {
+                    if (!osPickerPanel.contains(e.target) && !osIconBox.contains(e.target)) {
+                        closeOsPicker();
+                    }
+                };
+                document.addEventListener('click', window.__hostsOsPickerDocClick);
+            }
 
             if (togglePasswordBtn && passwordInput) {
                 togglePasswordBtn.addEventListener('click', (e) => {
@@ -487,8 +561,8 @@
                     const hostData = {
                         id: hostToEdit ? hostToEdit.id : Date.now(),
                         name: labelInput.value || addressInput.value,
-                        icon: "fa-brands fa-linux",
-                        color: "#d6336c",
+                        icon: selectedOs.icon,
+                        color: selectedOs.color,
                         protocol: "ssh",
                         username: usernameInput.value || "root",
                         password: passwordInput ? passwordInput.value : "",
@@ -517,6 +591,33 @@
                         filterHosts(); // Re-apply filters if any
                         
                         if (Drawer && Drawer.close) Drawer.close();
+
+                        // Auto-connect
+                        if (!window.ConnectionModule) {
+                            await new Promise((resolve, reject) => {
+                                const script = document.createElement('script');
+                                script.src = 'public/modules/connection/connection.js';
+                                script.onload = resolve;
+                                script.onerror = reject;
+                                document.head.appendChild(script);
+                            });
+                        }
+
+                        const tabId = 'connection-' + Date.now();
+                        window.TabManager.addTab({
+                            id: tabId,
+                            title: hostData.name,
+                            icon: hostData.icon,
+                            contentHtml: `<div id="terminal-${tabId}" style="height: 100%; width: 100%; background: #1e1e1e; overflow: hidden;"></div>`
+                        });
+
+                        setTimeout(async () => {
+                            if (window.ConnectionModule) {
+                                const sessionObj = await window.ConnectionModule.init(`terminal-${tabId}`, hostData);
+                                const tab = window.TabManager.tabs.find(t => t.id === tabId);
+                                if(tab) tab.sessionObj = sessionObj;
+                            }
+                        }, 50);
                     } catch (error) {
                         console.error('Error saving host:', error);
                         alert('Failed to save host');
