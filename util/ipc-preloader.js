@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, clipboard } = require('electron');
 const { getChannels } = require('./ipc-loader');
 
 const channels = getChannels();
@@ -13,3 +13,8 @@ Object.keys(channels).forEach(moduleName => {
 });
 
 contextBridge.exposeInMainWorld('electronAPI', api);
+
+contextBridge.exposeInMainWorld('clipboard', {
+  readText: () => clipboard.readText(),
+  writeText: (text) => clipboard.writeText(text)
+});

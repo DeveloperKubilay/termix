@@ -182,6 +182,18 @@
             const labelInput = document.querySelector('input[placeholder="Label"]');
             const usernameInput = document.querySelector('input[placeholder="Username"]');
             const passwordInput = document.querySelector('input[placeholder="Password"]');
+            const togglePasswordBtn = document.querySelector('.toggle-password');
+
+            if (togglePasswordBtn && passwordInput) {
+                togglePasswordBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+                    passwordInput.setAttribute('type', type);
+                    togglePasswordBtn.classList.toggle('fa-eye');
+                    togglePasswordBtn.classList.toggle('fa-eye-slash');
+                });
+            }
+
             const certInput = document.querySelector('input[placeholder="Certificate, FIDO2"]');
             const tagsInput = document.querySelector('input[placeholder="Tags"]');
             const portInput = document.querySelector('input[type="number"]');
@@ -196,8 +208,7 @@
                 if (usernameInput) usernameInput.value = hostToEdit.username || '';
                 if (tagsInput && hostToEdit.tags) tagsInput.value = hostToEdit.tags[0] || ''; // Assuming single tag for now or first one
                 if (portInput) portInput.value = hostToEdit.port || 22;
-                // Password is usually not stored or retrieved for security, but if it was:
-                // if (passwordInput) passwordInput.value = hostToEdit.password || '';
+                if (passwordInput) passwordInput.value = hostToEdit.password || '';
                 if (certInput) {
                     if (hostToEdit.certPath) {
                         const matchingKey = keys.find(k => k.path === hostToEdit.certPath);
@@ -451,6 +462,7 @@
                         color: "#d6336c",
                         protocol: "ssh",
                         username: usernameInput.value || "root",
+                        password: passwordInput ? passwordInput.value : "",
                         address: addressInput.value,
                         port: portInput ? portInput.value : 22,
                         tags: tagValue ? [tagValue] : [],
