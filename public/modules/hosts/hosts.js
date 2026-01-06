@@ -152,13 +152,15 @@
                     id: tabId,
                     title: host.name,
                     icon: host.icon,
-                    contentHtml: `<div id="terminal-${tabId}" style="height: 100%; width: 100%; background: #000; overflow: hidden;"></div>`
+                    contentHtml: `<div id="terminal-${tabId}" style="height: 100%; width: 100%; background: #1e1e1e; overflow: hidden;"></div>`
                 });
 
                 // Initialize terminal
-                setTimeout(() => {
+                setTimeout(async () => {
                     if (window.ConnectionModule) {
-                        window.ConnectionModule.init(`terminal-${tabId}`, host);
+                        const sessionObj = await window.ConnectionModule.init(`terminal-${tabId}`, host);
+                        const tab = window.TabManager.tabs.find(t => t.id === tabId);
+                        if(tab) tab.sessionObj = sessionObj;
                     }
                 }, 50);
             });

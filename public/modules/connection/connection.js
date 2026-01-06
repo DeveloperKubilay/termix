@@ -4,54 +4,92 @@ window.ConnectionModule = {
         const container = document.getElementById(containerId);
         if (!container) return;
 
-        const term = new window.Terminal(await window.electronAPI.connection.getSettings());
+        // Container rengini settings'ten gelen renkle eşle
+        const TerminalSettings = await window.electronAPI.connection.getSettings();
+        if (TerminalSettings.theme && TerminalSettings.theme.background) {
+            container.style.backgroundColor = TerminalSettings.theme.background;
+        }
+
+        const term = new window.Terminal({
+            ...TerminalSettings,
+            allowTransparency: true,
+            fontFamily: '"JetBrains Mono", Consolas, monospace', // Force prefer JetBrains
+            fontSize: TerminalSettings.fontSize || 14,
+            fontWeight: 500
+        });
 
         const fitAddon = new window.FitAddon.FitAddon();
         term.loadAddon(fitAddon);
 
+        // WebGL Addon for better rendering performance and font sharpness
+        try {
+            const webglAddon = new window.WebglAddon.WebglAddon();
+            webglAddon.onContextLoss(e => {
+                webglAddon.dispose();
+            });
+            term.loadAddon(webglAddon);
+        } catch (e) {
+            console.warn("WebGL addon could not be loaded", e);
+        }
+
         term.open(container);
 
-        setTimeout(() => {
-            fitAddon.fit();
-        }, 100);
 
 
         term.writeln(`Connecting to ${hostInfo.username}@${hostInfo.hostname || hostInfo.name}...`);
-        const session = await window.electronAPI.connection.connect(hostInfo)
-        /*ipcRenderer.on('term-data', (event, data) => {
-            term.write(data);
+        const sessionResult = await window.electronAPI.connection.connect(hostInfo);
+        const currentSessionId = sessionResult.sessionId;
+
+        // Backend -> Frontend (Output)
+        window.electronAPI.on('term-data', (event, msg) => {
+            if (msg && msg.sessionId === currentSessionId) {
+                term.write(msg.data);
+            }
         });
+
+        // Frontend -> Backend (Input)
         term.onData(data => {
-            ipcRenderer.send('term-input', data);
+            window.electronAPI.send('term-input', { sessionId: currentSessionId, data });
         });
-        */
 
+        function sendResize() {
+            // Container görünür değilse veya boyutları 0 ise işlem yapma
+            if (!container.clientWidth || !container.clientHeight) return;
 
+            // Fit addon ile boyutları hesapla
+            fitAddon.fit();
 
+            // Backend'e yeni boyutları bildir
+            // window.electronAPI.send kontrolü
+            if (window.electronAPI && window.electronAPI.send) {
+                window.electronAPI.send('term-resize', {
+                    sessionId: currentSessionId,
+                    cols: term.cols,
+                    rows: term.rows
+                });
+            }
+        }
 
-
-
-        /* window.addEventListener('resize', () => {
-             fitAddon.fit();
-             ipcRenderer.send('term-resize', {
-                 cols: term.cols,
-                 rows: term.rows
-             });
-         });
-         
-         // SSH bağlantısı hazır olduğunda boyut bilgisini gönder
-         ipcRenderer.on('ssh-ready', () => {
-             fitAddon.fit();
-             ipcRenderer.send('term-resize', {
-                 cols: term.cols,
-                 rows: term.rows
-             });
-         });*/
-
-
-        /*
+        // ResizeObserver ile container boyut değişimlerini izle (Sidebar aç/kapa dahil)
+        const resizeObserver = new ResizeObserver(() => {
+            // RequestAnimationFrame ile UI thread'i boğmadan resize yap
+            requestAnimationFrame(() => sendResize());
+        });
         
-        // Zoom kontrolleri (Ctrl + / Ctrl -)
+        resizeObserver.observe(container);
+        
+        // İlk yüklemede ve SSH hazır olduğunda da tetikle
+        window.electronAPI.on('ssh-ready', (event, msg) => {
+            if (msg && msg.sessionId === currentSessionId) {
+                sendResize();
+            }
+        });
+        // window.addEventListener('resize', sendResize); // ResizeObserver bunu zaten halleder
+        
+        // İlk bir kez çalıştır (zamanlama sorunu olmaması için kısa gecikme)
+        setTimeout(sendResize, 100);
+
+
         window.addEventListener('keydown', (e) => {
             if (e.ctrlKey) {
                 // Ctrl + veya Ctrl = (Numpad + dahil)
@@ -59,45 +97,50 @@ window.ConnectionModule = {
                     e.preventDefault();
                     term.options.fontSize = term.options.fontSize + 1;
                     fitAddon.fit();
-                    ipcRenderer.send('term-resize', { cols: term.cols, rows: term.rows });
-                } 
+                    window.electronAPI.send('term-resize', { sessionId: currentSessionId, cols: term.cols, rows: term.rows });
+                }
                 // Ctrl - (Numpad - dahil)
                 else if (e.key === '-' || e.code === 'NumpadSubtract') {
                     e.preventDefault();
                     if (term.options.fontSize > 6) { // Minimum 6px
                         term.options.fontSize = term.options.fontSize - 1;
                         fitAddon.fit();
-                        ipcRenderer.send('term-resize', { cols: term.cols, rows: term.rows });
+                        window.electronAPI.send('term-resize', { sessionId: currentSessionId, cols: term.cols, rows: term.rows });
                     }
                 }
             }
         });
-        
-        */
 
-        // Sağ tık ile yapıştırma
-        container.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-            const text = clipboard.readText();
-            if (text) {
-                // term.paste() kullanıyoruz ki bracketed paste mode gibi özellikler çalışsın
-                term.paste(text);
-            }
-        });
-
-        term.onSelectionChange(() => {
-            const selection = term.getSelection();
-            if (selection) {
-                clipboard.writeText(selection);
-            }
-        });
-        const resizeObserver = new ResizeObserver(() => {
-            fitAddon.fit();
-        });
-        resizeObserver.observe(container);
+        if (TerminalSettings.rightClickCopyPaste) { // Sağ tık ile yapıştırma
+            container.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                const text = clipboard.readText();
+                if (text) {
+                    term.paste(text);
+                }
+            }); term.onSelectionChange(() => {
+                const selection = term.getSelection();
+                if (selection) {
+                    clipboard.writeText(selection);
+                }
+            });
+        }
 
         container.term = term;
         container.fitAddon = fitAddon;
-        return { term, fitAddon, session };
+
+        return {
+            sessionId: currentSessionId,
+            term: term,
+            fitAddon: fitAddon,
+            dispose: () => {
+                // Observer'ı durdur
+                if (resizeObserver) resizeObserver.disconnect();
+                // Terminali temizle
+                term.dispose();
+                // Backend'e kapat isteği gönder (İstenirse)
+                window.electronAPI.send('term-close', { sessionId: currentSessionId });
+            }
+        };
     }
 };

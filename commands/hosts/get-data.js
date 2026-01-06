@@ -2,9 +2,11 @@ const kubitdb = require('kubitdb');
 const db = new kubitdb();
 const { decrypt } = require('../../util/crypto');
 
-module.exports = async (path,filter) => {
+module.exports = async (path) => {
 
-    let data = filter ? db.get('hosts').find(z=>z.id == filter) : db.get('hosts'); 
+    //sconsole.log(filter)
+    let data = //filter ? db.get('hosts').find(z=>z.id == filter) : 
+    db.get('hosts'); 
 
     data = data.map(item => {
         if(item.password) item.password = decrypt(item.password);

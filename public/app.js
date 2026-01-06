@@ -144,7 +144,12 @@ const TabManager = {
             closable: options.closable !== false
         };
 
-        // Create Tab Element
+            // Create Tab Element (Daha önceki tab'da sessionObj'yi nasıl set ettik?)
+        
+        // Modules'un başlattığımız yerde session objesini tab'a bağlamamız lazım
+        // Bu yüzden moduleContainer.init fonksiyonunun ne döndürdüğüne bakacağız.
+        // Ama init asenkron olabilir.
+        
         const tabEl = document.createElement('div');
         tabEl.className = 'tab';
         tabEl.dataset.id = id;
@@ -244,6 +249,12 @@ const TabManager = {
 
         const tab = this.tabs[tabIndex];
         
+        // --- Cleanup Hook: Eğer tab bir objeye sahipse cleanup yap ---
+        if (tab.sessionObj && typeof tab.sessionObj.dispose === 'function') {
+             tab.sessionObj.dispose();
+        }
+        // -----------------------------------------------------------
+
         // Remove elements
         const tabEl = this.tabBar.querySelector(`.tab[data-id="${id}"]`);
         if (tabEl) tabEl.remove();
