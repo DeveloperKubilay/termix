@@ -511,3 +511,6 @@ body {
 .tab-content.active {
     display: flex;
 }
+
+/* Xterm scrollbar fix */
+.xterm-viewport::-webkit-scrollbar { display: none; }

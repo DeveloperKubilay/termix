@@ -135,18 +135,32 @@
                 });
             }
 
-            card.addEventListener('click', () => {
+            card.addEventListener('click', async () => {
+                // Ensure ConnectionModule is loaded
+                if (!window.ConnectionModule) {
+                    await new Promise((resolve, reject) => {
+                        const script = document.createElement('script');
+                        script.src = 'public/modules/connection/connection.js';
+                        script.onload = resolve;
+                        script.onerror = reject;
+                        document.head.appendChild(script);
+                    });
+                }
+
+                const tabId = 'connection-' + Date.now();
                 window.TabManager.addTab({
+                    id: tabId,
                     title: host.name,
                     icon: host.icon,
-                    contentHtml: `
-                        <div style="padding: 20px; height: 100%; background-color: #1e1e2e; color: #cdd6f4; font-family: monospace;">
-                            <h3>Connecting to ${host.username}@${host.hostname || host.name}...</h3>
-                            <p>Protocol: ${host.protocol}</p>
-                            <p>>_ Connection established.</p>
-                        </div>
-                    `
+                    contentHtml: `<div id="terminal-${tabId}" style="height: 100%; width: 100%; background: #000; overflow: hidden;"></div>`
                 });
+
+                // Initialize terminal
+                setTimeout(() => {
+                    if (window.ConnectionModule) {
+                        window.ConnectionModule.init(`terminal-${tabId}`, host);
+                    }
+                }, 50);
             });
             
             hostsGrid.appendChild(card);
