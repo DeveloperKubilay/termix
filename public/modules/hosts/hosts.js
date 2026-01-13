@@ -35,6 +35,23 @@
 
     const tagsListContainer = document.querySelector('.tags-list');
     const tagsFooter = document.querySelector('.tags-footer');
+    
+    // Tag Search Logic
+    const tagsSearchInput = tagsPopup.querySelector('.search-tags input');
+    if (tagsSearchInput) {
+        tagsSearchInput.addEventListener('input', (e) => {
+            const filter = e.target.value.toLowerCase();
+            const tagItems = tagsListContainer.querySelectorAll('.tag-item');
+            tagItems.forEach(item => {
+                const text = item.textContent.trim().toLowerCase();
+                if (text.includes(filter)) {
+                    item.style.display = 'flex';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        });
+    }
 
     let allHosts = [];
     let selectedTags = new Set();
@@ -484,7 +501,7 @@
                 if (addressInput) addressInput.value = hostToEdit.address || '';
                 if (labelInput) labelInput.value = hostToEdit.name || '';
                 if (usernameInput) usernameInput.value = hostToEdit.username || '';
-                if (tagsInput && hostToEdit.tags) tagsInput.value = hostToEdit.tags[0] || ''; // Assuming single tag for now or first one
+                if (tagsInput && hostToEdit.tags) tagsInput.value = hostToEdit.tags.join(', ');
                 if (portInput) portInput.value = hostToEdit.port || 22;
                 if (passwordInput) passwordInput.value = hostToEdit.password || '';
                 if (certInput) {
@@ -723,11 +740,23 @@
 
                     if (!isValid) return;
 
-                    const tagValue = tagsInput ? tagsInput.value.trim() : '';
+                    const tagInputVal = tagsInput ? tagsInput.value.trim() : '';
+                    // Split by comma and filter empty
+                    const tagList = tagInputVal 
+                        ? tagInputVal.split(',').map(t => t.trim()).filter(t => t.length > 0)
+                        : [];
                     
-                    // Add new tag if it doesn't exist
-                    if (tagValue && !tags.includes(tagValue)) {
-                        await window.electronAPI.hosts.addTag(tagValue);
+                    // Add new tags if they don't exist
+                    let tagsUpdated = false;
+                    for (const t of tagList) {
+                        if (!tags.includes(t)) {
+                            await window.electronAPI.hosts.addTag(t);
+                            tags.push(t); // Update local cache to prevent duplicate add requests
+                            tagsUpdated = true;
+                        }
+                    }
+
+                    if (tagsUpdated) {
                         // Refresh tags filter
                         const newTags = await window.electronAPI.hosts.getTags();
                         renderTagsFilter(newTags);
@@ -743,7 +772,7 @@
                         password: passwordInput ? passwordInput.value : "",
                         address: addressInput.value,
                         port: portInput ? portInput.value : 22,
-                        tags: tagValue ? [tagValue] : [],
+                        tags: tagList,
                         certPath: certInput ? (certInput.dataset.fullPath || certInput.value) : ''
                     };
 
