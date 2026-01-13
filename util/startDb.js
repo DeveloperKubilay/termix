@@ -2,10 +2,11 @@ const kubitdb = require('kubitdb');
 const db = new kubitdb();
 
 module.exports = function () {
-  if(db.get("type") === undefined) {
+  if(!db.has("type")) {
     db.set("type", "local");
   }
-  if (!db.get('terminalSettings')) {
+  if(!db.has("hosts")) db.set("hosts", []);
+  if (!db.has('terminalSettings')) {
     db.set("terminalSettings", {
       cursorBlink: true,
       fontFamily: '"JetBrains Mono", "Fira Code", Consolas, "Courier New", monospace',

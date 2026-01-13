@@ -55,8 +55,6 @@
 
     // Expose delete tag function globally
     window.deleteTag = async (tag) => {
-        if (!confirm(`Are you sure you want to delete tag "${tag}"?`)) return;
-        
         try {
             const newTags = await window.electronAPI.hosts.deleteTag(tag);
             renderTags(newTags);
