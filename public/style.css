@@ -648,10 +648,56 @@ body {
     align-items: center;
     gap: 10px;
     transition: background-color 0.2s;
+    width: 100%;
+    background: transparent;
+    border: none;
+    color: var(--text-main);
+    text-align: left;
+    font-size: 0.9rem;
 }
 
 .profile-menu-item:hover {
     background-color: var(--bg-sidebar);
+}
+
+#profile-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.profile-menu-empty {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    padding: 10px 15px;
+}
+
+.profile-switch-item {
+    justify-content: space-between;
+}
+
+.profile-switch-item.active {
+    background-color: var(--bg-sidebar);
+}
+
+.profile-switch-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+}
+
+.profile-switch-name {
+    font-weight: 600;
+}
+
+.profile-switch-type {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.profile-switch-check {
+    color: #22c55e;
+    font-size: 0.8rem;
 }
 
 #profile-chevron {

@@ -2,10 +2,30 @@ const kubitdb = require('kubitdb');
 const db = new kubitdb();
 
 module.exports = function () {
+  if (!db.has("name")) {
+    db.set("name", "Default");
+  }
+
   if(!db.has("type")) {
     db.set("type", "local");
   }
+
+  if (!db.has("config")) {
+    db.set("config", {});
+  }
+
+  if (!db.has("write")) {
+    db.set("write", true);
+  }
+
   if(!db.has("hosts")) db.set("hosts", []);
+  if(!db.has("tags")) db.set("tags", []);
+  if(!db.has("knownHosts")) db.set("knownHosts", []);
+
+  if (!db.has("ai")) {
+    db.set("ai", { method: 'GET', url: '', headers: {} });
+  }
+
   if (!db.has('terminalSettings')) {
     db.set("terminalSettings", {
       cursorBlink: true,

@@ -52,10 +52,15 @@ const Drawer = {
 window.Drawer = Drawer;
 
 const ProfileManager = {
+    profiles: [],
+    activeProfileId: null,
+
     init() {
         this.profileBtn = document.getElementById('profile-btn');
         this.profileMenu = document.getElementById('profile-menu');
+        this.profileList = document.getElementById('profile-list');
         this.chevron = document.getElementById('profile-chevron');
+        this.profileName = document.querySelector('.profile-name');
         this.createUserBtn = document.getElementById('create-user-btn');
 
         if (this.profileBtn) {
@@ -78,6 +83,101 @@ const ProfileManager = {
                 this.closeMenu();
                 this.openCreateUserTab();
             });
+        }
+
+        this.refreshProfiles();
+    },
+
+    async refreshProfiles() {
+        if (!window.electronAPI || !window.electronAPI.profiles || !window.electronAPI.profiles.getProfiles) {
+            return;
+        }
+
+        try {
+            const payload = await window.electronAPI.profiles.getProfiles();
+            this.profiles = Array.isArray(payload.profiles) ? payload.profiles : [];
+            this.activeProfileId = payload.activeProfileId || null;
+            this.renderProfiles();
+        } catch (err) {
+            console.error('Failed to load profiles:', err);
+        }
+    },
+
+    renderProfiles() {
+        if (!this.profileList) return;
+        this.profileList.innerHTML = '';
+
+        if (!this.profiles.length) {
+            this.profileList.innerHTML = '<div class="profile-menu-empty">No profiles found</div>';
+            if (this.profileName) this.profileName.textContent = 'User';
+            return;
+        }
+
+        const activeProfile = this.profiles.find(profile => profile.id === this.activeProfileId) || this.profiles[0];
+        if (this.profileName) this.profileName.textContent = activeProfile.name || 'User';
+
+        this.profiles.forEach(profile => {
+            const isActive = profile.id === activeProfile.id;
+            const row = document.createElement('button');
+            row.type = 'button';
+            row.className = `profile-menu-item profile-switch-item${isActive ? ' active' : ''}`;
+            row.dataset.profileId = profile.id;
+
+            const icon = profile.type === 'firebase' ? 'fa-cloud' : 'fa-database';
+            const storageLabel = profile.type === 'firebase' ? 'Firebase' : 'Local';
+            const iconEl = document.createElement('i');
+            iconEl.className = `fa-solid ${icon}`;
+
+            const metaEl = document.createElement('div');
+            metaEl.className = 'profile-switch-meta';
+
+            const nameEl = document.createElement('span');
+            nameEl.className = 'profile-switch-name';
+            nameEl.textContent = profile.name || 'Unnamed';
+
+            const typeEl = document.createElement('span');
+            typeEl.className = 'profile-switch-type';
+            typeEl.textContent = storageLabel;
+
+            metaEl.appendChild(nameEl);
+            metaEl.appendChild(typeEl);
+
+            row.appendChild(iconEl);
+            row.appendChild(metaEl);
+
+            if (isActive) {
+                const checkEl = document.createElement('i');
+                checkEl.className = 'fa-solid fa-check profile-switch-check';
+                row.appendChild(checkEl);
+            }
+
+            row.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                if (isActive) {
+                    this.closeMenu();
+                    return;
+                }
+                await this.switchProfile(profile.id);
+            });
+
+            this.profileList.appendChild(row);
+        });
+    },
+
+    async switchProfile(profileId) {
+        try {
+            this.closeMenu();
+            const result = await window.electronAPI.profiles.switchProfile(profileId);
+            if (result && result.success) {
+                if (result.firebaseSync && result.firebaseSync.success === false) {
+                    alert('Profile switched, but Firebase pull failed: ' + result.firebaseSync.message);
+                }
+                window.location.reload();
+                return;
+            }
+            alert(result && result.message ? result.message : 'Profile switch failed.');
+        } catch (err) {
+            alert('Profile switch failed: ' + err.message);
         }
     },
 

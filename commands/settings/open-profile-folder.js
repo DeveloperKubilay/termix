@@ -1,10 +1,9 @@
 const { exec } = require('child_process');
-const path = require('path');
 const fs = require('fs');
+const profileManager = require('../../util/profile-manager');
 
 module.exports = async function () {
-    // Path to where profiles are stored: ../profiles/profiles relative to this file
-    const profilesDir = path.resolve(__dirname, '..', 'profiles', 'profiles');
+    const profilesDir = profileManager.paths.profilesDir;
     
     if (!fs.existsSync(profilesDir)) {
          fs.mkdirSync(profilesDir, { recursive: true });
