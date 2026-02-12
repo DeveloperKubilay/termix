@@ -1,55 +1,115 @@
-var firebase = require("firebase/app");
-var firestore = require("firebase/firestore");
+const { initializeApp, getApps } = require('firebase/app');
+const {
+    getFirestore,
+    collection,
+    getDocs,
+    addDoc,
+    deleteDoc,
+    doc
+} = require('firebase/firestore');
 const kubitdb = require('kubitdb');
+
 const db = new kubitdb();
 
+function getProfileFirebaseConfig() {
+    const config = db.get('config') || {};
+    const {
+        collectionName = 'hosts',
+        tagsCollectionName = 'tags',
+        ...firebaseConfig
+    } = config;
 
-async function getDir(collectionName) {
-    let querySnapshot = await firestore.getDocs(firestore.collection(db, collectionName));
-    if (querySnapshot.empty) return db.clear()
-    querySnapshot = querySnapshot.map(doc => doc.data());
+    return {
+        firebaseConfig,
+        collectionName,
+        tagsCollectionName
+    };
 }
 
-async function removeDir(collectionName) {
-    let querySnapshot = await firestore.getDocs(firestore.collection(db, collectionName));
-    if (querySnapshot.empty) return;
-    for (const doc of querySnapshot) {
-        await firestore.deleteDoc(firestore.doc(db, collectionName, doc.id));
+function getFirebaseApp(firebaseConfig) {
+    if (!firebaseConfig || typeof firebaseConfig !== 'object' || Object.keys(firebaseConfig).length === 0) {
+        throw new Error('Firebase configuration is missing.');
+    }
+
+    const profileName = String(db.get('name') || 'profile').replace(/[^a-zA-Z0-9-_]/g, '-');
+    const appName = `termix-${profileName}`;
+    const existing = getApps().find(app => app.name === appName);
+    return existing || initializeApp(firebaseConfig, appName);
+}
+
+async function readCollection(firestoreDb, collectionName) {
+    const snapshot = await getDocs(collection(firestoreDb, collectionName));
+    return snapshot.docs.map(item => item.data());
+}
+
+async function clearCollection(firestoreDb, collectionName) {
+    const snapshot = await getDocs(collection(firestoreDb, collectionName));
+    for (const item of snapshot.docs) {
+        await deleteDoc(doc(firestoreDb, collectionName, item.id));
     }
 }
 
-async function pushDir(collectionName, data) {
+async function writeCollection(firestoreDb, collectionName, data = []) {
     for (const item of data) {
-        await firestore.addDoc(firestore.collection(db, collectionName), item)
+        await addDoc(collection(firestoreDb, collectionName), item);
     }
+}
+
+function normalizeTagDocuments(items = []) {
+    return items
+        .map(item => {
+            if (typeof item === 'string') return item;
+            if (item && typeof item.value === 'string') return item.value;
+            if (item && typeof item.tag === 'string') return item.tag;
+
+            if (item && typeof item === 'object') {
+                const values = Object.values(item).filter(value => typeof value === 'string');
+                if (values.length === 1) return values[0];
+            }
+
+            return null;
+        })
+        .filter(Boolean);
 }
 
 module.exports = async function (upload) {
-    try {
-        const dbProfile = db.get("config");
-        const write = db.get("write") || false;
-
-        var app = firebase.initializeApp(dbProfile);
-        var db = firestore.getFirestore(app);
-
-        if (upload) {
-            await removeDir(dbProfile.collectionName || "vms")
-            await removeDir(dbProfile.tagsCollectionName || "tags")
-
-            await pushDir(dbProfile.collectionName || "vms", db.get("vms") || [])
-            await pushDir(dbProfile.tagsCollectionName || "tags", db.get("tags") || [])
-            return;
-        }
-
-        const vms = await getDir(dbProfile.collectionName || "vms")
-        const tags = await getDir(dbProfile.tagsCollectionName || "tags")
-
-        db.clear()
-        db.set("type", "firebase")
-        db.set("write", write)
-        db.set("vms", vms)
-        db.set("tags", tags)
-    } catch {
-        return -1
+    const type = db.get('type');
+    if (type !== 'firebase') {
+        throw new Error('Active profile is not configured for Firebase.');
     }
-}
+
+    const { firebaseConfig, collectionName, tagsCollectionName } = getProfileFirebaseConfig();
+    const app = getFirebaseApp(firebaseConfig);
+    const firestoreDb = getFirestore(app);
+
+    if (upload) {
+        const hosts = db.get('hosts') || db.get('vms') || [];
+        const tags = db.get('tags') || [];
+
+        await clearCollection(firestoreDb, collectionName);
+        await clearCollection(firestoreDb, tagsCollectionName);
+
+        await writeCollection(firestoreDb, collectionName, hosts);
+        await writeCollection(
+            firestoreDb,
+            tagsCollectionName,
+            tags.map(tag => ({ value: tag }))
+        );
+
+        return { success: true, mode: 'push' };
+    }
+
+    const hosts = await readCollection(firestoreDb, collectionName);
+    const tagDocs = await readCollection(firestoreDb, tagsCollectionName);
+    const tags = normalizeTagDocuments(tagDocs);
+
+    db.set('hosts', hosts);
+    db.set('tags', tags);
+
+    return {
+        success: true,
+        mode: 'pull',
+        hostsCount: hosts.length,
+        tagsCount: tags.length
+    };
+};

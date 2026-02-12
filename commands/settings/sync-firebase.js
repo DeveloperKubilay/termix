@@ -1,6 +1,7 @@
 const firebase = require('../../util/firebase');
 const kubitdb = require('kubitdb');
 const db = new kubitdb();
+const profileManager = require('../../util/profile-manager');
 
 module.exports = async function (filesPath, action) {
     const type = db.get("type");
@@ -8,15 +9,19 @@ module.exports = async function (filesPath, action) {
     if (type !== 'firebase') {
         throw new Error("Only available for Firebase users.");
     }
+
+    if (action !== 'push' && action !== 'pull') {
+        throw new Error("Invalid action. Use 'push' or 'pull'.");
+    }
     
     try {
         if (action === 'push') {
             await firebase(true);
+            profileManager.persistActiveProfileData();
             return { success: true, message: "Data pushed to Firebase successfully." };
         } else {
-            // Pull
             await firebase(false);
-            // After pulling, the kubitdb.json is updated.
+            profileManager.persistActiveProfileData();
             return { success: true, message: "Data fetched from Firebase successfully." };
         }
     } catch (err) {

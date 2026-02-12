@@ -1,8 +1,8 @@
 const { app, BrowserWindow, screen } = require('electron');
 const path = require('path');
-const fs = require('fs');
 
 const { loadIPC } = require('./util/ipc-loader');
+const profileManager = require('./util/profile-manager');
 
 app.whenReady().then(() => {
   main();
@@ -14,11 +14,18 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-const profilesDir = path.join(__dirname, 'profiles');
-if (!fs.existsSync(profilesDir)) fs.mkdirSync(profilesDir, { recursive: true });
-
+profileManager.ensureInitialized();
 const db = require("./util/startDb")();
+profileManager.persistActiveProfileData();
 global.Terminals = {}
+
+app.on('before-quit', () => {
+  try {
+    profileManager.persistActiveProfileData();
+  } catch (err) {
+    console.error('Failed to persist active profile:', err);
+  }
+});
 
 function main() {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;

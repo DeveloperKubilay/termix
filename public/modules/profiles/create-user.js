@@ -93,8 +93,16 @@
                 const result = await window.electronAPI.profiles.createProfile(payload);
                 if (result.success) {
                     alert(result.message);
-                    // Close tab or reset form?
-                    // For now, clear name
+                    if (window.ProfileManager && window.ProfileManager.refreshProfiles) {
+                        await window.ProfileManager.refreshProfiles();
+                    }
+                    if (result.firebaseSync && result.firebaseSync.success === false) {
+                        alert('Profile created, but Firebase pull failed: ' + result.firebaseSync.message);
+                    }
+                    if (result.switched) {
+                        window.location.reload();
+                        return;
+                    }
                     nameInput.value = '';
                 } else {
                     alert('Error creating profile');
