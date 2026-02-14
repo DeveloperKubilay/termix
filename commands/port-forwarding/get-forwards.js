@@ -21,7 +21,7 @@ function mapHost(host) {
 }
 
 module.exports = async () => {
-    const forwards = getArray('portForwards');
+    const forwards = manager.listForwards();
     const hosts = getArray('hosts');
 
     return forwards

@@ -1,4 +1,5 @@
 const kubitdb = require('kubitdb');
+const manager = require('../../util/port-forwarding/manager');
 
 const db = new kubitdb();
 
@@ -22,7 +23,6 @@ function normalizePort(value) {
 
 module.exports = async (filesPath, payload = {}) => {
     try {
-        const forwards = getArray('portForwards');
         const hosts = getArray('hosts');
 
         const selectedHost = hosts.find((host) => String(host.id) === String(payload.hostId));
@@ -43,18 +43,13 @@ module.exports = async (filesPath, payload = {}) => {
             return { success: false, message: 'Local port must be between 1 and 65535.' };
         }
 
-        const now = Date.now();
-        const generatedId = now + Math.floor(Math.random() * 1000);
-        const id = payload.id ? Number(payload.id) : generatedId;
+        const id = payload.id ? Number(payload.id) : undefined;
 
-        if (!Number.isFinite(id)) {
+        if (payload.id != null && !Number.isFinite(id)) {
             return { success: false, message: 'Forward id is invalid.' };
         }
 
-        const conflict = forwards.find((item) => {
-            if (String(item.id) === String(id)) return false;
-            return normalizeHost(item.localHost, '127.0.0.1') === localHost && Number(item.localPort) === localPort;
-        });
+        const conflict = manager.hasLocalConflict(localHost, localPort, id);
 
         if (conflict) {
             return {
@@ -63,27 +58,14 @@ module.exports = async (filesPath, payload = {}) => {
             };
         }
 
-        const existingIndex = forwards.findIndex((item) => String(item.id) === String(id));
-        const createdAt = existingIndex >= 0 ? Number(forwards[existingIndex].createdAt || now) : now;
-
-        const nextForward = {
+        const nextForward = manager.saveForward({
             id,
             hostId: selectedHost.id,
             remoteHost,
             remotePort,
             localHost,
-            localPort,
-            createdAt,
-            updatedAt: now
-        };
-
-        if (existingIndex >= 0) {
-            forwards[existingIndex] = nextForward;
-        } else {
-            forwards.push(nextForward);
-        }
-
-        db.set('portForwards', forwards);
+            localPort
+        });
 
         return {
             success: true,

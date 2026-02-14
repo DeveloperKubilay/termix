@@ -69,9 +69,7 @@
             const runtime = forward.runtime || { status: 'stopped', message: 'Stopped' };
             const status = runtime.status || 'stopped';
             const statusClass = ['active', 'starting', 'error'].includes(status) ? status : 'stopped';
-            const startStopLabel = status === 'active' ? 'Stop' : 'Start';
-            const startStopIcon = status === 'active' ? 'fa-stop' : 'fa-play';
-            const startStopAction = status === 'active' ? 'stop' : 'start';
+            const showStart = status !== 'active';
             const tooltip = runtime.message ? escapeHtml(runtime.message) : '';
 
             const icon = host ? host.icon : 'fa-solid fa-server';
@@ -102,9 +100,11 @@
                     </td>
                     <td style="text-align: right;">
                         <div class="pf-row-actions">
-                            <button class="pf-action-btn" data-action="${startStopAction}" data-id="${forward.id}">
-                                <i class="fa-solid ${startStopIcon}"></i> ${startStopLabel}
-                            </button>
+                            ${showStart ? `
+                                <button class="pf-action-btn" data-action="start" data-id="${forward.id}">
+                                    <i class="fa-solid fa-play"></i> Start
+                                </button>
+                            ` : ''}
                             <button class="pf-action-btn delete" data-action="delete" data-id="${forward.id}">
                                 <i class="fa-solid fa-trash"></i> Delete
                             </button>
@@ -369,8 +369,6 @@
 
                 if (action === 'start') {
                     result = await api.startForward(id);
-                } else if (action === 'stop') {
-                    result = await api.stopForward(id);
                 } else if (action === 'delete') {
                     result = await api.deleteForward(id);
                 }
