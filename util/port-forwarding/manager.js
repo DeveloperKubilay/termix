@@ -7,6 +7,7 @@ const { decrypt } = require('../crypto');
 
 const db = new kubitdb();
 
+const forwards = new Map();
 const sessions = new Map();
 const states = new Map();
 
@@ -20,9 +21,7 @@ function getArray(key) {
 }
 
 function getForwardById(forwardId) {
-    const normalized = normalizeId(forwardId);
-    const forwards = getArray('portForwards');
-    return forwards.find((item) => normalizeId(item.id) === normalized) || null;
+    return forwards.get(normalizeId(forwardId)) || null;
 }
 
 function getHostById(hostId) {
@@ -73,6 +72,59 @@ function setState(forwardId, patch) {
 function clearState(forwardId) {
     const normalized = normalizeId(forwardId);
     states.delete(normalized);
+}
+
+function normalizeHost(value, fallback = '127.0.0.1') {
+    const out = String(value || '').trim();
+    return out || fallback;
+}
+
+function listForwards() {
+    return Array.from(forwards.values()).sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+}
+
+function hasLocalConflict(localHost, localPort, exceptId) {
+    const normalizedHost = normalizeHost(localHost, '127.0.0.1');
+    const normalizedPort = Number(localPort);
+    const except = exceptId == null ? null : normalizeId(exceptId);
+
+    for (const forward of forwards.values()) {
+        if (except && normalizeId(forward.id) === except) continue;
+        if (normalizeHost(forward.localHost, '127.0.0.1') === normalizedHost && Number(forward.localPort) === normalizedPort) {
+            return forward;
+        }
+    }
+    return null;
+}
+
+function saveForward(payload) {
+    const id = payload && payload.id != null ? payload.id : (Date.now() + Math.floor(Math.random() * 1000));
+    const normalized = normalizeId(id);
+    const existing = getForwardById(normalized);
+    const now = Date.now();
+
+    const nextForward = {
+        id: Number.isFinite(Number(id)) ? Number(id) : id,
+        hostId: payload.hostId,
+        remoteHost: normalizeHost(payload.remoteHost, '127.0.0.1'),
+        remotePort: parsePort(payload.remotePort, 'Remote port'),
+        localHost: normalizeHost(payload.localHost, '127.0.0.1'),
+        localPort: parsePort(payload.localPort, 'Local port'),
+        createdAt: existing ? Number(existing.createdAt || now) : now,
+        updatedAt: now
+    };
+
+    forwards.set(normalized, nextForward);
+
+    if (!states.has(normalized)) {
+        setState(normalized, {
+            status: 'stopped',
+            message: 'Ready',
+            stoppedAt: Date.now()
+        });
+    }
+
+    return nextForward;
 }
 
 function verifyAndPersistHost(host, hashedKey) {
@@ -157,7 +209,15 @@ function closeSocket(server) {
 
         try {
             if (server.listening) {
-                server.close(() => resolve());
+                let resolved = false;
+                const done = () => {
+                    if (resolved) return;
+                    resolved = true;
+                    resolve();
+                };
+
+                server.close(() => done());
+                setTimeout(done, 1500);
             } else {
                 resolve();
             }
@@ -165,6 +225,28 @@ function closeSocket(server) {
             resolve();
         }
     });
+}
+
+function destroySessionTraffic(session) {
+    if (!session) return;
+
+    if (session.localSockets && session.localSockets.size) {
+        for (const socket of session.localSockets) {
+            try {
+                socket.destroy();
+            } catch (_) {}
+        }
+        session.localSockets.clear();
+    }
+
+    if (session.remoteStreams && session.remoteStreams.size) {
+        for (const stream of session.remoteStreams) {
+            try {
+                stream.destroy();
+            } catch (_) {}
+        }
+        session.remoteStreams.clear();
+    }
 }
 
 async function startForward(forwardId) {
@@ -189,7 +271,7 @@ async function startForward(forwardId) {
 
         const forward = getForwardById(normalized);
         if (!forward) {
-            return { success: false, message: 'Forward not found.' };
+            return { success: false, message: 'Forward not found in memory.' };
         }
 
         const host = getHostById(forward.hostId);
@@ -206,7 +288,9 @@ async function startForward(forwardId) {
         const session = {
             id: normalized,
             conn,
-            server: null
+            server: null,
+            localSockets: new Set(),
+            remoteStreams: new Set()
         };
 
         sessions.set(normalized, session);
@@ -227,6 +311,7 @@ async function startForward(forwardId) {
             const fail = async (err) => {
                 const message = err && err.message ? err.message : String(err || 'Unknown error');
 
+                destroySessionTraffic(session);
                 await closeSocket(session.server);
                 try {
                     conn.end();
@@ -266,7 +351,16 @@ async function startForward(forwardId) {
                                 return;
                             }
 
+                            session.remoteStreams.add(stream);
                             localSocket.pipe(stream).pipe(localSocket);
+
+                            localSocket.on('close', () => {
+                                session.localSockets.delete(localSocket);
+                            });
+
+                            stream.on('close', () => {
+                                session.remoteStreams.delete(stream);
+                            });
 
                             localSocket.on('error', () => {
                                 try {
@@ -284,6 +378,13 @@ async function startForward(forwardId) {
                 });
 
                 session.server = server;
+
+                server.on('connection', (localSocket) => {
+                    session.localSockets.add(localSocket);
+                    localSocket.on('close', () => {
+                        session.localSockets.delete(localSocket);
+                    });
+                });
 
                 server.on('error', (err) => {
                     fail(err);
@@ -312,6 +413,7 @@ async function startForward(forwardId) {
                 const activeSession = sessions.get(normalized);
                 if (!activeSession) return;
 
+                destroySessionTraffic(activeSession);
                 await closeSocket(activeSession.server);
                 sessions.delete(normalized);
 
@@ -356,6 +458,7 @@ async function stopForward(forwardId) {
         };
     }
 
+    destroySessionTraffic(session);
     await closeSocket(session.server);
 
     try {
@@ -384,7 +487,19 @@ async function stopAllForwards() {
     }
 }
 
+async function deleteForward(forwardId) {
+    const normalized = normalizeId(forwardId);
+    await stopForward(normalized);
+    forwards.delete(normalized);
+    clearState(normalized);
+    return { success: true };
+}
+
 module.exports = {
+    listForwards,
+    saveForward,
+    hasLocalConflict,
+    deleteForward,
     startForward,
     stopForward,
     stopAllForwards,
