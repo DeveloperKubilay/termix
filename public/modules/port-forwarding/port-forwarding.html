@@ -1,9 +1,355 @@
 <div class="content-area">
-    <h2 class="section-title">Port Forwarding</h2>
-    <div style="padding: 20px;">
-        <button class="btn btn-primary"><i class="fa-solid fa-plus"></i> NEW FORWARD</button>
-        <div style="margin-top: 20px; color: var(--text-muted);">
-            <p>No port forwards configured.</p>
+    <div class="pf-header-row">
+        <h2 class="section-title" style="margin: 0;">Port Forwarding</h2>
+        <div style="display: flex; gap: 10px;">
+            <button class="btn btn-primary" id="btn-refresh-forwards">
+                <i class="fa-solid fa-rotate"></i> Refresh
+            </button>
+            <button class="btn btn-primary" id="btn-new-forward">
+                <i class="fa-solid fa-plus"></i> NEW FORWARD
+            </button>
+        </div>
+    </div>
+
+    <div class="pf-card">
+        <div class="pf-table-wrap">
+            <table class="pf-table">
+                <thead>
+                    <tr>
+                        <th>VDS</th>
+                        <th>Remote</th>
+                        <th>Local</th>
+                        <th>Status</th>
+                        <th style="text-align: right;">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="forwards-table-body">
+                    <tr>
+                        <td colspan="5" class="pf-empty-cell">Loading port forwards...</td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
     </div>
 </div>
+
+<template id="forward-drawer-template">
+    <div class="pf-drawer-layout">
+        <div class="form-section-title">Uzaktan Sunucu</div>
+
+        <div class="form-group">
+            <label>VDS Secimi</label>
+            <div class="pf-host-picker" id="pf-host-picker">
+                <button type="button" class="pf-host-trigger" id="pf-host-trigger">
+                    <div class="pf-host-trigger-icon" id="pf-host-trigger-icon">
+                        <i class="fa-solid fa-server"></i>
+                    </div>
+                    <div class="pf-host-trigger-text" id="pf-host-trigger-text">Bir VDS secin</div>
+                    <i class="fa-solid fa-chevron-down"></i>
+                </button>
+
+                <div class="pf-host-dropdown" id="pf-host-dropdown">
+                    <div class="search-tags pf-host-search">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        <input type="text" id="pf-host-search" placeholder="VDS ara">
+                    </div>
+                    <div class="pf-host-list" id="pf-host-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Uzaktan Host</label>
+            <input type="text" id="pf-remote-host" value="127.0.0.1" placeholder="127.0.0.1">
+        </div>
+
+        <div class="form-group">
+            <label>Uzaktan Port</label>
+            <input type="number" id="pf-remote-port" min="1" max="65535" placeholder="5432">
+        </div>
+
+        <div class="form-section-title">Local Ayarlar</div>
+
+        <div class="form-group">
+            <label>Local Host</label>
+            <input type="text" id="pf-local-host" value="127.0.0.1" placeholder="127.0.0.1">
+        </div>
+
+        <div class="form-group">
+            <label>Local Port</label>
+            <input type="number" id="pf-local-port" min="1" max="65535" placeholder="15432">
+        </div>
+
+        <button class="btn-connect-large btn-drawer-primary" id="pf-add-forward-btn">Ekle</button>
+        <div id="pf-drawer-error" class="pf-error"></div>
+    </div>
+</template>
+
+<style>
+    .pf-header-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+    }
+
+    .pf-card {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.02);
+        overflow: hidden;
+    }
+
+    .pf-table-wrap {
+        overflow-x: auto;
+    }
+
+    .pf-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .pf-table th,
+    .pf-table td {
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border);
+        text-align: left;
+        vertical-align: middle;
+        font-size: 13px;
+    }
+
+    .pf-table th {
+        color: var(--text-muted);
+        font-weight: 600;
+        letter-spacing: 0.2px;
+    }
+
+    .pf-empty-cell {
+        color: var(--text-muted);
+        text-align: center;
+        padding: 28px 10px;
+    }
+
+    .pf-vds {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .pf-vds-icon {
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        flex-shrink: 0;
+        font-size: 14px;
+    }
+
+    .pf-vds-meta {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+    }
+
+    .pf-vds-name {
+        color: var(--text-main);
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .pf-vds-sub {
+        color: var(--text-muted);
+        font-size: 12px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .pf-endpoint {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 12px;
+        background: rgba(0, 0, 0, 0.25);
+        padding: 4px 8px;
+        border-radius: 6px;
+        display: inline-block;
+    }
+
+    .pf-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+
+    .pf-status.active {
+        background: rgba(34, 197, 94, 0.15);
+        color: #22c55e;
+    }
+
+    .pf-status.starting {
+        background: rgba(250, 204, 21, 0.15);
+        color: #facc15;
+    }
+
+    .pf-status.error {
+        background: rgba(239, 68, 68, 0.15);
+        color: #ef4444;
+    }
+
+    .pf-status.stopped {
+        background: rgba(166, 173, 200, 0.15);
+        color: #a6adc8;
+    }
+
+    .pf-row-actions {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+    }
+
+    .pf-action-btn {
+        background: #313244;
+        border: 1px solid #45475a;
+        color: var(--text-main);
+        border-radius: 6px;
+        padding: 6px 10px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .pf-action-btn:hover {
+        background: #3b3e52;
+    }
+
+    .pf-action-btn.delete {
+        color: #f38ba8;
+    }
+
+    .pf-drawer-layout {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        height: 100%;
+    }
+
+    .pf-host-picker {
+        position: relative;
+    }
+
+    .pf-host-trigger {
+        width: 100%;
+        background: #181825;
+        color: var(--text-main);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 8px 10px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        cursor: pointer;
+        text-align: left;
+    }
+
+    .pf-host-trigger-icon {
+        width: 30px;
+        height: 30px;
+        border-radius: 7px;
+        background: #45475a;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        flex-shrink: 0;
+    }
+
+    .pf-host-trigger-text {
+        flex: 1;
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .pf-host-dropdown {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        width: 100%;
+        background: #1e1e2e;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 8px;
+        z-index: 10000;
+        display: none;
+        box-shadow: 0 8px 18px rgba(0, 0, 0, 0.4);
+    }
+
+    .pf-host-dropdown.show {
+        display: block;
+    }
+
+    .pf-host-search {
+        margin-bottom: 8px;
+    }
+
+    .pf-host-list {
+        max-height: 220px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .pf-host-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px;
+        border-radius: 6px;
+        cursor: pointer;
+    }
+
+    .pf-host-item:hover {
+        background: #313244;
+    }
+
+    .pf-host-item-meta {
+        min-width: 0;
+        flex: 1;
+    }
+
+    .pf-host-item-name {
+        font-size: 13px;
+        color: var(--text-main);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .pf-host-item-sub {
+        font-size: 11px;
+        color: var(--text-muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .pf-error {
+        min-height: 18px;
+        margin-top: 8px;
+        font-size: 12px;
+        color: #f38ba8;
+    }
+</style>

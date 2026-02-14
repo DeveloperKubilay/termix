@@ -3,6 +3,7 @@ const path = require('path');
 
 const { loadIPC } = require('./util/ipc-loader');
 const profileManager = require('./util/profile-manager');
+const portForwardManager = require('./util/port-forwarding/manager');
 
 app.whenReady().then(() => {
   main();
@@ -25,6 +26,10 @@ app.on('before-quit', () => {
   } catch (err) {
     console.error('Failed to persist active profile:', err);
   }
+
+  portForwardManager.stopAllForwards().catch((err) => {
+    console.error('Failed to stop active port forwards:', err);
+  });
 });
 
 function main() {
