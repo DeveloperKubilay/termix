@@ -1,5 +1,5 @@
 {
-  "name": "termix",
+  "name": "Termix",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
@@ -8,7 +8,7 @@
     "giiiiiit": "git reset --hard HEAD && git clean -fd"
   },
   "build": {
-    "appId": "com.termix.app",
+    "appId": "com.Termix.app",
     "productName": "Termix",
     "win": {
       "target": "nsis"

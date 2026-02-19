@@ -32,7 +32,7 @@ function getFirebaseApp(firebaseConfig) {
     }
 
     const profileName = String(db.get('name') || 'profile').replace(/[^a-zA-Z0-9-_]/g, '-');
-    const appName = `termix-${profileName}`;
+    const appName = `Termix-${profileName}`;
     const existing = getApps().find(app => app.name === appName);
     return existing || initializeApp(firebaseConfig, appName);
 }
