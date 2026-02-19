@@ -773,7 +773,10 @@
                         address: addressInput.value,
                         port: portInput ? portInput.value : 22,
                         tags: tagList,
-                        certPath: certInput ? (certInput.dataset.fullPath || certInput.value) : ''
+                        certPath: certInput ? (certInput.dataset.fullPath || certInput.value) : '',
+                        ...(hostToEdit && Number.isFinite(Number(hostToEdit.terminalFontSize))
+                            ? { terminalFontSize: Number(hostToEdit.terminalFontSize) }
+                            : {})
                     };
 
                     try {
