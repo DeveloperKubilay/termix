@@ -3,6 +3,7 @@
     const btnNewSnippet = document.getElementById('btn-new-snippet');
     const btnRefreshSnippets = document.getElementById('btn-refresh-snippets');
     const drawerTemplate = document.getElementById('snippet-drawer-template');
+    const useDrawerTemplate = document.getElementById('snippet-use-drawer-template');
     const api = window.electronAPI && window.electronAPI.snippets;
 
     let snippets = [];
@@ -43,6 +44,9 @@
                             <div class="sn-source-badge">${source}</div>
                         </div>
                         <div class="sn-actions">
+                            <button class="sn-action-btn" data-action="use" data-id="${escapeHtml(snippet.id)}">
+                                <i class="fa-solid fa-play"></i> Use
+                            </button>
                             <button class="sn-action-btn" data-action="copy" data-id="${escapeHtml(snippet.id)}">
                                 <i class="fa-solid fa-copy"></i> Copy
                             </button>
@@ -73,6 +77,238 @@
         } catch (err) {
             showListMessage(err && err.message ? err.message : 'Failed to load snippets.', true);
         }
+    }
+
+    async function ensureConnectionModule() {
+        if (window.ConnectionModule) {
+            return true;
+        }
+
+        return new Promise((resolve) => {
+            const script = document.createElement('script');
+            script.src = 'public/modules/connection/connection.js';
+            script.onload = () => resolve(true);
+            script.onerror = () => resolve(false);
+            document.head.appendChild(script);
+        });
+    }
+
+    function normalizeCommandForRun(command) {
+        const value = String(command || '');
+        if (!value) return '\r';
+
+        if (value.endsWith('\r') || value.endsWith('\n')) {
+            return value;
+        }
+
+        return `${value}\r`;
+    }
+
+    async function getVdsHosts() {
+        if (!window.electronAPI || !window.electronAPI.hosts || !window.electronAPI.hosts.getData) {
+            return [];
+        }
+
+        const hosts = await window.electronAPI.hosts.getData();
+        const rows = Array.isArray(hosts) ? hosts : [];
+
+        return rows.filter((host) => String(host && host.protocol ? host.protocol : 'ssh').toUpperCase() === 'SSH');
+    }
+
+    async function runSnippetOnHost(snippet, host) {
+        const hasModule = await ensureConnectionModule();
+        if (!hasModule || !window.ConnectionModule || !window.TabManager) {
+            throw new Error('Connection module is not available.');
+        }
+
+        const tabId = `snippet-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+        const hostTitle = host && (host.name || host.address) ? (host.name || host.address) : 'VDS';
+        const snippetTitle = snippet && snippet.name ? snippet.name : 'Snippet';
+
+        window.TabManager.addTab({
+            id: tabId,
+            title: `${hostTitle} | ${snippetTitle}`,
+            icon: host && host.icon ? host.icon : 'fa-solid fa-terminal',
+            contentHtml: `<div id="terminal-${tabId}" style="height: 100%; width: 100%; background: #1e1e1e; overflow: hidden;"></div>`
+        });
+
+        const sessionObj = await window.ConnectionModule.init(`terminal-${tabId}`, host);
+        if (!sessionObj || !sessionObj.sessionId) {
+            throw new Error('Session could not be created.');
+        }
+
+        const tab = window.TabManager.tabs.find((item) => item.id === tabId);
+        if (tab) tab.sessionObj = sessionObj;
+
+        const payload = normalizeCommandForRun(snippet.command);
+        window.electronAPI.send('term-input', {
+            sessionId: sessionObj.sessionId,
+            data: payload
+        });
+    }
+
+    function openUseDrawer(snippet) {
+        if (!window.Drawer || !useDrawerTemplate) return;
+
+        Drawer.open('Run Snippet', useDrawerTemplate.innerHTML);
+
+        setTimeout(async () => {
+            const commandPreview = document.getElementById('sn-run-command-preview');
+            const hostTrigger = document.getElementById('sn-run-host-trigger');
+            const hostTriggerText = document.getElementById('sn-run-host-trigger-text');
+            const hostTriggerIcon = document.getElementById('sn-run-host-trigger-icon');
+            const hostDropdown = document.getElementById('sn-run-host-dropdown');
+            const hostList = document.getElementById('sn-run-host-list');
+            const hostSearch = document.getElementById('sn-run-host-search');
+            const runBtn = document.getElementById('sn-run-btn');
+            const errorEl = document.getElementById('sn-run-error');
+
+            let vdsHosts = [];
+            let selectedHost = null;
+
+            if (commandPreview) {
+                commandPreview.textContent = String(snippet && snippet.command ? snippet.command : '');
+            }
+
+            function showError(message) {
+                if (!errorEl) return;
+                errorEl.textContent = message || '';
+            }
+
+            function updateSelectedHostUi() {
+                if (!hostTriggerText || !hostTriggerIcon) return;
+
+                if (!selectedHost) {
+                    hostTriggerText.textContent = 'Bir VDS secin';
+                    hostTriggerIcon.innerHTML = '<i class="fa-solid fa-server"></i>';
+                    hostTriggerIcon.style.background = '#45475a';
+                    return;
+                }
+
+                hostTriggerText.textContent = `${selectedHost.name || selectedHost.address} (${selectedHost.username || 'root'}@${selectedHost.address || ''})`;
+                hostTriggerIcon.style.background = selectedHost.color || '#89b4fa';
+                hostTriggerIcon.innerHTML = `<i class="${escapeHtml(selectedHost.icon || 'fa-solid fa-server')}"></i>`;
+            }
+
+            function closeHostDropdown() {
+                if (hostDropdown) hostDropdown.classList.remove('show');
+            }
+
+            function renderHostList(filterText = '') {
+                if (!hostList) return;
+
+                const normalizedFilter = String(filterText || '').toLowerCase().trim();
+                const filtered = vdsHosts.filter((host) => {
+                    const blob = `${host.name || ''} ${host.address || ''} ${host.username || ''}`.toLowerCase();
+                    return blob.includes(normalizedFilter);
+                });
+
+                if (!filtered.length) {
+                    hostList.innerHTML = `
+                        <div class="sn-empty-state" style="padding: 10px;">
+                            ${vdsHosts.length ? 'No host found.' : 'Add an SSH host from Hosts module first.'}
+                        </div>
+                    `;
+                    return;
+                }
+
+                hostList.innerHTML = filtered.map((host) => {
+                    const icon = host.icon || 'fa-solid fa-server';
+                    const color = host.color || '#89b4fa';
+                    const title = host.name || host.address || 'Unnamed';
+                    const subtitle = `${host.username || 'root'}@${host.address || ''}`;
+
+                    return `
+                        <div class="pf-host-item" data-host-id="${escapeHtml(host.id)}">
+                            <div class="pf-vds-icon" style="background: ${escapeHtml(color)};">
+                                <i class="${escapeHtml(icon)}"></i>
+                            </div>
+                            <div class="pf-host-item-meta">
+                                <div class="pf-host-item-name">${escapeHtml(title)}</div>
+                                <div class="pf-host-item-sub">${escapeHtml(subtitle)}</div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            try {
+                vdsHosts = await getVdsHosts();
+            } catch (err) {
+                showError(err && err.message ? err.message : 'Hosts could not be loaded.');
+                vdsHosts = [];
+            }
+
+            renderHostList('');
+            updateSelectedHostUi();
+
+            if (hostTrigger) {
+                hostTrigger.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    if (hostDropdown) hostDropdown.classList.toggle('show');
+                    if (hostSearch) hostSearch.focus();
+                });
+            }
+
+            if (hostSearch) {
+                hostSearch.addEventListener('input', (event) => {
+                    renderHostList(event.target.value);
+                });
+            }
+
+            if (hostList) {
+                hostList.addEventListener('click', (event) => {
+                    const item = event.target.closest('.pf-host-item');
+                    if (!item) return;
+
+                    const found = vdsHosts.find((host) => String(host.id) === String(item.dataset.hostId));
+                    if (!found) return;
+
+                    selectedHost = found;
+                    updateSelectedHostUi();
+                    closeHostDropdown();
+                    if (hostTrigger) hostTrigger.style.borderColor = 'var(--border)';
+                    showError('');
+                });
+            }
+
+            if (window.__snippetsUseHostOutsideClick) {
+                document.removeEventListener('click', window.__snippetsUseHostOutsideClick);
+            }
+            window.__snippetsUseHostOutsideClick = (event) => {
+                if (!hostDropdown || !hostTrigger) return;
+                if (hostDropdown.contains(event.target) || hostTrigger.contains(event.target)) return;
+                closeHostDropdown();
+            };
+            document.addEventListener('click', window.__snippetsUseHostOutsideClick);
+
+            if (runBtn) {
+                runBtn.addEventListener('click', async () => {
+                    showError('');
+                    if (hostTrigger) hostTrigger.style.borderColor = 'var(--border)';
+
+                    if (!selectedHost) {
+                        if (hostTrigger) hostTrigger.style.borderColor = '#f38ba8';
+                        showError('Please select a VDS first.');
+                        return;
+                    }
+
+                    runBtn.disabled = true;
+                    const originalText = runBtn.textContent;
+                    runBtn.textContent = 'Starting...';
+
+                    try {
+                        await runSnippetOnHost(snippet, selectedHost);
+                        Drawer.close();
+                    } catch (err) {
+                        showError(err && err.message ? err.message : 'Snippet could not run.');
+                    } finally {
+                        runBtn.disabled = false;
+                        runBtn.textContent = originalText;
+                    }
+                });
+            }
+        }, 50);
     }
 
     function openCreateDrawer() {
@@ -238,6 +474,11 @@
 
             const snippet = snippets.find((item) => String(item.id) === String(snippetId));
             if (!snippet) return;
+
+            if (action === 'use') {
+                openUseDrawer(snippet);
+                return;
+            }
 
             if (action === 'copy') {
                 try {
