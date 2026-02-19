@@ -1,9 +1,254 @@
 <div class="content-area">
-    <h2 class="section-title">Snippets</h2>
-    <div style="padding: 20px;">
-        <button class="btn btn-primary"><i class="fa-solid fa-plus"></i> NEW SNIPPET</button>
-        <div style="margin-top: 20px; color: var(--text-muted);">
-            <p>No snippets saved. Create reusable command snippets.</p>
+    <div class="sn-header-row">
+        <h2 class="section-title" style="margin: 0;">Snippets</h2>
+        <div style="display: flex; gap: 10px;">
+            <button class="btn btn-primary" id="btn-refresh-snippets">
+                <i class="fa-solid fa-rotate"></i> Refresh
+            </button>
+            <button class="btn btn-primary" id="btn-new-snippet">
+                <i class="fa-solid fa-plus"></i> NEW SNIPPET
+            </button>
+        </div>
+    </div>
+
+    <div class="sn-card">
+        <div id="snippets-list" class="snippets-list">
+            <div class="sn-empty-state">Loading snippets...</div>
         </div>
     </div>
 </div>
+
+<template id="snippet-drawer-template">
+    <div class="sn-drawer-layout">
+        <div class="form-section-title">Ekleme Tipi</div>
+
+        <div class="sn-mode-grid">
+            <label class="sn-mode-card active" id="sn-mode-url-card">
+                <input type="radio" name="snippetMode" value="url" checked style="display: none;">
+                <i class="fa-solid fa-link"></i>
+                <span>URL Secme</span>
+            </label>
+            <label class="sn-mode-card" id="sn-mode-manual-card">
+                <input type="radio" name="snippetMode" value="manual" style="display: none;">
+                <i class="fa-solid fa-keyboard"></i>
+                <span>Kendin Ekle</span>
+            </label>
+        </div>
+
+        <div id="snippet-url-section" class="sn-mode-section">
+            <div class="form-group">
+                <label>JSON URL</label>
+                <input type="text" id="snippet-url-input" placeholder="https://example.com/snippets.json">
+            </div>
+            <p class="sn-help">
+                Desteklenen formatlar: <code>[{ "name": "...", "command": "..." }]</code>, <code>{ "snippets": [...] }</code> veya <code>{ "name": "command" }</code>.
+            </p>
+        </div>
+
+        <div id="snippet-manual-section" class="sn-mode-section" style="display: none;">
+            <div class="form-group">
+                <label>Komut Ismi</label>
+                <input type="text" id="snippet-name-input" placeholder="Restart Nginx">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Komut</label>
+                <textarea id="snippet-command-input" placeholder="sudo systemctl restart nginx"></textarea>
+            </div>
+        </div>
+
+        <button id="snippet-save-btn" class="btn-connect-large btn-drawer-primary">Kaydet</button>
+        <div id="snippet-drawer-status" class="sn-drawer-status"></div>
+    </div>
+</template>
+
+<style>
+    .sn-header-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+    }
+
+    .sn-card {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.02);
+        overflow: hidden;
+    }
+
+    .snippets-list {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .sn-empty-state {
+        color: var(--text-muted);
+        text-align: center;
+        padding: 28px 10px;
+    }
+
+    .sn-item {
+        padding: 14px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .sn-item:last-child {
+        border-bottom: none;
+    }
+
+    .sn-item-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+    }
+
+    .sn-item-title-wrap {
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .sn-item-title {
+        font-weight: 600;
+        color: var(--text-main);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .sn-source-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        border: 1px solid var(--border);
+        color: var(--text-muted);
+        flex-shrink: 0;
+    }
+
+    .sn-actions {
+        display: flex;
+        gap: 8px;
+        flex-shrink: 0;
+    }
+
+    .sn-action-btn {
+        background: #313244;
+        border: 1px solid #45475a;
+        color: var(--text-main);
+        border-radius: 6px;
+        padding: 6px 10px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .sn-action-btn:hover {
+        background: #3b3e52;
+    }
+
+    .sn-action-btn.delete {
+        color: #f38ba8;
+    }
+
+    .sn-command {
+        margin: 0;
+        padding: 10px;
+        background: rgba(0, 0, 0, 0.25);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        color: var(--text-main);
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 12px;
+        font-family: "JetBrains Mono", monospace;
+    }
+
+    .sn-url {
+        font-size: 12px;
+        color: var(--text-muted);
+        word-break: break-all;
+    }
+
+    .sn-drawer-layout {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        height: 100%;
+    }
+
+    .sn-mode-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+    }
+
+    .sn-mode-card {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        cursor: pointer;
+        padding: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        color: var(--text-main);
+        background: transparent;
+        transition: border-color 0.2s, background 0.2s;
+    }
+
+    .sn-mode-card.active {
+        border-color: var(--accent);
+        background: rgba(137, 180, 250, 0.12);
+    }
+
+    .sn-mode-section {
+        margin-top: 2px;
+    }
+
+    #snippet-command-input {
+        width: 100%;
+        min-height: 130px;
+        resize: vertical;
+        background-color: #181825;
+        border: 1px solid var(--border);
+        padding: 10px;
+        border-radius: 6px;
+        color: var(--text-main);
+        outline: none;
+        font-family: "JetBrains Mono", monospace;
+    }
+
+    #snippet-command-input:focus {
+        border-color: var(--accent);
+    }
+
+    .sn-help {
+        color: var(--text-muted);
+        font-size: 12px;
+        line-height: 1.5;
+        margin-top: 6px;
+    }
+
+    .sn-help code {
+        font-family: "JetBrains Mono", monospace;
+        color: #a6e3a1;
+    }
+
+    .sn-drawer-status {
+        min-height: 18px;
+        font-size: 12px;
+        color: #f38ba8;
+        margin-top: 2px;
+    }
+</style>

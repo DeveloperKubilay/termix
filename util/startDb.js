@@ -21,6 +21,7 @@ module.exports = function () {
   if(!db.has("hosts")) db.set("hosts", []);
   if(!db.has("tags")) db.set("tags", []);
   if(!db.has("knownHosts")) db.set("knownHosts", []);
+  if(!db.has("snippets")) db.set("snippets", []);
 
   if (!db.has("ai")) {
     db.set("ai", { method: 'GET', url: '', headers: {} });

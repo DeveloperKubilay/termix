@@ -57,6 +57,7 @@ function normalizeProfileData(data = {}, fallbackName = 'Default') {
     if (!Array.isArray(normalized.hosts)) normalized.hosts = [];
     if (!Array.isArray(normalized.tags)) normalized.tags = [];
     if (!Array.isArray(normalized.knownHosts)) normalized.knownHosts = [];
+    if (!Array.isArray(normalized.snippets)) normalized.snippets = [];
     if (!normalized.ai || typeof normalized.ai !== 'object') {
         normalized.ai = { method: 'GET', url: '', headers: {} };
     }
