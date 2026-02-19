@@ -1,10 +1,13 @@
 window.ConnectionModule = {
     init: async function (containerId, hostInfo) {
         if (!containerId) return;
+        const DEFAULT_TAB_FONT_SCALE = 1.1;
         let isUserDisconnected = false;
         let reconnecting = false;
         const container = document.getElementById(containerId);
         if (!container) return;
+        const tabId = containerId.replace('terminal-', '');
+        let resizeObserver = null;
 
         // Container rengini settings'ten gelen renkle eşle
         const TerminalSettings = await window.electronAPI.connection.getSettings();
@@ -12,11 +15,18 @@ window.ConnectionModule = {
             container.style.backgroundColor = TerminalSettings.theme.background;
         }
 
+        const baseFontSize = Number(TerminalSettings.fontSize) || 14;
+        const defaultTabFontSize = Math.max(6, Math.round((baseFontSize * DEFAULT_TAB_FONT_SCALE) * 10) / 10);
+        const hostFontSize = Number(hostInfo && hostInfo.terminalFontSize);
+        const initialFontSize = Number.isFinite(hostFontSize) && hostFontSize >= 6
+            ? hostFontSize
+            : defaultTabFontSize;
+
         const term = new window.Terminal({
             ...TerminalSettings,
             allowTransparency: true,
             fontFamily: '"JetBrains Mono", Consolas, monospace', // Force prefer JetBrains
-            fontSize: TerminalSettings.fontSize || 14,
+            fontSize: initialFontSize,
             fontWeight: 500
         });
 
@@ -123,6 +133,7 @@ window.ConnectionModule = {
             reconnecting = true;
             try {
                 try { window.electronAPI.send('term-close', { sessionId: currentSessionId }); } catch (_) {}
+                window.removeEventListener('keydown', handleTerminalZoomKeydown);
                 if (resizeObserver) resizeObserver.disconnect();
                 try { term.dispose(); } catch (_) {}
                 try { container.innerHTML = ''; } catch (_) {}
@@ -130,7 +141,6 @@ window.ConnectionModule = {
                 if (window.ConnectionModule && !isUserDisconnected) {
                     const newSession = await window.ConnectionModule.init(containerId, hostInfo);
                     if (!newSession) return;
-                    const tabId = containerId.replace('terminal-', '');
                     if (window.TabManager && window.TabManager.tabs) {
                         const tab = window.TabManager.tabs.find(t => t.id === tabId);
                         if (tab) tab.sessionObj = newSession;
@@ -204,7 +214,7 @@ window.ConnectionModule = {
         }
 
         // ResizeObserver ile container boyut değişimlerini izle (Sidebar aç/kapa dahil)
-        const resizeObserver = new ResizeObserver(() => {
+        resizeObserver = new ResizeObserver(() => {
             // RequestAnimationFrame ile UI thread'i boğmadan resize yap
             requestAnimationFrame(() => sendResize());
         });
@@ -224,28 +234,44 @@ window.ConnectionModule = {
         setTimeout(sendResize, 100);
 
 
-        window.addEventListener('keydown', (e) => {
-            if (e.ctrlKey) {
-                // Ctrl + veya Ctrl = (Numpad + dahil)
-                if (e.key === '=' || e.key === '+' || e.code === 'NumpadAdd') {
-                    e.preventDefault();
-                    term.options.fontSize = term.options.fontSize + 1;
-                    fitAddon.fit();
-                    window.electronAPI.send('term-resize', { sessionId: currentSessionId, cols: term.cols, rows: term.rows });
-                    window.electronAPI.connection.saveSettings({ fontSize: term.options.fontSize });
-                }
-                // Ctrl - (Numpad - dahil)
-                else if (e.key === '-' || e.code === 'NumpadSubtract') {
-                    e.preventDefault();
-                    if (term.options.fontSize > 6) { // Minimum 6px
-                        term.options.fontSize = term.options.fontSize - 1;
-                        fitAddon.fit();
-                        window.electronAPI.send('term-resize', { sessionId: currentSessionId, cols: term.cols, rows: term.rows });
-                        window.electronAPI.connection.saveSettings({ fontSize: term.options.fontSize });
-                    }
-                }
+        const isActiveTerminalTab = () => {
+            if (!window.TabManager || !window.TabManager.activeTabId) return true;
+            return window.TabManager.activeTabId === tabId;
+        };
+
+        const persistHostFontSize = async (fontSize) => {
+            if (!hostInfo || hostInfo.id == null) return;
+            if (!window.electronAPI || !window.electronAPI.hosts || !window.electronAPI.hosts.updateTerminalFontSize) return;
+
+            const parsed = Number(fontSize);
+            if (!Number.isFinite(parsed) || parsed < 6) return;
+
+            try {
+                await window.electronAPI.hosts.updateTerminalFontSize(hostInfo.id, parsed);
+                hostInfo.terminalFontSize = parsed;
+            } catch (err) {
+                console.warn('Failed to persist host terminal font size:', err);
             }
-        });
+        };
+
+        const handleTerminalZoomKeydown = (e) => {
+            if (isUserDisconnected || !e.ctrlKey || !isActiveTerminalTab()) return;
+
+            const isZoomIn = e.key === '=' || e.key === '+' || e.code === 'NumpadAdd';
+            const isZoomOut = e.key === '-' || e.code === 'NumpadSubtract';
+            if (!isZoomIn && !isZoomOut) return;
+
+            const currentFontSize = Number(term.options.fontSize) || 14;
+            const nextFontSize = isZoomIn ? currentFontSize + 1 : currentFontSize - 1;
+            if (nextFontSize < 6) return; // Minimum 6px
+
+            e.preventDefault();
+            term.options.fontSize = nextFontSize;
+            sendResize();
+            persistHostFontSize(nextFontSize);
+        };
+
+        window.addEventListener('keydown', handleTerminalZoomKeydown);
 
         if (TerminalSettings.rightClickCopyPaste) { // Sağ tık ile yapıştırma
             container.addEventListener('contextmenu', (e) => {
@@ -274,6 +300,7 @@ window.ConnectionModule = {
                 clearTimeout(msgTimer);
                 // Observer'ı durdur
                 if (resizeObserver) resizeObserver.disconnect();
+                window.removeEventListener('keydown', handleTerminalZoomKeydown);
                 // Terminali temizle
                 try { term.dispose(); } catch (_) {}
                 // Backend'e kapat isteği gönder (İstenirse)
