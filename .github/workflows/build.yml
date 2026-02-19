@@ -29,7 +29,7 @@ jobs:
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: termix-${{ matrix.os }}
+          name: Termix-${{ matrix.os }}
           path: |
             dist/*.exe
             dist/*.dmg
