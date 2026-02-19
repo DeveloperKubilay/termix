@@ -4,6 +4,7 @@ const path = require('path');
 const { loadIPC } = require('./util/ipc-loader');
 const profileManager = require('./util/profile-manager');
 const portForwardManager = require('./util/port-forwarding/manager');
+const sftpManager = require('./util/sftp/manager');
 
 app.whenReady().then(() => {
   main();
@@ -29,6 +30,10 @@ app.on('before-quit', () => {
 
   portForwardManager.stopAllForwards().catch((err) => {
     console.error('Failed to stop active port forwards:', err);
+  });
+
+  sftpManager.disconnectAll().catch((err) => {
+    console.error('Failed to close active SFTP sessions:', err);
   });
 });
 
