@@ -240,31 +240,57 @@
             base: 'vs-dark',
             inherit: true,
             rules: [
-                { token: 'comment', foreground: '8b949e' },
-                { token: 'keyword', foreground: 'ff7b72' },
+                { token: '', foreground: 'c9d1d9', background: '0d1117' },
+                { token: 'comment', foreground: '8b949e', fontStyle: 'italic' },
                 { token: 'string', foreground: 'a5d6ff' },
+                { token: 'keyword', foreground: 'ff7b72' },
+                { token: 'keyword.control', foreground: 'ff7b72' },
+                { token: 'keyword.operator', foreground: '79c0ff' },
+                { token: 'storage', foreground: 'ff7b72' },
+                { token: 'storage.type', foreground: 'ff7b72' },
+                { token: 'constant', foreground: '79c0ff' },
+                { token: 'constant.numeric', foreground: '79c0ff' },
+                { token: 'constant.language', foreground: '79c0ff' },
                 { token: 'number', foreground: '79c0ff' },
-                { token: 'regexp', foreground: 'a5d6ff' },
+                { token: 'variable', foreground: 'ffa657' },
+                { token: 'variable.parameter', foreground: 'ffa657' },
+                { token: 'variable.other.constant', foreground: '79c0ff' },
+                { token: 'entity.name.function', foreground: 'd2a8ff' },
+                { token: 'entity.name.class', foreground: 'f0883e' },
+                { token: 'entity.name.type', foreground: 'f0883e' },
+                { token: 'entity.name.tag', foreground: '7ee787' },
+                { token: 'entity.other.attribute-name', foreground: '79c0ff' },
+                { token: 'support.function', foreground: '79c0ff' },
+                { token: 'support.constant', foreground: '79c0ff' },
+                { token: 'support.type', foreground: '79c0ff' },
+                { token: 'support.class', foreground: 'f0883e' },
+                { token: 'meta.tag', foreground: 'c9d1d9' },
+                { token: 'meta.tag.attribute.name', foreground: '79c0ff' },
+                { token: 'meta.tag.attribute.value', foreground: 'a5d6ff' },
+                { token: 'invalid', foreground: 'f85149', fontStyle: 'italic underline' },
                 { token: 'delimiter', foreground: 'c9d1d9' },
-                { token: 'type.identifier', foreground: 'ffa657' },
-                { token: 'identifier', foreground: 'c9d1d9' },
-                { token: 'operator', foreground: 'ff7b72' },
-                { token: 'tag', foreground: '7ee787' },
-                { token: 'attribute.name', foreground: '79c0ff' },
-                { token: 'attribute.value', foreground: 'a5d6ff' }
+                { token: 'delimiter.html', foreground: 'c9d1d9' },
+                { token: 'tag.html', foreground: '7ee787' },
+                { token: 'tag.attribute.name.html', foreground: '79c0ff' },
+                { token: 'tag.attribute.value.html', foreground: 'a5d6ff' }
             ],
             colors: {
                 'editor.background': '#0d1117',
-                'editor.foreground': '#e6edf3',
-                'editorLineNumber.foreground': '#6e7681',
-                'editorLineNumber.activeForeground': '#e6edf3',
+                'editor.foreground': '#c9d1d9',
                 'editorCursor.foreground': '#58a6ff',
-                'editor.selectionBackground': '#264f78',
-                'editor.inactiveSelectionBackground': '#264f784d',
-                'editor.lineHighlightBackground': '#161b2233',
-                'editorIndentGuide.background': '#21262d',
-                'editorIndentGuide.activeBackground': '#30363d',
-                'editorGutter.background': '#0d1117'
+                'editor.lineHighlightBackground': '#6e76811a',
+                'editor.selectionBackground': '#1f6feb40',
+                'editor.inactiveSelectionBackground': '#3fb9500a',
+                'editorLineNumber.foreground': '#6e7681',
+                'editorLineNumber.activeForeground': '#c9d1d9',
+                'editorIndentGuide.background': '#c9d1d91a',
+                'editorIndentGuide.activeBackground': '#c9d1d940',
+                'editorWhitespace.foreground': '#484f58',
+                'editorWidget.background': '#161b22',
+                'editorWidget.border': '#30363d',
+                'editorSuggestWidget.background': '#161b22',
+                'editorSuggestWidget.border': '#30363d',
+                'editorSuggestWidget.selectedBackground': '#6e768166'
             }
         });
 
@@ -1234,7 +1260,8 @@
             .sftp-editor-status.success { color: #3fb950; border-color: rgba(63, 185, 80, 0.55); background: rgba(63, 185, 80, 0.14); }
             .sftp-editor-status.error { color: #f85149; border-color: rgba(248, 81, 73, 0.55); background: rgba(248, 81, 73, 0.14); }
             .sftp-editor-status.warning { color: #d29922; border-color: rgba(210, 153, 34, 0.55); background: rgba(210, 153, 34, 0.14); }
-            .sftp-editor-text { flex: 1 1 auto; min-height: 0; width: 100%; resize: none; border: none; outline: none; background: #0d1117; color: #e6edf3; font-family: "JetBrains Mono", monospace; font-size: 12px; line-height: 1.55; padding: 12px; tab-size: 4; font-variant-ligatures: none; white-space: pre; overflow: auto; }
+            .sftp-editor-text { flex: 1 1 auto; min-height: 0; width: 100%; resize: none; border: none; outline: none; background: #0d1117; color: #e6edf3; caret-color: #58a6ff; font-family: "JetBrains Mono", monospace; font-size: 13px; line-height: 1.55; padding: 12px; tab-size: 4; font-variant-ligatures: none; white-space: pre; overflow: auto; }
+            .sftp-editor-text::selection { background: #264f78; }
             .sftp-editor-monaco { flex: 1 1 auto; min-height: 0; width: 100%; background: #0d1117; overflow: hidden; }
             .sftp-editor-monaco .monaco-editor,
             .sftp-editor-monaco .overflow-guard {

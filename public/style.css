@@ -576,6 +576,15 @@ body {
     display: flex;
 }
 
+#module-container {
+    transition: opacity 0.16s ease;
+}
+
+#module-container.dashboard-transition-hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
 /* Xterm scrollbar fix */
 .xterm-viewport::-webkit-scrollbar { display: none; }
 /* Profile Section Styles */

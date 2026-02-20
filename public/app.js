@@ -442,6 +442,7 @@ const TabManager = {
     contentArea: null,
     sidebar: null,
     sidebarToggle: null,
+    dashboardRevealTimer: null,
 
     init() {
         this.tabBar = document.getElementById('tab-bar');
@@ -600,8 +601,46 @@ const TabManager = {
         this.activateTab(id);
     },
 
+    applySidebarStateForTab(id) {
+        if (!this.sidebar) return;
+
+        const shouldCollapse = id !== 'dashboard';
+
+        if (shouldCollapse) {
+            this.sidebar.classList.add('collapsed');
+            if (this.sidebarToggle) this.sidebarToggle.style.display = 'flex';
+        } else {
+            this.sidebar.classList.remove('collapsed');
+            if (this.sidebarToggle) this.sidebarToggle.style.display = 'none';
+        }
+    },
+
     activateTab(id) {
         if (this.activeTabId === id) return;
+
+        const dashboardContent = document.getElementById('module-container');
+        if (this.dashboardRevealTimer) {
+            clearTimeout(this.dashboardRevealTimer);
+            this.dashboardRevealTimer = null;
+        }
+        if (dashboardContent) {
+            dashboardContent.classList.remove('dashboard-transition-hidden');
+        }
+
+        // Keep sidebar animation, but delay dashboard paint until the layout transition settles.
+        const shouldDelayDashboardPaint = id === 'dashboard'
+            && this.sidebar
+            && this.sidebar.classList.contains('collapsed');
+        if (shouldDelayDashboardPaint && dashboardContent) {
+            dashboardContent.classList.add('dashboard-transition-hidden');
+            this.dashboardRevealTimer = setTimeout(() => {
+                dashboardContent.classList.remove('dashboard-transition-hidden');
+                this.dashboardRevealTimer = null;
+            }, 320);
+        }
+
+        // Apply sidebar state first.
+        this.applySidebarStateForTab(id);
 
         // Deactivate current
         const currentTab = this.tabBar.querySelector('.tab.active');
@@ -621,17 +660,6 @@ const TabManager = {
         }
 
         this.activeTabId = id;
-
-        // Auto-collapse sidebar logic
-        if (this.sidebar) {
-            if (id === 'dashboard') {
-                this.sidebar.classList.remove('collapsed');
-                if (this.sidebarToggle) this.sidebarToggle.style.display = 'none';
-            } else {
-                this.sidebar.classList.add('collapsed');
-                if (this.sidebarToggle) this.sidebarToggle.style.display = 'flex';
-            }
-        }
     },
 
     closeTab(id) {
