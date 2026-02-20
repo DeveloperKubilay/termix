@@ -108,6 +108,21 @@
         </div>
     </div>
 
+    <div id="app-notifications" class="app-notify-container" aria-live="polite" aria-atomic="false"></div>
+    <div id="app-confirm-overlay" class="app-confirm-overlay">
+        <div class="app-confirm-box" role="dialog" aria-modal="true" aria-labelledby="app-confirm-title">
+            <div class="app-confirm-header">
+                <i id="app-confirm-icon" class="fa-solid fa-triangle-exclamation"></i>
+                <div id="app-confirm-title">Confirm Action</div>
+            </div>
+            <div id="app-confirm-message" class="app-confirm-message"></div>
+            <div class="app-confirm-actions">
+                <button id="app-confirm-cancel" type="button" class="app-confirm-btn secondary">Cancel</button>
+                <button id="app-confirm-ok" type="button" class="app-confirm-btn danger">Confirm</button>
+            </div>
+        </div>
+    </div>
+
     <script src="public/modules/ai/ai.js"></script>
     <script src="public/app.js"></script>
 </body>

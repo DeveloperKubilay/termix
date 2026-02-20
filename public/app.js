@@ -51,6 +51,204 @@ const Drawer = {
 
 window.Drawer = Drawer;
 
+const AppNotify = {
+    container: null,
+    maxItems: 5,
+
+    init() {
+        this.container = document.getElementById('app-notifications');
+    },
+
+    getDuration(type) {
+        if (type === 'error') return 6000;
+        if (type === 'warning') return 4500;
+        if (type === 'success') return 2200;
+        return 2800;
+    },
+
+    remove(item, immediate = false) {
+        if (!item) return;
+        if (item.dataset && item.dataset.timerId) {
+            clearTimeout(Number(item.dataset.timerId));
+        }
+        if (immediate) {
+            item.remove();
+            return;
+        }
+        item.classList.remove('show');
+        setTimeout(() => item.remove(), 180);
+    },
+
+    show(message, type = 'info', options = {}) {
+        if (!message || options.silent) return;
+        if (!this.container) this.init();
+        if (!this.container) return;
+
+        const normalizedType = ['error', 'warning', 'success', 'info'].includes(type) ? type : 'info';
+        const iconMap = {
+            error: 'fa-circle-exclamation',
+            warning: 'fa-triangle-exclamation',
+            success: 'fa-check-circle',
+            info: 'fa-circle-info'
+        };
+
+        const item = document.createElement('div');
+        item.className = `app-notify ${normalizedType}`;
+        item.innerHTML = `
+            <i class="app-notify-icon fa-solid ${iconMap[normalizedType]}"></i>
+            <div class="app-notify-message"></div>
+            <button type="button" class="app-notify-close" aria-label="Close">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        `;
+
+        const messageEl = item.querySelector('.app-notify-message');
+        if (messageEl) {
+            messageEl.textContent = String(message);
+        }
+
+        const closeBtn = item.querySelector('.app-notify-close');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => this.remove(item));
+        }
+
+        this.container.appendChild(item);
+        requestAnimationFrame(() => item.classList.add('show'));
+
+        while (this.container.children.length > this.maxItems) {
+            this.remove(this.container.firstElementChild, true);
+        }
+
+        if (!options.sticky) {
+            const timerId = setTimeout(
+                () => this.remove(item),
+                typeof options.duration === 'number' ? options.duration : this.getDuration(normalizedType)
+            );
+            item.dataset.timerId = String(timerId);
+        }
+    }
+};
+
+window.AppNotify = AppNotify;
+window.notifyUser = (message, type = 'info', options = {}) => {
+    if (window.AppNotify && typeof window.AppNotify.show === 'function') {
+        window.AppNotify.show(message, type, options);
+        return;
+    }
+    if (type === 'error') {
+        console.error(message);
+        return;
+    }
+    console.log(message);
+};
+
+const AppConfirm = {
+    overlay: null,
+    titleEl: null,
+    messageEl: null,
+    okBtn: null,
+    cancelBtn: null,
+    iconEl: null,
+    resolver: null,
+    keyHandler: null,
+
+    init() {
+        this.overlay = document.getElementById('app-confirm-overlay');
+        this.titleEl = document.getElementById('app-confirm-title');
+        this.messageEl = document.getElementById('app-confirm-message');
+        this.okBtn = document.getElementById('app-confirm-ok');
+        this.cancelBtn = document.getElementById('app-confirm-cancel');
+        this.iconEl = document.getElementById('app-confirm-icon');
+
+        if (!this.overlay || !this.okBtn || !this.cancelBtn) return;
+
+        this.okBtn.addEventListener('click', () => this.close(true));
+        this.cancelBtn.addEventListener('click', () => this.close(false));
+
+        this.overlay.addEventListener('click', (event) => {
+            if (event.target === this.overlay) {
+                this.close(false);
+            }
+        });
+    },
+
+    close(value) {
+        if (!this.overlay) return;
+        this.overlay.classList.remove('show');
+
+        if (this.keyHandler) {
+            document.removeEventListener('keydown', this.keyHandler);
+            this.keyHandler = null;
+        }
+
+        const pending = this.resolver;
+        this.resolver = null;
+        if (pending) pending(Boolean(value));
+    },
+
+    confirm(message, options = {}) {
+        const text = String(message || '').trim();
+        if (!text) return Promise.resolve(false);
+
+        if (!this.overlay) this.init();
+        if (!this.overlay || !this.okBtn || !this.cancelBtn || !this.titleEl || !this.messageEl) {
+            console.warn('AppConfirm UI is unavailable.');
+            return Promise.resolve(false);
+        }
+
+        if (this.resolver) {
+            this.close(false);
+        }
+
+        const title = options.title || 'Confirm';
+        const okText = options.confirmText || 'Confirm';
+        const cancelText = options.cancelText || 'Cancel';
+        const tone = options.tone === 'danger' ? 'danger' : 'info';
+
+        this.titleEl.textContent = title;
+        this.messageEl.textContent = text;
+        this.okBtn.textContent = okText;
+        this.cancelBtn.textContent = cancelText;
+
+        this.okBtn.classList.remove('danger');
+        if (tone === 'danger') {
+            this.okBtn.classList.add('danger');
+            if (this.iconEl) {
+                this.iconEl.className = 'fa-solid fa-triangle-exclamation';
+                this.iconEl.style.color = '#f38ba8';
+            }
+        } else if (this.iconEl) {
+            this.iconEl.className = 'fa-solid fa-circle-question';
+            this.iconEl.style.color = '#89b4fa';
+        }
+
+        this.overlay.classList.add('show');
+
+        return new Promise((resolve) => {
+            this.resolver = resolve;
+            this.keyHandler = (event) => {
+                if (event.key === 'Escape') {
+                    event.preventDefault();
+                    this.close(false);
+                } else if (event.key === 'Enter') {
+                    event.preventDefault();
+                    this.close(true);
+                }
+            };
+            document.addEventListener('keydown', this.keyHandler);
+            setTimeout(() => this.okBtn.focus(), 0);
+        });
+    }
+};
+
+window.AppConfirm = AppConfirm;
+window.confirmAction = (message, options = {}) => {
+    if (window.AppConfirm && typeof window.AppConfirm.confirm === 'function') {
+        return window.AppConfirm.confirm(message, options);
+    }
+    return Promise.resolve(false);
+};
+
 const ProfileManager = {
     profiles: [],
     activeProfileId: null,
@@ -170,14 +368,14 @@ const ProfileManager = {
             const result = await window.electronAPI.profiles.switchProfile(profileId);
             if (result && result.success) {
                 if (result.firebaseSync && result.firebaseSync.success === false) {
-                    alert('Profile switched, but Firebase pull failed: ' + result.firebaseSync.message);
+                    window.notifyUser('Profile switched, but Firebase pull failed: ' + result.firebaseSync.message, 'warning');
                 }
                 window.location.reload();
                 return;
             }
-            alert(result && result.message ? result.message : 'Profile switch failed.');
+            window.notifyUser(result && result.message ? result.message : 'Profile switch failed.', 'error');
         } catch (err) {
-            alert('Profile switch failed: ' + err.message);
+            window.notifyUser('Profile switch failed: ' + err.message, 'error');
         }
     },
 
@@ -543,6 +741,8 @@ window.ModuleLoader = ModuleLoader;
 
 document.addEventListener('DOMContentLoaded', () => {
     Drawer.init();
+    AppNotify.init();
+    AppConfirm.init();
     TabManager.init();
     ModuleLoader.init();
     if (window.AiManager) window.AiManager.init();

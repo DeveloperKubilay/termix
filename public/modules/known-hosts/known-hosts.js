@@ -43,18 +43,15 @@
     };
 
     window.deleteKnownHost = async (address, port) => {
-        // Removed confirmation dialog as requested
-        // if (!confirm(...)) return;
-
         try {
             const result = await window.electronAPI['known-hosts'].deleteHost({ address, port });
             if (result.success) {
                 loadKnownHosts();
             } else {
-                alert('Failed to delete host: ' + result.message);
+                window.notifyUser('Failed to delete host: ' + result.message, 'error');
             }
         } catch (err) {
-            alert('Error: ' + err.message);
+            window.notifyUser('Error: ' + err.message, 'error');
         }
     };
 

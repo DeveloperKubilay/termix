@@ -737,7 +737,12 @@
             if (!connected) return;
         }
 
-        const sure = window.confirm(`${selected.length} oge silinsin mi?`);
+        const sure = await window.confirmAction(`${selected.length} oge silinsin mi?`, {
+            title: 'Silme Onayi',
+            confirmText: 'Sil',
+            cancelText: 'Vazgec',
+            tone: 'danger'
+        });
         if (!sure) return;
 
         const result = await sftpApi.deleteItems({

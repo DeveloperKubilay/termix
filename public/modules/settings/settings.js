@@ -59,7 +59,7 @@
             const newTags = await window.electronAPI.hosts.deleteTag(tag);
             renderTags(newTags);
         } catch (err) {
-            alert('Failed to delete tag: ' + err.message);
+            window.notifyUser('Failed to delete tag: ' + err.message, 'error');
         }
     };
 
@@ -79,7 +79,12 @@
         aiHeaders.style.borderColor = 'var(--border)';
 
         // Validate URL
-        const urlVal = aiUrl.value.trim();
+        let urlVal = aiUrl.value.trim();
+        if (urlVal && !/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(urlVal)) {
+            urlVal = `http://${urlVal}`;
+            aiUrl.value = urlVal;
+        }
+
         if (urlVal) {
             try {
                 new URL(urlVal);
@@ -156,26 +161,44 @@
 
     // Firebase Sync
     document.getElementById('btn-sync-pull').addEventListener('click', async () => {
-        if (!confirm('This will overwrite your local data with data from Firebase. Continue?')) return;
+        const approved = await window.confirmAction(
+            'This will overwrite your local data with data from Firebase. Continue?',
+            {
+                title: 'Firebase Pull',
+                confirmText: 'Pull Data',
+                cancelText: 'Cancel',
+                tone: 'danger'
+            }
+        );
+        if (!approved) return;
         try {
             const res = await window.electronAPI.settings.syncFirebase('pull');
-            alert(res.message);
+            window.notifyUser(res.message, res && res.success ? 'success' : 'error');
             if(res.success) {
                 // If pull is successful, we should probably update the UI tag list etc if the page isn't reloaded
                 loadSettings(); 
             }
         } catch (e) {
-            alert('Sync error: ' + e.message);
+            window.notifyUser('Sync error: ' + e.message, 'error');
         }
     });
 
     document.getElementById('btn-sync-push').addEventListener('click', async () => {
-        if (!confirm('This will overwrite Firebase data with your local data. Continue?')) return;
+        const approved = await window.confirmAction(
+            'This will overwrite Firebase data with your local data. Continue?',
+            {
+                title: 'Firebase Push',
+                confirmText: 'Push Data',
+                cancelText: 'Cancel',
+                tone: 'danger'
+            }
+        );
+        if (!approved) return;
         try {
             const res = await window.electronAPI.settings.syncFirebase('push');
-            alert(res.message);
+            window.notifyUser(res.message, res && res.success ? 'success' : 'error');
         } catch (e) {
-            alert('Sync error: ' + e.message);
+            window.notifyUser('Sync error: ' + e.message, 'error');
         }
     });
 
