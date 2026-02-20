@@ -85,6 +85,38 @@
             </div>
         </section>
     </div>
+
+    <div id="sftp-context-menu" class="sftp-context-menu" role="menu" aria-label="Dosya Islemleri">
+        <button type="button" class="sftp-context-action" data-action="create-directory">
+            <i class="fa-solid fa-folder-plus"></i>
+            <span>Yeni klasor</span>
+        </button>
+        <button type="button" class="sftp-context-action" data-action="create-file">
+            <i class="fa-regular fa-file-lines"></i>
+            <span>Yeni dosya</span>
+        </button>
+        <div class="sftp-context-sep"></div>
+        <button type="button" class="sftp-context-action" data-action="rename">
+            <i class="fa-solid fa-i-cursor"></i>
+            <span>Yeniden adlandir</span>
+        </button>
+        <button type="button" class="sftp-context-action danger" data-action="delete">
+            <i class="fa-solid fa-trash"></i>
+            <span>Sil</span>
+        </button>
+    </div>
+
+    <div id="sftp-rename-overlay" class="sftp-rename-overlay">
+        <div class="sftp-rename-dialog" role="dialog" aria-modal="true" aria-labelledby="sftp-rename-title">
+            <div id="sftp-rename-title" class="sftp-rename-title">Yeniden adlandir</div>
+            <div id="sftp-rename-path" class="sftp-rename-path"></div>
+            <input id="sftp-rename-input" type="text" spellcheck="false" autocomplete="off" />
+            <div class="sftp-rename-actions">
+                <button id="sftp-rename-cancel" type="button" class="app-confirm-btn secondary">Vazgec</button>
+                <button id="sftp-rename-confirm" type="button" class="app-confirm-btn">Kaydet</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <style>
@@ -326,6 +358,12 @@
         min-width: 0;
     }
 
+    .sftp-file-name i {
+        width: 14px;
+        text-align: center;
+        flex-shrink: 0;
+    }
+
     .sftp-file-name .label {
         min-width: 0;
         white-space: nowrap;
@@ -470,5 +508,118 @@
     .sftp-host-sub {
         font-size: 11px;
         color: var(--text-muted);
+    }
+
+    .sftp-context-menu {
+        position: fixed;
+        display: none;
+        min-width: 180px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: #1e1e2e;
+        box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
+        padding: 6px;
+        z-index: 30;
+    }
+
+    .sftp-context-menu.show {
+        display: block;
+    }
+
+    .sftp-context-action {
+        width: 100%;
+        border: none;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--text-main);
+        padding: 9px 10px;
+        font-size: 12px;
+        text-align: left;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        cursor: pointer;
+    }
+
+    .sftp-context-action:hover {
+        background: #313244;
+    }
+
+    .sftp-context-action i {
+        width: 14px;
+        text-align: center;
+    }
+
+    .sftp-context-action.danger {
+        color: #f38ba8;
+    }
+
+    .sftp-context-sep {
+        height: 1px;
+        background: rgba(137, 180, 250, 0.25);
+        margin: 4px 2px;
+    }
+
+    .sftp-rename-overlay {
+        position: absolute;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: rgba(17, 17, 27, 0.78);
+        z-index: 22;
+        padding: 16px;
+    }
+
+    .sftp-rename-overlay.show {
+        display: flex;
+    }
+
+    .sftp-rename-dialog {
+        width: min(420px, 100%);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: #1e1e2e;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.42);
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .sftp-rename-title {
+        font-size: 14px;
+        font-weight: 600;
+    }
+
+    .sftp-rename-path {
+        color: var(--text-muted);
+        font-size: 11px;
+        font-family: "JetBrains Mono", monospace;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    #sftp-rename-input {
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        outline: none;
+        background: #181825;
+        color: var(--text-main);
+        padding: 9px 10px;
+        font-size: 13px;
+        font-family: "JetBrains Mono", monospace;
+    }
+
+    #sftp-rename-input:focus {
+        border-color: var(--accent);
+    }
+
+    .sftp-rename-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
     }
 </style>

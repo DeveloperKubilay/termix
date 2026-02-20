@@ -52,6 +52,37 @@ function isNoSuchFileError(err) {
     return message.includes('no such file');
 }
 
+function sanitizeEntryName(rawValue) {
+    const value = String(rawValue || '').trim();
+
+    if (!value) {
+        throw new Error('Name is required.');
+    }
+
+    if (value === '.' || value === '..') {
+        throw new Error('Invalid name.');
+    }
+
+    if (value.includes('/') || value.includes('\\')) {
+        throw new Error('Name cannot include path separator.');
+    }
+
+    if (value.includes('\0')) {
+        throw new Error('Name contains invalid characters.');
+    }
+
+    if (process.platform === 'win32') {
+        if (/[<>:"|?*]/.test(value)) {
+            throw new Error('Name contains invalid Windows characters.');
+        }
+        if (/[. ]$/.test(value)) {
+            throw new Error('Name cannot end with dot or space on Windows.');
+        }
+    }
+
+    return value;
+}
+
 function trimTrailingSeparator(value, separator) {
     if (!value) return value;
     const sep = separator || path.sep;
@@ -310,6 +341,93 @@ function sftpUnlink(sftp, targetPath) {
             }
             resolve();
         });
+    });
+}
+
+function sftpRename(sftp, sourcePath, destinationPath) {
+    return new Promise((resolve, reject) => {
+        sftp.rename(sourcePath, destinationPath, (err) => {
+            if (err) {
+                reject(err);
+                return;
+            }
+            resolve();
+        });
+    });
+}
+
+function sftpReadFileBuffer(sftp, targetPath, maxBytes = null) {
+    return new Promise((resolve, reject) => {
+        const stream = sftp.createReadStream(targetPath);
+        const chunks = [];
+        let total = 0;
+        let settled = false;
+
+        const finish = (err, buffer = null) => {
+            if (settled) return;
+            settled = true;
+            if (err) {
+                reject(err);
+                return;
+            }
+            resolve(buffer || Buffer.alloc(0));
+        };
+
+        stream.on('data', (chunk) => {
+            const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+            total += data.length;
+            if (maxBytes != null && total > Number(maxBytes)) {
+                const err = new Error('File is larger than allowed limit.');
+                err.code = 'FILE_TOO_LARGE';
+                stream.destroy(err);
+                return;
+            }
+            chunks.push(data);
+        });
+
+        stream.on('error', (err) => finish(err));
+        stream.on('end', () => finish(null, Buffer.concat(chunks)));
+    });
+}
+
+function sftpWriteTextFile(sftp, targetPath, content) {
+    return new Promise((resolve, reject) => {
+        const stream = sftp.createWriteStream(targetPath, { flags: 'w' });
+        let settled = false;
+        let finished = false;
+        const timeout = setTimeout(() => {
+            const err = new Error('Write operation timed out.');
+            err.code = 'WRITE_TIMEOUT';
+            try { stream.destroy(err); } catch (_) {}
+            finish(err);
+        }, 20000);
+
+        const finish = (err) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeout);
+            if (err) {
+                reject(err);
+                return;
+            }
+            resolve();
+        };
+
+        stream.on('error', (err) => finish(err));
+        stream.on('finish', () => {
+            finished = true;
+            finish();
+        });
+        stream.on('close', () => {
+            if (finished) return;
+            finish();
+        });
+
+        try {
+            stream.end(String(content || ''), 'utf8');
+        } catch (err) {
+            finish(err);
+        }
     });
 }
 
@@ -848,6 +966,302 @@ async function listDirectory(payload = {}) {
     }
 }
 
+async function createDirectory(payload = {}) {
+    try {
+        const side = normalizeSide(payload.side);
+        const name = sanitizeEntryName(payload.name);
+
+        if (side === 'local') {
+            const parentPath = normalizeLocalPath(payload.parentPath);
+            const parentStats = await fs.promises.stat(parentPath);
+            if (!parentStats.isDirectory()) {
+                throw new Error('Parent local path must be a folder.');
+            }
+
+            const targetPath = path.join(parentPath, name);
+            if (await localExists(targetPath)) {
+                throw new Error('A file or folder with this name already exists.');
+            }
+
+            await fs.promises.mkdir(targetPath);
+
+            return {
+                success: true,
+                side: 'local',
+                path: targetPath
+            };
+        }
+
+        const session = getSession(payload.sessionId);
+        touchSession(session);
+
+        const parentPath = normalizeRemotePath(payload.parentPath, session.homePath || '/');
+        const parentStats = await sftpStat(session.sftp, parentPath);
+        if (!attrsIsDirectory(parentStats)) {
+            throw new Error('Parent remote path must be a folder.');
+        }
+
+        const targetPath = normalizeRemotePath(path.posix.join(parentPath, name), '/');
+        if (await remoteExists(session.sftp, targetPath)) {
+            throw new Error('A file or folder with this name already exists.');
+        }
+
+        await sftpMkdir(session.sftp, targetPath);
+
+        return {
+            success: true,
+            side: 'remote',
+            path: targetPath
+        };
+    } catch (err) {
+        return {
+            success: false,
+            message: err && err.message ? err.message : String(err)
+        };
+    }
+}
+
+async function createFile(payload = {}) {
+    try {
+        const side = normalizeSide(payload.side);
+        const name = sanitizeEntryName(payload.name);
+        const content = String(payload.content || '');
+
+        if (side === 'local') {
+            const parentPath = normalizeLocalPath(payload.parentPath);
+            const parentStats = await fs.promises.stat(parentPath);
+            if (!parentStats.isDirectory()) {
+                throw new Error('Parent local path must be a folder.');
+            }
+
+            const targetPath = path.join(parentPath, name);
+            if (await localExists(targetPath)) {
+                throw new Error('A file or folder with this name already exists.');
+            }
+
+            await fs.promises.writeFile(targetPath, content, { encoding: 'utf8', flag: 'wx' });
+            const stats = await fs.promises.stat(targetPath);
+
+            return {
+                success: true,
+                side: 'local',
+                path: targetPath,
+                size: Number(stats.size || 0),
+                modifiedAt: Number(stats.mtimeMs || 0)
+            };
+        }
+
+        const session = getSession(payload.sessionId);
+        touchSession(session);
+
+        const parentPath = normalizeRemotePath(payload.parentPath, session.homePath || '/');
+        const parentStats = await sftpStat(session.sftp, parentPath);
+        if (!attrsIsDirectory(parentStats)) {
+            throw new Error('Parent remote path must be a folder.');
+        }
+
+        const targetPath = normalizeRemotePath(path.posix.join(parentPath, name), '/');
+        if (await remoteExists(session.sftp, targetPath)) {
+            throw new Error('A file or folder with this name already exists.');
+        }
+
+        await sftpWriteTextFile(session.sftp, targetPath, content);
+        const stats = await sftpStat(session.sftp, targetPath);
+
+        return {
+            success: true,
+            side: 'remote',
+            path: targetPath,
+            size: Number.isFinite(Number(stats.size)) ? Number(stats.size) : null,
+            modifiedAt: Number.isFinite(Number(stats.mtime)) ? Number(stats.mtime) * 1000 : null
+        };
+    } catch (err) {
+        return {
+            success: false,
+            message: err && err.message ? err.message : String(err)
+        };
+    }
+}
+
+async function readFile(payload = {}) {
+    try {
+        const side = normalizeSide(payload.side);
+        const maxBytes = Number.isFinite(Number(payload.maxBytes)) && Number(payload.maxBytes) > 0
+            ? Number(payload.maxBytes)
+            : null;
+        const targetPathInput = String(payload.path || '').trim();
+        if (!targetPathInput) {
+            return { success: false, message: 'File path is required.' };
+        }
+
+        if (side === 'local') {
+            const targetPath = normalizeLocalPath(targetPathInput);
+            const stats = await fs.promises.stat(targetPath);
+            if (stats.isDirectory()) {
+                throw new Error('Selected local path is a folder.');
+            }
+
+            const size = Number(stats.size || 0);
+            if (maxBytes != null && size > maxBytes) {
+                return {
+                    success: false,
+                    tooLarge: true,
+                    size,
+                    maxBytes,
+                    message: 'File is larger than allowed limit.'
+                };
+            }
+
+            const content = await fs.promises.readFile(targetPath, 'utf8');
+
+            return {
+                success: true,
+                side: 'local',
+                path: targetPath,
+                size,
+                modifiedAt: Number(stats.mtimeMs || 0),
+                content
+            };
+        }
+
+        const session = getSession(payload.sessionId);
+        touchSession(session);
+
+        const targetPath = normalizeRemotePath(targetPathInput, '/');
+        const stats = await sftpStat(session.sftp, targetPath);
+        if (attrsIsDirectory(stats)) {
+            throw new Error('Selected remote path is a folder.');
+        }
+
+        const size = Number.isFinite(Number(stats.size)) ? Number(stats.size) : null;
+        if (maxBytes != null && size != null && size > maxBytes) {
+            return {
+                success: false,
+                tooLarge: true,
+                size,
+                maxBytes,
+                message: 'File is larger than allowed limit.'
+            };
+        }
+
+        const contentBuffer = await sftpReadFileBuffer(session.sftp, targetPath, maxBytes);
+
+        return {
+            success: true,
+            side: 'remote',
+            path: targetPath,
+            size: size != null ? size : contentBuffer.length,
+            modifiedAt: Number.isFinite(Number(stats.mtime)) ? Number(stats.mtime) * 1000 : null,
+            content: contentBuffer.toString('utf8')
+        };
+    } catch (err) {
+        if (err && err.code === 'FILE_TOO_LARGE') {
+            return {
+                success: false,
+                tooLarge: true,
+                message: 'File is larger than allowed limit.'
+            };
+        }
+        return {
+            success: false,
+            message: err && err.message ? err.message : String(err)
+        };
+    }
+}
+
+async function writeFile(payload = {}) {
+    try {
+        const side = normalizeSide(payload.side);
+        const content = String(payload.content || '');
+        const targetPathInput = String(payload.path || '').trim();
+        if (!targetPathInput) {
+            return { success: false, message: 'File path is required.' };
+        }
+
+        if (side === 'local') {
+            const targetPath = normalizeLocalPath(targetPathInput);
+            if (isLocalRoot(targetPath)) {
+                throw new Error('Root folder cannot be written as a file.');
+            }
+
+            let existingStats = null;
+            try {
+                existingStats = await fs.promises.stat(targetPath);
+            } catch (err) {
+                if (!isNoSuchFileError(err)) throw err;
+                existingStats = null;
+            }
+
+            if (existingStats && existingStats.isDirectory()) {
+                throw new Error('Selected local path is a folder.');
+            }
+
+            if (!existingStats) {
+                const parentPath = path.dirname(targetPath);
+                const parentStats = await fs.promises.stat(parentPath);
+                if (!parentStats.isDirectory()) {
+                    throw new Error('Parent local path must be a folder.');
+                }
+            }
+
+            await fs.promises.writeFile(targetPath, content, 'utf8');
+            const updatedStats = await fs.promises.stat(targetPath);
+
+            return {
+                success: true,
+                side: 'local',
+                path: targetPath,
+                size: Number(updatedStats.size || 0),
+                modifiedAt: Number(updatedStats.mtimeMs || 0)
+            };
+        }
+
+        const session = getSession(payload.sessionId);
+        touchSession(session);
+
+        const targetPath = normalizeRemotePath(targetPathInput, '/');
+        if (isRemoteRoot(targetPath)) {
+            throw new Error('Remote root cannot be written as a file.');
+        }
+
+        let existingStats = null;
+        try {
+            existingStats = await sftpStat(session.sftp, targetPath);
+        } catch (err) {
+            if (!isNoSuchFileError(err)) throw err;
+            existingStats = null;
+        }
+
+        if (existingStats && attrsIsDirectory(existingStats)) {
+            throw new Error('Selected remote path is a folder.');
+        }
+
+        if (!existingStats) {
+            const parentPath = path.posix.dirname(targetPath);
+            const parentStats = await sftpStat(session.sftp, parentPath);
+            if (!attrsIsDirectory(parentStats)) {
+                throw new Error('Parent remote path must be a folder.');
+            }
+        }
+
+        await sftpWriteTextFile(session.sftp, targetPath, content);
+        const updatedStats = await sftpStat(session.sftp, targetPath);
+
+        return {
+            success: true,
+            side: 'remote',
+            path: targetPath,
+            size: Number.isFinite(Number(updatedStats.size)) ? Number(updatedStats.size) : null,
+            modifiedAt: Number.isFinite(Number(updatedStats.mtime)) ? Number(updatedStats.mtime) * 1000 : null
+        };
+    } catch (err) {
+        return {
+            success: false,
+            message: err && err.message ? err.message : String(err)
+        };
+    }
+}
+
 async function deleteItems(payload = {}) {
     try {
         const side = normalizeSide(payload.side);
@@ -884,6 +1298,93 @@ async function deleteItems(payload = {}) {
         return {
             success: true,
             removedCount: itemPaths.length
+        };
+    } catch (err) {
+        return {
+            success: false,
+            message: err && err.message ? err.message : String(err)
+        };
+    }
+}
+
+async function renameItem(payload = {}) {
+    try {
+        const side = normalizeSide(payload.side);
+        const sourcePathInput = String(payload.path || '').trim();
+        const newName = sanitizeEntryName(payload.newName);
+
+        if (!sourcePathInput) {
+            return { success: false, message: 'Item path is required.' };
+        }
+
+        if (side === 'local') {
+            const sourcePath = normalizeLocalPath(sourcePathInput);
+            if (isLocalRoot(sourcePath)) {
+                throw new Error('Root folder cannot be renamed.');
+            }
+
+            const destinationPath = path.join(path.dirname(sourcePath), newName);
+            const isExactSamePath = sourcePath === destinationPath;
+            const isCaseOnlyLocalRename = process.platform === 'win32'
+                && sourcePath.toLowerCase() === destinationPath.toLowerCase()
+                && !isExactSamePath;
+
+            if (isExactSamePath) {
+                return {
+                    success: true,
+                    renamed: false,
+                    oldPath: sourcePath,
+                    newPath: sourcePath
+                };
+            }
+
+            if (!isCaseOnlyLocalRename && await localExists(destinationPath)) {
+                throw new Error('A file or folder with this name already exists.');
+            }
+
+            await fs.promises.rename(sourcePath, destinationPath);
+
+            return {
+                success: true,
+                renamed: true,
+                oldPath: sourcePath,
+                newPath: destinationPath
+            };
+        }
+
+        const session = getSession(payload.sessionId);
+        touchSession(session);
+
+        const sourcePath = normalizeRemotePath(sourcePathInput, '/');
+        if (isRemoteRoot(sourcePath)) {
+            throw new Error('Remote root folder cannot be renamed.');
+        }
+
+        const destinationPath = normalizeRemotePath(
+            path.posix.join(path.posix.dirname(sourcePath), newName),
+            '/'
+        );
+
+        if (sourcePath === destinationPath) {
+            return {
+                success: true,
+                renamed: false,
+                oldPath: sourcePath,
+                newPath: sourcePath
+            };
+        }
+
+        if (await remoteExists(session.sftp, destinationPath)) {
+            throw new Error('A file or folder with this name already exists.');
+        }
+
+        await sftpRename(session.sftp, sourcePath, destinationPath);
+
+        return {
+            success: true,
+            renamed: true,
+            oldPath: sourcePath,
+            newPath: destinationPath
         };
     } catch (err) {
         return {
@@ -1059,7 +1560,12 @@ module.exports = {
     disconnect,
     disconnectAll,
     listDirectory,
+    createDirectory,
+    createFile,
+    readFile,
+    writeFile,
     deleteItems,
+    renameItem,
     copyItems,
     getDefaultLocalRoot
 };
