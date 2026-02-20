@@ -1223,22 +1223,31 @@
             document.head.appendChild(style);
         }
         style.textContent = `
-            .sftp-editor-tab { height: 100%; display: flex; flex-direction: column; background: #0d1117; }
-            .sftp-editor-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: start; border-bottom: 1px solid #30363d; padding: 10px 12px; background: #161b22; }
-            .sftp-editor-meta { min-width: 0; display: flex; flex-direction: column; gap: 3px; overflow: hidden; }
+            .sftp-editor-tab { height: 100%; width: 100%; min-width: 0; display: flex; flex-direction: column; background: #0d1117; overflow: hidden; }
+            .sftp-editor-bar { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: flex-start; border-bottom: 1px solid #30363d; padding: 10px 12px; background: #161b22; }
+            .sftp-editor-meta { flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; gap: 3px; overflow: hidden; }
             .sftp-editor-path { font-family: "JetBrains Mono", monospace; font-size: 11px; color: #8b949e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
             .sftp-editor-name { font-size: 13px; color: #e6edf3; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-            .sftp-editor-actions { display: flex; align-items: center; gap: 8px; justify-self: end; justify-content: flex-end; flex-wrap: wrap; }
+            .sftp-editor-actions { flex: 0 1 auto; margin-left: auto; display: flex; align-items: center; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
             .sftp-editor-actions .btn { white-space: nowrap; }
             .sftp-editor-status { font-size: 11px; border: 1px solid #30363d; border-radius: 999px; padding: 4px 9px; color: #8b949e; }
             .sftp-editor-status.success { color: #3fb950; border-color: rgba(63, 185, 80, 0.55); background: rgba(63, 185, 80, 0.14); }
             .sftp-editor-status.error { color: #f85149; border-color: rgba(248, 81, 73, 0.55); background: rgba(248, 81, 73, 0.14); }
             .sftp-editor-status.warning { color: #d29922; border-color: rgba(210, 153, 34, 0.55); background: rgba(210, 153, 34, 0.14); }
-            .sftp-editor-text { flex: 1; min-height: 0; width: 100%; resize: none; border: none; outline: none; background: #0d1117; color: #e6edf3; font-family: "JetBrains Mono", monospace; font-size: 12px; line-height: 1.55; padding: 12px; tab-size: 4; font-variant-ligatures: none; }
-            .sftp-editor-monaco { flex: 1; min-height: 0; width: 100%; background: #0d1117; }
+            .sftp-editor-text { flex: 1 1 auto; min-height: 0; width: 100%; resize: none; border: none; outline: none; background: #0d1117; color: #e6edf3; font-family: "JetBrains Mono", monospace; font-size: 12px; line-height: 1.55; padding: 12px; tab-size: 4; font-variant-ligatures: none; white-space: pre; overflow: auto; }
+            .sftp-editor-monaco { flex: 1 1 auto; min-height: 0; width: 100%; background: #0d1117; overflow: hidden; }
             .sftp-editor-monaco .monaco-editor,
             .sftp-editor-monaco .overflow-guard {
+                width: 100% !important;
+                height: 100% !important;
                 border-radius: 0;
+            }
+            @media (max-width: 860px) {
+                .sftp-editor-actions {
+                    width: 100%;
+                    margin-left: 0;
+                    justify-content: flex-end;
+                }
             }
         `;
     }
@@ -1319,6 +1328,8 @@
             let monacoEditor = null;
             let monacoResizeObserver = null;
             let tabVisibilityObserver = null;
+            let windowResizeHandler = null;
+            let relayoutIntervalId = null;
 
             let getEditorValue = () => textArea.value;
             let setEditorValue = (value, silentSet) => {
@@ -1351,7 +1362,10 @@
                         lineHeight: 20,
                         lineNumbers: 'on',
                         minimap: { enabled: false },
-                        wordWrap: 'on',
+                        wordWrap: 'off',
+                        wordWrapOverride1: 'off',
+                        wordWrapOverride2: 'off',
+                        wrappingIndent: 'none',
                         smoothScrolling: true,
                         cursorBlinking: 'solid',
                         cursorSmoothCaretAnimation: 'off',
@@ -1360,7 +1374,18 @@
                         tabSize: 2,
                         insertSpaces: true,
                         scrollBeyondLastLine: false,
-                        roundedSelection: false
+                        roundedSelection: false,
+                        scrollbar: {
+                            horizontal: 'auto',
+                            vertical: 'auto',
+                            horizontalScrollbarSize: 10,
+                            verticalScrollbarSize: 10,
+                            useShadows: false,
+                            alwaysConsumeMouseWheel: false
+                        },
+                        stickyScroll: {
+                            enabled: false
+                        }
                     });
 
                     getEditorValue = () => monacoEditor.getValue();
@@ -1386,6 +1411,9 @@
                     monacoResizeObserver = new ResizeObserver(() => relayout());
                     monacoResizeObserver.observe(monacoHost);
 
+                    windowResizeHandler = () => relayout();
+                    window.addEventListener('resize', windowResizeHandler);
+
                     const tabContent = document.getElementById(containerId)
                         ? document.getElementById(containerId).closest('.tab-content')
                         : null;
@@ -1404,6 +1432,13 @@
                     setTimeout(relayout, 20);
                     setTimeout(relayout, 120);
                     setTimeout(relayout, 280);
+                    relayoutIntervalId = setInterval(relayout, 120);
+                    setTimeout(() => {
+                        if (relayoutIntervalId) {
+                            clearInterval(relayoutIntervalId);
+                            relayoutIntervalId = null;
+                        }
+                    }, 1600);
                 }
             } catch (_) {}
 
@@ -1559,6 +1594,12 @@
                         }
                         if (monacoResizeObserver) {
                             try { monacoResizeObserver.disconnect(); } catch (_) {}
+                        }
+                        if (windowResizeHandler) {
+                            try { window.removeEventListener('resize', windowResizeHandler); } catch (_) {}
+                        }
+                        if (relayoutIntervalId) {
+                            try { clearInterval(relayoutIntervalId); } catch (_) {}
                         }
                         if (monacoEditor) {
                             try { monacoEditor.dispose(); } catch (_) {}
