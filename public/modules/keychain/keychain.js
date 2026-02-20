@@ -33,11 +33,11 @@
                     if (result.success) {
                         openEditDrawer(filename, result.content);
                     } else {
-                        alert('Failed to read key: ' + result.error);
+                        window.notifyUser('Failed to read key: ' + result.error, 'error');
                     }
                 } catch (err) {
                     console.error(err);
-                    alert('Error reading key');
+                    window.notifyUser('Error reading key', 'error');
                 }
             };
 
@@ -66,9 +66,16 @@
             saveBtn.addEventListener('click', async () => {
                 const newFilename = filenameInput.value;
                 const newContent = contentInput.value;
+
+                if (filenameInput) {
+                    filenameInput.style.borderColor = 'var(--border)';
+                }
                 
                 if (!newFilename) {
-                    alert('Filename cannot be empty');
+                    if (filenameInput) {
+                        filenameInput.style.borderColor = '#f38ba8';
+                        filenameInput.focus();
+                    }
                     return;
                 }
 
@@ -78,11 +85,11 @@
                         Drawer.close();
                         loadKeys();
                     } else {
-                        alert('Failed to save key: ' + result.error);
+                        window.notifyUser('Failed to save key: ' + result.error, 'error');
                     }
                 } catch (err) {
                     console.error(err);
-                    alert('Error saving key');
+                    window.notifyUser('Error saving key', 'error');
                 }
             });
         }

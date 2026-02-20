@@ -374,12 +374,12 @@
                 }
 
                 if (result && result.success === false) {
-                    alert(result.message || 'Action failed.');
+                    window.notifyUser(result.message || 'Action failed.', 'error');
                 }
 
                 await loadData();
             } catch (err) {
-                alert(err && err.message ? err.message : String(err));
+                window.notifyUser(err && err.message ? err.message : String(err), 'error');
             } finally {
                 actionButton.disabled = false;
             }

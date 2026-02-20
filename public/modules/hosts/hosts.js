@@ -552,7 +552,7 @@
                         if (Drawer && Drawer.close) Drawer.close();
                     } catch (error) {
                         console.error('Error deleting host:', error);
-                        alert('Failed to delete host');
+                        window.notifyUser('Failed to delete host', 'error');
                     }
                 });
 
@@ -829,7 +829,7 @@
                         }
                     } catch (error) {
                         console.error('Error saving host:', error);
-                        alert('Failed to save host');
+                        window.notifyUser('Failed to save host', 'error');
                     }
                 });
             }

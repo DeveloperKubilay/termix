@@ -708,3 +708,197 @@ body {
     transform: rotate(180deg);
 }
 
+.app-notify-container {
+    position: fixed;
+    top: 14px;
+    right: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 3000;
+    pointer-events: none;
+    max-width: min(92vw, 380px);
+}
+
+.app-notify {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    border: 1px solid var(--border);
+    border-left-width: 4px;
+    border-radius: 10px;
+    background: rgba(24, 24, 37, 0.97);
+    color: var(--text-main);
+    padding: 10px 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    transform: translateY(-8px);
+    opacity: 0;
+    transition: transform 0.18s ease, opacity 0.18s ease;
+    pointer-events: auto;
+}
+
+.app-notify.show {
+    transform: translateY(0);
+    opacity: 1;
+}
+
+.app-notify.error {
+    border-left-color: #f38ba8;
+}
+
+.app-notify.warning {
+    border-left-color: #f9e2af;
+}
+
+.app-notify.success {
+    border-left-color: #a6e3a1;
+}
+
+.app-notify.info {
+    border-left-color: var(--accent);
+}
+
+.app-notify-icon {
+    margin-top: 1px;
+}
+
+.app-notify.error .app-notify-icon {
+    color: #f38ba8;
+}
+
+.app-notify.warning .app-notify-icon {
+    color: #f9e2af;
+}
+
+.app-notify.success .app-notify-icon {
+    color: #a6e3a1;
+}
+
+.app-notify.info .app-notify-icon {
+    color: #89b4fa;
+}
+
+.app-notify-message {
+    flex: 1;
+    font-size: 0.86rem;
+    line-height: 1.35;
+}
+
+.app-notify-close {
+    border: 0;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0;
+    font-size: 0.82rem;
+    line-height: 1;
+    transition: color 0.2s;
+}
+
+.app-notify-close:hover {
+    color: var(--text-main);
+}
+
+@media (max-width: 640px) {
+    .app-notify-container {
+        left: 10px;
+        right: 10px;
+        max-width: none;
+    }
+}
+
+.app-confirm-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 3200;
+    padding: 16px;
+}
+
+.app-confirm-overlay.show {
+    display: flex;
+}
+
+.app-confirm-box {
+    width: min(92vw, 340px);
+    background: var(--bg-sidebar);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.4);
+    padding: 14px;
+    animation: appConfirmIn 0.16s ease;
+}
+
+.app-confirm-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 600;
+    color: var(--text-main);
+    margin-bottom: 8px;
+}
+
+#app-confirm-icon {
+    color: #f9e2af;
+}
+
+.app-confirm-message {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    line-height: 1.35;
+    margin-bottom: 14px;
+    word-break: break-word;
+}
+
+.app-confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.app-confirm-btn {
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text-main);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: filter 0.2s;
+}
+
+.app-confirm-btn:hover {
+    filter: brightness(1.08);
+}
+
+.app-confirm-btn.secondary {
+    background: transparent;
+}
+
+.app-confirm-btn.danger {
+    background: #f38ba8;
+    color: #111111;
+    border-color: #f38ba8;
+    font-size: 0.88rem;
+    font-weight: 650;
+}
+
+.app-confirm-btn.danger:hover {
+    background: #ee7f9e;
+    filter: none;
+}
+
+@keyframes appConfirmIn {
+    from {
+        transform: translateY(6px) scale(0.98);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0) scale(1);
+        opacity: 1;
+    }
+}
+
