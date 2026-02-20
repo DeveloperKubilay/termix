@@ -7,9 +7,19 @@
     }
 
     const paneKeys = ['left', 'right'];
+    const MAX_EDITABLE_FILE_BYTES = 2 * 1024 * 1024;
+    const EDITOR_STYLE_ID = 'sftp-editor-style';
+    const MONACO_LOADER_URL = 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.min.js';
 
     const ui = {
         status: document.getElementById('sftp-global-status'),
+        contextMenu: document.getElementById('sftp-context-menu'),
+        renameOverlay: document.getElementById('sftp-rename-overlay'),
+        renameTitle: document.getElementById('sftp-rename-title'),
+        renamePath: document.getElementById('sftp-rename-path'),
+        renameInput: document.getElementById('sftp-rename-input'),
+        renameConfirmBtn: document.getElementById('sftp-rename-confirm'),
+        renameCancelBtn: document.getElementById('sftp-rename-cancel'),
         panes: {
             left: {
                 root: document.getElementById('sftp-pane-left'),
@@ -48,6 +58,17 @@
         clipboard: null,
         dragPayload: null,
         dragHoverRow: null,
+        contextMenu: {
+            paneKey: null,
+            targetPath: null,
+            directoryPath: null
+        },
+        renamePrompt: {
+            resolver: null,
+            keyHandler: null
+        },
+        monacoLoaderPromise: null,
+        editorTabs: new Map(),
         panes: {
             left: {
                 key: 'left',
@@ -118,6 +139,200 @@
         return date.toLocaleString();
     }
 
+    function getFileExtension(name) {
+        const text = String(name || '').trim();
+        if (!text) return '';
+        const index = text.lastIndexOf('.');
+        if (index <= 0 || index >= text.length - 1) return '';
+        return text.slice(index + 1).toLowerCase();
+    }
+
+    function getFileTypeVisual(entry) {
+        if (!entry || entry.isParent) {
+            return {
+                iconClass: 'fa-solid fa-arrow-up-from-bracket',
+                iconColor: '#f9e2af'
+            };
+        }
+
+        if (entry.isDirectory) {
+            return {
+                iconClass: 'fa-solid fa-folder',
+                iconColor: '#89b4fa'
+            };
+        }
+
+        const ext = getFileExtension(entry.name);
+        const map = {
+            js: { iconClass: 'fa-brands fa-js', color: '#f1e05a' },
+            jsx: { iconClass: 'fa-brands fa-js', color: '#f1e05a' },
+            ts: { iconClass: 'fa-solid fa-file-code', color: '#3178c6' },
+            tsx: { iconClass: 'fa-solid fa-file-code', color: '#3178c6' },
+            json: { iconClass: 'fa-solid fa-file-code', color: '#f1e05a' },
+            yml: { iconClass: 'fa-solid fa-file-code', color: '#cb171e' },
+            yaml: { iconClass: 'fa-solid fa-file-code', color: '#cb171e' },
+            html: { iconClass: 'fa-brands fa-html5', color: '#e34c26' },
+            css: { iconClass: 'fa-brands fa-css3-alt', color: '#1572b6' },
+            scss: { iconClass: 'fa-solid fa-file-code', color: '#c6538c' },
+            less: { iconClass: 'fa-solid fa-file-code', color: '#563d7c' },
+            md: { iconClass: 'fa-brands fa-markdown', color: '#083fa1' },
+            py: { iconClass: 'fa-brands fa-python', color: '#3572A5' },
+            sh: { iconClass: 'fa-solid fa-terminal', color: '#89e051' },
+            bash: { iconClass: 'fa-solid fa-terminal', color: '#89e051' },
+            zsh: { iconClass: 'fa-solid fa-terminal', color: '#89e051' },
+            sql: { iconClass: 'fa-solid fa-database', color: '#336791' },
+            xml: { iconClass: 'fa-solid fa-file-code', color: '#e44d26' },
+            env: { iconClass: 'fa-solid fa-sliders', color: '#6a737d' },
+            ini: { iconClass: 'fa-solid fa-file-lines', color: '#6a737d' },
+            toml: { iconClass: 'fa-solid fa-file-lines', color: '#6a737d' },
+            txt: { iconClass: 'fa-regular fa-file-lines', color: '#9ca3af' }
+        };
+
+        const found = map[ext] || null;
+        if (found) {
+            return {
+                iconClass: found.iconClass,
+                iconColor: found.color
+            };
+        }
+
+        return {
+            iconClass: 'fa-regular fa-file-lines',
+            iconColor: '#a6adc8'
+        };
+    }
+
+    function resolveMonacoLanguage(fileName) {
+        const ext = getFileExtension(fileName);
+        const map = {
+            js: 'javascript',
+            jsx: 'javascript',
+            mjs: 'javascript',
+            cjs: 'javascript',
+            ts: 'typescript',
+            tsx: 'typescript',
+            json: 'json',
+            yml: 'yaml',
+            yaml: 'yaml',
+            html: 'html',
+            css: 'css',
+            scss: 'scss',
+            less: 'less',
+            md: 'markdown',
+            py: 'python',
+            sh: 'shell',
+            bash: 'shell',
+            zsh: 'shell',
+            sql: 'sql',
+            xml: 'xml',
+            env: 'ini',
+            ini: 'ini',
+            toml: 'ini'
+        };
+        return map[ext] || 'plaintext';
+    }
+
+    function ensureMonacoTheme() {
+        if (!window.monaco || !window.monaco.editor) return;
+        if (window.__termixGithubDarkThemeDefined) return;
+
+        window.monaco.editor.defineTheme('termix-github-dark', {
+            base: 'vs-dark',
+            inherit: true,
+            rules: [
+                { token: 'comment', foreground: '8b949e' },
+                { token: 'keyword', foreground: 'ff7b72' },
+                { token: 'string', foreground: 'a5d6ff' },
+                { token: 'number', foreground: '79c0ff' },
+                { token: 'regexp', foreground: 'a5d6ff' },
+                { token: 'delimiter', foreground: 'c9d1d9' },
+                { token: 'type.identifier', foreground: 'ffa657' },
+                { token: 'identifier', foreground: 'c9d1d9' },
+                { token: 'operator', foreground: 'ff7b72' },
+                { token: 'tag', foreground: '7ee787' },
+                { token: 'attribute.name', foreground: '79c0ff' },
+                { token: 'attribute.value', foreground: 'a5d6ff' }
+            ],
+            colors: {
+                'editor.background': '#0d1117',
+                'editor.foreground': '#e6edf3',
+                'editorLineNumber.foreground': '#6e7681',
+                'editorLineNumber.activeForeground': '#e6edf3',
+                'editorCursor.foreground': '#58a6ff',
+                'editor.selectionBackground': '#264f78',
+                'editor.inactiveSelectionBackground': '#264f784d',
+                'editor.lineHighlightBackground': '#161b2233',
+                'editorIndentGuide.background': '#21262d',
+                'editorIndentGuide.activeBackground': '#30363d',
+                'editorGutter.background': '#0d1117'
+            }
+        });
+
+        window.__termixGithubDarkThemeDefined = true;
+    }
+
+    async function ensureMonacoLoaded() {
+        if (window.monaco && window.monaco.editor) {
+            ensureMonacoTheme();
+            return true;
+        }
+
+        if (state.monacoLoaderPromise) {
+            return state.monacoLoaderPromise;
+        }
+
+        state.monacoLoaderPromise = new Promise((resolve) => {
+            const finish = (value) => resolve(Boolean(value));
+
+            const startMonaco = () => {
+                if (!window.require || typeof window.require !== 'function') {
+                    finish(false);
+                    return;
+                }
+
+                try {
+                    window.require.config({
+                        paths: {
+                            vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs'
+                        }
+                    });
+
+                    window.require(['vs/editor/editor.main'], () => {
+                        const ok = Boolean(window.monaco && window.monaco.editor);
+                        if (ok) {
+                            ensureMonacoTheme();
+                        }
+                        finish(ok);
+                    }, () => finish(false));
+                } catch (_) {
+                    finish(false);
+                }
+            };
+
+            const existing = document.querySelector('script[data-sftp-monaco-loader="1"]');
+            if (existing) {
+                if (window.monaco && window.monaco.editor) {
+                    ensureMonacoTheme();
+                    finish(true);
+                    return;
+                }
+                existing.addEventListener('load', () => setTimeout(startMonaco, 0), { once: true });
+                existing.addEventListener('error', () => finish(false), { once: true });
+                return;
+            }
+
+            const script = document.createElement('script');
+            script.src = MONACO_LOADER_URL;
+            script.async = true;
+            script.dataset.sftpMonacoLoader = '1';
+            script.onload = () => setTimeout(startMonaco, 0);
+            script.onerror = () => finish(false);
+            document.head.appendChild(script);
+        });
+
+        return state.monacoLoaderPromise;
+    }
+
     function setStatus(message, type) {
         if (!ui.status) return;
         const nextType = type || 'info';
@@ -140,6 +355,167 @@
     function getHostById(hostId) {
         const target = String(hostId || '');
         return state.hosts.find((host) => String(host.id) === target) || null;
+    }
+
+    function closeContextMenu() {
+        if (ui.contextMenu) {
+            ui.contextMenu.classList.remove('show');
+            const itemActions = ui.contextMenu.querySelectorAll('button[data-action="rename"], button[data-action="delete"]');
+            itemActions.forEach((action) => {
+                action.disabled = false;
+                action.style.opacity = '1';
+                action.style.pointerEvents = 'auto';
+            });
+        }
+        state.contextMenu.paneKey = null;
+        state.contextMenu.targetPath = null;
+        state.contextMenu.directoryPath = null;
+    }
+
+    function openContextMenu(paneKey, targetPath, directoryPath, clientX, clientY) {
+        if (!ui.contextMenu) return;
+        state.contextMenu.paneKey = paneKey;
+        state.contextMenu.targetPath = targetPath;
+        state.contextMenu.directoryPath = directoryPath;
+
+        const itemActions = ui.contextMenu.querySelectorAll('button[data-action="rename"], button[data-action="delete"]');
+        itemActions.forEach((action) => {
+            action.disabled = !targetPath;
+            action.style.opacity = targetPath ? '1' : '0.45';
+            action.style.pointerEvents = targetPath ? 'auto' : 'none';
+        });
+
+        ui.contextMenu.style.left = `${Math.max(6, Number(clientX) || 0)}px`;
+        ui.contextMenu.style.top = `${Math.max(6, Number(clientY) || 0)}px`;
+        ui.contextMenu.classList.add('show');
+
+        requestAnimationFrame(() => {
+            if (!ui.contextMenu || !ui.contextMenu.classList.contains('show')) return;
+            const rect = ui.contextMenu.getBoundingClientRect();
+            const maxLeft = Math.max(6, window.innerWidth - rect.width - 6);
+            const maxTop = Math.max(6, window.innerHeight - rect.height - 6);
+
+            const safeLeft = Math.min(Math.max(6, Number(clientX) || 0), maxLeft);
+            const safeTop = Math.min(Math.max(6, Number(clientY) || 0), maxTop);
+
+            ui.contextMenu.style.left = `${safeLeft}px`;
+            ui.contextMenu.style.top = `${safeTop}px`;
+        });
+    }
+
+    function normalizeNameInput(value) {
+        return String(value || '').trim();
+    }
+
+    function validateEntryName(nameValue) {
+        const name = normalizeNameInput(nameValue);
+        if (!name) return { valid: false, message: 'Ad bos olamaz.' };
+        if (name === '.' || name === '..') return { valid: false, message: 'Gecersiz ad.' };
+        if (/[\\/]/.test(name)) return { valid: false, message: 'Ad icinde / veya \\ olamaz.' };
+        return { valid: true, name };
+    }
+
+    function findEntryByPath(key, targetPath) {
+        const pane = getPaneState(key);
+        if (!pane || !targetPath) return null;
+        return (pane.entries || []).find((entry) => entry.path === targetPath) || null;
+    }
+
+    function getItemNameForPath(key, targetPath) {
+        const pane = getPaneState(key);
+        if (!pane || !targetPath) return '';
+
+        const matchedEntry = findEntryByPath(key, targetPath);
+        if (matchedEntry && matchedEntry.name) {
+            return String(matchedEntry.name);
+        }
+
+        const normalizedPath = String(targetPath || '');
+        if (!normalizedPath) return '';
+
+        if (getPaneSide(pane) === 'local') {
+            const trimmed = normalizedPath.replace(/[\\/]+$/, '');
+            const parts = trimmed.split(/[\\/]/).filter(Boolean);
+            return parts.length ? parts[parts.length - 1] : trimmed;
+        }
+
+        const trimmed = normalizedPath.replace(/\/+$/, '');
+        const parts = trimmed.split('/').filter(Boolean);
+        return parts.length ? parts[parts.length - 1] : trimmed;
+    }
+
+    function closeRenamePrompt(value) {
+        if (state.renamePrompt.keyHandler) {
+            document.removeEventListener('keydown', state.renamePrompt.keyHandler, true);
+            state.renamePrompt.keyHandler = null;
+        }
+
+        if (ui.renameOverlay) {
+            ui.renameOverlay.classList.remove('show');
+        }
+
+        const pendingResolver = state.renamePrompt.resolver;
+        state.renamePrompt.resolver = null;
+
+        if (pendingResolver) {
+            pendingResolver(value);
+        }
+    }
+
+    function requestTextValue(options = {}) {
+        const title = String(options.title || 'Ad girin');
+        const confirmText = String(options.confirmText || 'Kaydet');
+        const initialValue = String(options.initialValue || '');
+        const targetPath = String(options.targetPath || '');
+        const placeholder = String(options.placeholder || '');
+
+        const fallbackPrompt = () => {
+            const raw = window.prompt(`${title}:`, initialValue || '');
+            if (raw == null) return null;
+            return String(raw);
+        };
+
+        if (!ui.renameOverlay || !ui.renameInput || !ui.renameConfirmBtn || !ui.renameCancelBtn) {
+            return Promise.resolve(fallbackPrompt());
+        }
+
+        if (state.renamePrompt.resolver) {
+            closeRenamePrompt(null);
+        }
+
+        if (ui.renameTitle) {
+            ui.renameTitle.textContent = title;
+        }
+        ui.renameConfirmBtn.textContent = confirmText;
+        ui.renameInput.value = initialValue;
+        ui.renameInput.placeholder = placeholder;
+        if (ui.renamePath) {
+            ui.renamePath.textContent = targetPath || '';
+        }
+        ui.renameOverlay.classList.add('show');
+
+        return new Promise((resolve) => {
+            state.renamePrompt.resolver = resolve;
+            state.renamePrompt.keyHandler = (event) => {
+                if (!state.renamePrompt.resolver) return;
+                if (event.key === 'Escape') {
+                    event.preventDefault();
+                    closeRenamePrompt(null);
+                    return;
+                }
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    closeRenamePrompt(ui.renameInput ? ui.renameInput.value : '');
+                }
+            };
+
+            document.addEventListener('keydown', state.renamePrompt.keyHandler, true);
+            setTimeout(() => {
+                if (!ui.renameInput) return;
+                ui.renameInput.focus();
+                ui.renameInput.select();
+            }, 0);
+        });
     }
 
     function activatePane(key, shouldFocus) {
@@ -276,6 +652,8 @@
         const paneUi = getPaneUi(key);
         if (!pane || !paneUi) return;
 
+        closeContextMenu();
+
         const isRemoteMode = pane.mode === 'vds';
         const isConnected = isRemoteMode && Boolean(pane.sessionId);
 
@@ -349,17 +727,14 @@
                             item.isParent ? 'up' : ''
                         ].filter(Boolean).join(' ');
                         const draggable = item.isParent ? 'false' : 'true';
-
-                        const iconClass = item.isParent
-                            ? 'fa-solid fa-arrow-up-from-bracket'
-                            : (item.isDirectory ? 'fa-solid fa-folder' : 'fa-regular fa-file-lines');
+                        const visual = getFileTypeVisual(item);
 
                         const encodedPath = encodePathValue(item.path);
 
                         return `
                             <div class="${rowClasses}" data-pane="${key}" data-path="${encodedPath}" data-parent="${item.isParent ? '1' : '0'}" data-directory="${item.isDirectory ? '1' : '0'}" draggable="${draggable}">
                                 <div class="sftp-file-name">
-                                    <i class="${iconClass}"></i>
+                                    <i class="${escapeHtml(visual.iconClass)}" style="color: ${escapeHtml(visual.iconColor)};"></i>
                                     <span class="label">${escapeHtml(item.name)}</span>
                                 </div>
                                 <div class="sftp-file-meta">${item.isDirectory || item.isParent ? '-' : escapeHtml(formatSize(item.size))}</div>
@@ -760,6 +1135,605 @@
         setStatus(`${selected.length} oge silindi.`, 'success');
     }
 
+    async function renameItemInPane(key, targetPath) {
+        const pane = getPaneState(key);
+        if (!pane || !targetPath) return;
+
+        const side = getPaneSide(pane);
+        if (side === 'remote') {
+            const connected = await ensurePaneConnected(key);
+            if (!connected) return;
+        }
+
+        const currentName = getItemNameForPath(key, targetPath);
+        if (!currentName) {
+            setStatus('Yeniden adlandirilacak oge bulunamadi.', 'error');
+            return;
+        }
+
+        const requestedName = await requestTextValue({
+            title: 'Yeniden adlandir',
+            confirmText: 'Kaydet',
+            initialValue: currentName,
+            targetPath
+        });
+        if (requestedName == null) return;
+
+        const nameCheck = validateEntryName(requestedName);
+        if (!nameCheck.valid) {
+            setStatus(nameCheck.message, 'error');
+            return;
+        }
+        const nextName = nameCheck.name;
+
+        if (nextName === currentName) {
+            return;
+        }
+
+        const result = await sftpApi.renameItem({
+            side,
+            sessionId: side === 'remote' ? pane.sessionId : null,
+            path: targetPath,
+            newName: nextName
+        });
+
+        if (!result || result.success === false) {
+            setStatus(result && result.message ? result.message : 'Yeniden adlandirma basarisiz.', 'error');
+            return;
+        }
+
+        if (result.renamed === false) {
+            setStatus('Ad degismedi.', 'info');
+            return;
+        }
+
+        await refreshPane(key);
+        setStatus(`'${currentName}' yeniden adlandirildi.`, 'success');
+    }
+
+    function getFileNameBySide(side, targetPath) {
+        const value = String(targetPath || '');
+        if (!value) return 'file';
+
+        if (side === 'local') {
+            const normalized = value.replace(/[\\/]+$/, '');
+            const parts = normalized.split(/[\\/]/).filter(Boolean);
+            return parts.length ? parts[parts.length - 1] : normalized;
+        }
+
+        const normalized = value.replace(/\/+$/, '');
+        const parts = normalized.split('/').filter(Boolean);
+        return parts.length ? parts[parts.length - 1] : normalized;
+    }
+
+    function buildEditorKey(side, hostId, targetPath) {
+        if (side === 'local') {
+            const normalized = String(targetPath || '');
+            const lower = /^[a-zA-Z]:/.test(normalized) ? normalized.toLowerCase() : normalized;
+            return `local:${lower}`;
+        }
+        return `remote:${String(hostId || 'unknown')}:${String(targetPath || '')}`;
+    }
+
+    function ensureEditorStyles() {
+        let style = document.getElementById(EDITOR_STYLE_ID);
+        if (!style) {
+            style = document.createElement('style');
+            style.id = EDITOR_STYLE_ID;
+            document.head.appendChild(style);
+        }
+        style.textContent = `
+            .sftp-editor-tab { height: 100%; display: flex; flex-direction: column; background: #0d1117; }
+            .sftp-editor-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: start; border-bottom: 1px solid #30363d; padding: 10px 12px; background: #161b22; }
+            .sftp-editor-meta { min-width: 0; display: flex; flex-direction: column; gap: 3px; overflow: hidden; }
+            .sftp-editor-path { font-family: "JetBrains Mono", monospace; font-size: 11px; color: #8b949e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+            .sftp-editor-name { font-size: 13px; color: #e6edf3; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .sftp-editor-actions { display: flex; align-items: center; gap: 8px; justify-self: end; justify-content: flex-end; flex-wrap: wrap; }
+            .sftp-editor-actions .btn { white-space: nowrap; }
+            .sftp-editor-status { font-size: 11px; border: 1px solid #30363d; border-radius: 999px; padding: 4px 9px; color: #8b949e; }
+            .sftp-editor-status.success { color: #3fb950; border-color: rgba(63, 185, 80, 0.55); background: rgba(63, 185, 80, 0.14); }
+            .sftp-editor-status.error { color: #f85149; border-color: rgba(248, 81, 73, 0.55); background: rgba(248, 81, 73, 0.14); }
+            .sftp-editor-status.warning { color: #d29922; border-color: rgba(210, 153, 34, 0.55); background: rgba(210, 153, 34, 0.14); }
+            .sftp-editor-text { flex: 1; min-height: 0; width: 100%; resize: none; border: none; outline: none; background: #0d1117; color: #e6edf3; font-family: "JetBrains Mono", monospace; font-size: 12px; line-height: 1.55; padding: 12px; tab-size: 4; font-variant-ligatures: none; }
+            .sftp-editor-monaco { flex: 1; min-height: 0; width: 100%; background: #0d1117; }
+            .sftp-editor-monaco .monaco-editor,
+            .sftp-editor-monaco .overflow-guard {
+                border-radius: 0;
+            }
+        `;
+    }
+
+    async function openEditorTab(payload) {
+        if (!window.TabManager || !payload || !payload.path) return;
+
+        const side = payload.side;
+        const hostId = payload.hostId || null;
+        const targetPath = payload.path;
+        const fileName = payload.fileName || getFileNameBySide(side, targetPath);
+        const editorKey = buildEditorKey(side, hostId, targetPath);
+
+        const existingTabId = state.editorTabs.get(editorKey);
+        if (existingTabId && Array.isArray(window.TabManager.tabs) && window.TabManager.tabs.some((tab) => tab.id === existingTabId)) {
+            window.TabManager.activateTab(existingTabId);
+            return;
+        }
+
+        state.editorTabs.delete(editorKey);
+        ensureEditorStyles();
+
+        const tabId = `sftp-editor-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+        const containerId = `sftp-editor-root-${tabId}`;
+        const textId = `sftp-editor-text-${tabId}`;
+        const saveId = `sftp-editor-save-${tabId}`;
+        const reloadId = `sftp-editor-reload-${tabId}`;
+        const statusId = `sftp-editor-status-${tabId}`;
+
+        window.TabManager.addTab({
+            id: tabId,
+            title: fileName,
+            icon: 'fa-regular fa-file-lines',
+            contentHtml: `
+                <div id="${containerId}" class="sftp-editor-tab">
+                    <div class="sftp-editor-bar">
+                        <div class="sftp-editor-meta">
+                            <div class="sftp-editor-name">${escapeHtml(fileName)}</div>
+                            <div class="sftp-editor-path">${escapeHtml(targetPath)}</div>
+                        </div>
+                        <div class="sftp-editor-actions">
+                            <span id="${statusId}" class="sftp-editor-status">Hazir</span>
+                            <button id="${reloadId}" type="button" class="btn btn-primary">Yenile</button>
+                            <button id="${saveId}" type="button" class="btn btn-primary">Kaydet</button>
+                        </div>
+                    </div>
+                    <textarea id="${textId}" class="sftp-editor-text" spellcheck="false"></textarea>
+                </div>
+            `
+        });
+
+        state.editorTabs.set(editorKey, tabId);
+
+        setTimeout(async () => {
+            const textArea = document.getElementById(textId);
+            const saveBtn = document.getElementById(saveId);
+            const reloadBtn = document.getElementById(reloadId);
+            const statusEl = document.getElementById(statusId);
+            if (!textArea || !saveBtn || !reloadBtn || !statusEl) return;
+
+            const tab = window.TabManager.tabs.find((item) => item.id === tabId);
+            const tabTitleEl = document.querySelector(`.tab[data-id="${tabId}"] .tab-title`);
+            const setTabTitle = (dirty) => {
+                if (tab) tab.title = fileName;
+                if (tabTitleEl) tabTitleEl.textContent = dirty ? `* ${fileName}` : fileName;
+            };
+
+            const setEditorStatus = (message, type = 'info') => {
+                statusEl.textContent = String(message || '');
+                statusEl.className = `sftp-editor-status ${type}`;
+            };
+
+            let dirty = false;
+            let activeRemoteSessionId = payload.sessionId || null;
+            let saveInFlight = false;
+            let reloadInFlight = false;
+            let skipDirtyMark = false;
+            let monacoEditor = null;
+            let monacoResizeObserver = null;
+            let tabVisibilityObserver = null;
+
+            let getEditorValue = () => textArea.value;
+            let setEditorValue = (value, silentSet) => {
+                skipDirtyMark = Boolean(silentSet);
+                textArea.value = String(value || '');
+                skipDirtyMark = false;
+            };
+            let focusEditor = () => {
+                try { textArea.focus(); } catch (_) {}
+            };
+            let bindEditorChange = (handler) => {
+                textArea.addEventListener('input', handler);
+            };
+
+            try {
+                const monacoReady = await ensureMonacoLoaded();
+                if (monacoReady && window.monaco && window.monaco.editor) {
+                    const monacoHost = document.createElement('div');
+                    monacoHost.className = 'sftp-editor-monaco';
+                    textArea.style.display = 'none';
+                    textArea.insertAdjacentElement('afterend', monacoHost);
+
+                    monacoEditor = window.monaco.editor.create(monacoHost, {
+                        value: String(payload.content || ''),
+                        language: resolveMonacoLanguage(fileName),
+                        theme: 'termix-github-dark',
+                        automaticLayout: false,
+                        fontFamily: '"JetBrains Mono", "Cascadia Mono", "Consolas", "Courier New", monospace',
+                        fontSize: 13,
+                        lineHeight: 20,
+                        lineNumbers: 'on',
+                        minimap: { enabled: false },
+                        wordWrap: 'on',
+                        smoothScrolling: true,
+                        cursorBlinking: 'solid',
+                        cursorSmoothCaretAnimation: 'off',
+                        fontLigatures: false,
+                        renderWhitespace: 'selection',
+                        tabSize: 2,
+                        insertSpaces: true,
+                        scrollBeyondLastLine: false,
+                        roundedSelection: false
+                    });
+
+                    getEditorValue = () => monacoEditor.getValue();
+                    setEditorValue = (value, silentSet) => {
+                        skipDirtyMark = Boolean(silentSet);
+                        monacoEditor.setValue(String(value || ''));
+                        monacoEditor.setPosition({ lineNumber: 1, column: 1 });
+                        monacoEditor.revealPositionInCenter({ lineNumber: 1, column: 1 });
+                        monacoEditor.layout();
+                        skipDirtyMark = false;
+                    };
+                    focusEditor = () => {
+                        try { monacoEditor.focus(); } catch (_) {}
+                    };
+                    bindEditorChange = (handler) => {
+                        monacoEditor.onDidChangeModelContent(handler);
+                    };
+
+                    const relayout = () => {
+                        try { monacoEditor.layout(); } catch (_) {}
+                    };
+
+                    monacoResizeObserver = new ResizeObserver(() => relayout());
+                    monacoResizeObserver.observe(monacoHost);
+
+                    const tabContent = document.getElementById(containerId)
+                        ? document.getElementById(containerId).closest('.tab-content')
+                        : null;
+                    if (tabContent) {
+                        tabVisibilityObserver = new MutationObserver(() => {
+                            if (tabContent.classList.contains('active')) {
+                                relayout();
+                            }
+                        });
+                        tabVisibilityObserver.observe(tabContent, {
+                            attributes: true,
+                            attributeFilter: ['class']
+                        });
+                    }
+
+                    setTimeout(relayout, 20);
+                    setTimeout(relayout, 120);
+                    setTimeout(relayout, 280);
+                }
+            } catch (_) {}
+
+            setEditorValue(payload.content || '', true);
+
+            const resolveCurrentSessionId = async () => {
+                if (side !== 'remote') return null;
+                const pane = getPaneState(payload.paneKey);
+                if (pane && pane.mode === 'vds') {
+                    if (!pane.sessionId) {
+                        const connected = await ensurePaneConnected(payload.paneKey);
+                        if (!connected) return null;
+                    }
+                    if (pane.sessionId) {
+                        activeRemoteSessionId = pane.sessionId;
+                    }
+                }
+                return activeRemoteSessionId;
+            };
+
+            const saveCurrent = async () => {
+                if (saveInFlight) return;
+                saveInFlight = true;
+                saveBtn.disabled = true;
+                setEditorStatus('Kaydediliyor...', 'info');
+
+                try {
+                    const sessionId = await resolveCurrentSessionId();
+                    if (side === 'remote' && !sessionId) {
+                        setEditorStatus('Remote baglanti yok.', 'error');
+                        return;
+                    }
+
+                    const result = await sftpApi.writeFile({
+                        side,
+                        sessionId: side === 'remote' ? sessionId : null,
+                        path: targetPath,
+                        content: getEditorValue()
+                    });
+
+                    if (!result || result.success === false) {
+                        setEditorStatus(result && result.message ? result.message : 'Kaydetme hatasi.', 'error');
+                        setStatus(result && result.message ? result.message : 'Kaydetme hatasi.', 'error');
+                        return;
+                    }
+
+                    dirty = false;
+                    setTabTitle(false);
+                    setEditorStatus('Kaydedildi', 'success');
+                    setStatus(`'${fileName}' kaydedildi.`, 'success');
+                } catch (err) {
+                    const message = err && err.message ? err.message : 'Kaydetme hatasi.';
+                    setEditorStatus(message, 'error');
+                    setStatus(message, 'error');
+                } finally {
+                    saveInFlight = false;
+                    saveBtn.disabled = false;
+                }
+            };
+
+            const reloadCurrent = async () => {
+                if (reloadInFlight) return;
+                if (dirty) {
+                    const approved = await window.confirmAction('Kaydedilmemis degisiklikler silinsin mi?', {
+                        title: 'Dosya Yenileme',
+                        confirmText: 'Yenile',
+                        cancelText: 'Vazgec',
+                        tone: 'danger'
+                    });
+                    if (!approved) return;
+                }
+
+                reloadInFlight = true;
+                reloadBtn.disabled = true;
+                setEditorStatus('Yukleniyor...', 'info');
+
+                try {
+                    const sessionId = await resolveCurrentSessionId();
+                    if (side === 'remote' && !sessionId) {
+                        setEditorStatus('Remote baglanti yok.', 'error');
+                        return;
+                    }
+
+                    const result = await sftpApi.readFile({
+                        side,
+                        sessionId: side === 'remote' ? sessionId : null,
+                        path: targetPath,
+                        maxBytes: MAX_EDITABLE_FILE_BYTES
+                    });
+
+                    if (!result || result.success === false) {
+                        setEditorStatus(result && result.message ? result.message : 'Yenileme hatasi.', 'error');
+                        return;
+                    }
+
+                    setEditorValue(result.content || '', true);
+                    dirty = false;
+                    setTabTitle(false);
+                    setEditorStatus('Yenilendi', 'success');
+                } catch (err) {
+                    const message = err && err.message ? err.message : 'Yenileme hatasi.';
+                    setEditorStatus(message, 'error');
+                } finally {
+                    reloadInFlight = false;
+                    reloadBtn.disabled = false;
+                }
+            };
+
+            setTabTitle(false);
+            setEditorStatus('Hazir', 'info');
+
+            bindEditorChange(() => {
+                if (skipDirtyMark) return;
+                if (!dirty) {
+                    dirty = true;
+                    setTabTitle(true);
+                    setEditorStatus('Kaydedilmedi', 'warning');
+                }
+            });
+
+            if (monacoEditor && window.monaco && window.monaco.KeyMod && window.monaco.KeyCode) {
+                monacoEditor.addCommand(
+                    window.monaco.KeyMod.CtrlCmd | window.monaco.KeyCode.KeyS,
+                    () => { saveCurrent().catch(() => {}); }
+                );
+            } else {
+                textArea.addEventListener('keydown', async (event) => {
+                    if ((event.ctrlKey || event.metaKey) && (event.key === 's' || event.key === 'S')) {
+                        event.preventDefault();
+                        await saveCurrent();
+                    }
+                });
+            }
+
+            saveBtn.addEventListener('click', async () => {
+                await saveCurrent();
+            });
+
+            reloadBtn.addEventListener('click', async () => {
+                await reloadCurrent();
+            });
+
+            setTimeout(() => {
+                focusEditor();
+            }, 0);
+
+            const currentTab = window.TabManager.tabs.find((item) => item.id === tabId);
+            if (currentTab) {
+                currentTab.sessionObj = {
+                    dispose: () => {
+                        if (tabVisibilityObserver) {
+                            try { tabVisibilityObserver.disconnect(); } catch (_) {}
+                        }
+                        if (monacoResizeObserver) {
+                            try { monacoResizeObserver.disconnect(); } catch (_) {}
+                        }
+                        if (monacoEditor) {
+                            try { monacoEditor.dispose(); } catch (_) {}
+                        }
+                        state.editorTabs.delete(editorKey);
+                    }
+                };
+            }
+        }, 10);
+    }
+
+    async function openFileInEditor(key, targetPath) {
+        const pane = getPaneState(key);
+        if (!pane || !targetPath) return;
+
+        const entry = findEntryByPath(key, targetPath);
+        if (entry && entry.isDirectory) return;
+
+        const side = getPaneSide(pane);
+        if (side === 'remote') {
+            const connected = await ensurePaneConnected(key);
+            if (!connected) return;
+        }
+
+        const knownSize = entry && Number.isFinite(Number(entry.size)) ? Number(entry.size) : null;
+        if (knownSize != null && knownSize > MAX_EDITABLE_FILE_BYTES) {
+            const message = `Dosya acilamadi: ${formatSize(knownSize)} (limit ${formatSize(MAX_EDITABLE_FILE_BYTES)}).`;
+            setStatus(message, 'error');
+            if (window.notifyUser) window.notifyUser(message, 'warning');
+            return;
+        }
+
+        let result = null;
+        try {
+            result = await sftpApi.readFile({
+                side,
+                sessionId: side === 'remote' ? pane.sessionId : null,
+                path: targetPath,
+                maxBytes: MAX_EDITABLE_FILE_BYTES
+            });
+        } catch (err) {
+            const message = err && err.message ? err.message : 'Dosya okunamadi.';
+            setStatus(message, 'error');
+            return;
+        }
+
+        if (!result || result.success === false) {
+            if (result && result.tooLarge) {
+                const realSize = Number.isFinite(Number(result.size)) ? Number(result.size) : knownSize;
+                const message = `Dosya acilamadi: ${realSize != null ? formatSize(realSize) : 'Buyuk dosya'} (limit ${formatSize(MAX_EDITABLE_FILE_BYTES)}).`;
+                setStatus(message, 'error');
+                if (window.notifyUser) window.notifyUser(message, 'warning');
+                return;
+            }
+
+            setStatus(result && result.message ? result.message : 'Dosya okunamadi.', 'error');
+            return;
+        }
+
+        await openEditorTab({
+            paneKey: key,
+            side,
+            hostId: side === 'remote' ? pane.connectedHostId : null,
+            sessionId: side === 'remote' ? pane.sessionId : null,
+            path: result.path || targetPath,
+            fileName: getItemNameForPath(key, result.path || targetPath),
+            content: result.content || ''
+        });
+    }
+
+    async function createDirectoryInPane(key, directoryPath) {
+        const pane = getPaneState(key);
+        if (!pane) return;
+
+        const side = getPaneSide(pane);
+        if (side === 'remote') {
+            const connected = await ensurePaneConnected(key);
+            if (!connected) return;
+        }
+
+        const parentPath = String(directoryPath || pane.path || '').trim();
+        if (!parentPath) {
+            setStatus('Klasor olusturmak icin hedef yol secin.', 'error');
+            return;
+        }
+
+        const rawName = await requestTextValue({
+            title: 'Yeni klasor olustur',
+            confirmText: 'Olustur',
+            initialValue: '',
+            targetPath: parentPath,
+            placeholder: 'klasor_adi'
+        });
+        if (rawName == null) return;
+
+        const nameCheck = validateEntryName(rawName);
+        if (!nameCheck.valid) {
+            setStatus(nameCheck.message, 'error');
+            return;
+        }
+
+        const result = await sftpApi.createDirectory({
+            side,
+            sessionId: side === 'remote' ? pane.sessionId : null,
+            parentPath,
+            name: nameCheck.name
+        });
+
+        if (!result || result.success === false) {
+            setStatus(result && result.message ? result.message : 'Klasor olusturma basarisiz.', 'error');
+            return;
+        }
+
+        const refreshed = await refreshPane(key, parentPath);
+        if (!refreshed) {
+            await refreshPane(key, pane.path || parentPath);
+        }
+        setStatus(`'${nameCheck.name}' klasoru olusturuldu.`, 'success');
+    }
+
+    async function createFileInPane(key, directoryPath) {
+        const pane = getPaneState(key);
+        if (!pane) return;
+
+        const side = getPaneSide(pane);
+        if (side === 'remote') {
+            const connected = await ensurePaneConnected(key);
+            if (!connected) return;
+        }
+
+        const parentPath = String(directoryPath || pane.path || '').trim();
+        if (!parentPath) {
+            setStatus('Dosya olusturmak icin hedef yol secin.', 'error');
+            return;
+        }
+
+        const rawName = await requestTextValue({
+            title: 'Yeni dosya olustur',
+            confirmText: 'Olustur',
+            initialValue: 'untitled.txt',
+            targetPath: parentPath,
+            placeholder: 'dosya_adi.txt'
+        });
+        if (rawName == null) return;
+
+        const nameCheck = validateEntryName(rawName);
+        if (!nameCheck.valid) {
+            setStatus(nameCheck.message, 'error');
+            return;
+        }
+
+        const result = await sftpApi.createFile({
+            side,
+            sessionId: side === 'remote' ? pane.sessionId : null,
+            parentPath,
+            name: nameCheck.name,
+            content: ''
+        });
+
+        if (!result || result.success === false) {
+            setStatus(result && result.message ? result.message : 'Dosya olusturma basarisiz.', 'error');
+            return;
+        }
+
+        const refreshed = await refreshPane(key, parentPath);
+        if (!refreshed) {
+            await refreshPane(key, pane.path || parentPath);
+        }
+        setStatus(`'${nameCheck.name}' dosyasi olusturuldu.`, 'success');
+
+        if (result.path) {
+            await openFileInEditor(key, result.path);
+        }
+    }
+
     async function loadHosts() {
         const allHosts = await hostsApi.getData();
         state.hosts = (Array.isArray(allHosts) ? allHosts : [])
@@ -774,6 +1748,64 @@
         });
 
         renderAllPanes();
+    }
+
+    function bindContextMenuEvents() {
+        if (ui.contextMenu) {
+            ui.contextMenu.addEventListener('click', async (event) => {
+                const button = event.target.closest('button[data-action]');
+                if (!button) return;
+                event.preventDefault();
+
+                const action = String(button.dataset.action || '');
+                const paneKey = state.contextMenu.paneKey;
+                const targetPath = state.contextMenu.targetPath;
+                const directoryPath = state.contextMenu.directoryPath;
+
+                closeContextMenu();
+
+                if (!paneKey) return;
+                if (action === 'create-directory') {
+                    await createDirectoryInPane(paneKey, directoryPath);
+                    return;
+                }
+                if (action === 'create-file') {
+                    await createFileInPane(paneKey, directoryPath);
+                    return;
+                }
+
+                if (!targetPath) {
+                    setStatus('Bu islem icin bir oge secin.', 'error');
+                    return;
+                }
+
+                if (action === 'rename') {
+                    await renameItemInPane(paneKey, targetPath);
+                    return;
+                }
+                if (action === 'delete') {
+                    await deleteSelected(paneKey);
+                }
+            });
+        }
+
+        if (ui.renameConfirmBtn) {
+            ui.renameConfirmBtn.addEventListener('click', () => {
+                closeRenamePrompt(ui.renameInput ? ui.renameInput.value : '');
+            });
+        }
+
+        if (ui.renameCancelBtn) {
+            ui.renameCancelBtn.addEventListener('click', () => closeRenamePrompt(null));
+        }
+
+        if (ui.renameOverlay) {
+            ui.renameOverlay.addEventListener('click', (event) => {
+                if (event.target === ui.renameOverlay) {
+                    closeRenamePrompt(null);
+                }
+            });
+        }
     }
 
     function bindPaneEvents(key) {
@@ -792,6 +1824,7 @@
                 const mode = button.dataset.mode;
                 if (!mode) return;
                 activatePane(key, false);
+                closeContextMenu();
                 await switchPaneMode(key, mode);
             });
         }
@@ -799,6 +1832,7 @@
         if (paneUi.disconnectBtn) {
             paneUi.disconnectBtn.addEventListener('click', async () => {
                 activatePane(key, false);
+                closeContextMenu();
                 await disconnectPane(key, false);
             });
         }
@@ -806,6 +1840,7 @@
         if (paneUi.goBtn) {
             paneUi.goBtn.addEventListener('click', async () => {
                 activatePane(key, false);
+                closeContextMenu();
                 if (getPaneSide(pane) === 'remote') {
                     const connected = await ensurePaneConnected(key);
                     if (!connected) return;
@@ -817,6 +1852,7 @@
         if (paneUi.refreshBtn) {
             paneUi.refreshBtn.addEventListener('click', async () => {
                 activatePane(key, false);
+                closeContextMenu();
                 if (getPaneSide(pane) === 'remote') {
                     const connected = await ensurePaneConnected(key);
                     if (!connected) return;
@@ -830,6 +1866,7 @@
                 if (event.key !== 'Enter') return;
                 event.preventDefault();
                 activatePane(key, false);
+                closeContextMenu();
                 if (getPaneSide(pane) === 'remote') {
                     const connected = await ensurePaneConnected(key);
                     if (!connected) return;
@@ -841,11 +1878,38 @@
         if (paneUi.list) {
             paneUi.list.addEventListener('focus', () => activatePane(key, false));
 
+            paneUi.list.addEventListener('contextmenu', (event) => {
+                if (pane.loading) return;
+                if (getPaneSide(pane) === 'remote' && !pane.sessionId) return;
+
+                const row = event.target.closest('.sftp-file-row');
+
+                event.preventDefault();
+                activatePane(key, false);
+
+                let targetPath = null;
+                if (row && row.dataset.parent !== '1') {
+                    targetPath = decodePathValue(row.dataset.path || '');
+                }
+
+                if (targetPath) {
+                    if (!pane.selected.has(targetPath)) {
+                        selectOnly(key, targetPath);
+                    }
+                } else {
+                    pane.selected.clear();
+                    updateSelectionClasses(key);
+                }
+
+                openContextMenu(key, targetPath, pane.path || '', event.clientX, event.clientY);
+            });
+
             paneUi.list.addEventListener('click', async (event) => {
                 const row = event.target.closest('.sftp-file-row');
                 if (!row) return;
 
                 activatePane(key, false);
+                closeContextMenu();
 
                 const targetPath = decodePathValue(row.dataset.path || '');
                 if (!targetPath) return;
@@ -869,6 +1933,8 @@
                 const row = event.target.closest('.sftp-file-row');
                 if (!row) return;
 
+                closeContextMenu();
+
                 const targetPath = decodePathValue(row.dataset.path || '');
                 if (!targetPath) return;
 
@@ -877,7 +1943,10 @@
 
                 if (isParentRow || isDirectory) {
                     await refreshPane(key, targetPath);
+                    return;
                 }
+
+                await openFileInEditor(key, targetPath);
             });
 
             paneUi.list.addEventListener('dragstart', (event) => {
@@ -886,6 +1955,8 @@
                     event.preventDefault();
                     return;
                 }
+
+                closeContextMenu();
 
                 const isParentRow = row.dataset.parent === '1';
                 if (isParentRow) {
@@ -995,6 +2066,7 @@
                 if (!targetPath) return;
 
                 activatePane(key, false);
+                closeContextMenu();
                 await refreshPane(key, targetPath);
             });
         }
@@ -1015,6 +2087,7 @@
 
                 pane.selectedHostId = hostId;
                 renderPane(key);
+                closeContextMenu();
                 await connectPane(key, { silent: false, forceReconnect: false });
             });
         }
@@ -1024,10 +2097,27 @@
         if (window.__sftpGlobalKeydownHandler) {
             document.removeEventListener('keydown', window.__sftpGlobalKeydownHandler);
         }
+        if (window.__sftpGlobalPointerHandler) {
+            document.removeEventListener('pointerdown', window.__sftpGlobalPointerHandler, true);
+        }
+        if (window.__sftpGlobalResizeHandler) {
+            window.removeEventListener('resize', window.__sftpGlobalResizeHandler);
+        }
+        if (window.__sftpGlobalBlurHandler) {
+            window.removeEventListener('blur', window.__sftpGlobalBlurHandler);
+        }
 
         const handle = async (event) => {
             if (!document.getElementById('sftp-pane-left')) {
                 document.removeEventListener('keydown', handle);
+                closeContextMenu();
+                closeRenamePrompt(null);
+                return;
+            }
+
+            if (event.key === 'Escape' && ui.contextMenu && ui.contextMenu.classList.contains('show')) {
+                event.preventDefault();
+                closeContextMenu();
                 return;
             }
 
@@ -1065,12 +2155,53 @@
             }
         };
 
+        const pointerHandle = (event) => {
+            if (!document.getElementById('sftp-pane-left')) {
+                document.removeEventListener('pointerdown', pointerHandle, true);
+                closeContextMenu();
+                closeRenamePrompt(null);
+                return;
+            }
+
+            if (!ui.contextMenu || !ui.contextMenu.classList.contains('show')) return;
+            if (event.target && event.target.closest && event.target.closest('#sftp-context-menu')) return;
+            closeContextMenu();
+        };
+
+        const resizeHandle = () => {
+            if (!document.getElementById('sftp-pane-left')) {
+                window.removeEventListener('resize', resizeHandle);
+                closeContextMenu();
+                closeRenamePrompt(null);
+                return;
+            }
+            closeContextMenu();
+        };
+
+        const blurHandle = () => {
+            if (!document.getElementById('sftp-pane-left')) {
+                window.removeEventListener('blur', blurHandle);
+                closeContextMenu();
+                closeRenamePrompt(null);
+                return;
+            }
+            closeContextMenu();
+        };
+
         window.__sftpGlobalKeydownHandler = handle;
+        window.__sftpGlobalPointerHandler = pointerHandle;
+        window.__sftpGlobalResizeHandler = resizeHandle;
+        window.__sftpGlobalBlurHandler = blurHandle;
+
         document.addEventListener('keydown', handle);
+        document.addEventListener('pointerdown', pointerHandle, true);
+        window.addEventListener('resize', resizeHandle);
+        window.addEventListener('blur', blurHandle);
     }
 
     async function init() {
         paneKeys.forEach((key) => bindPaneEvents(key));
+        bindContextMenuEvents();
         bindGlobalShortcuts();
 
         activatePane('left', false);
