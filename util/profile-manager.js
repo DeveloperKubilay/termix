@@ -4,6 +4,7 @@ const {
     normalizeAiSettings,
     normalizeTerminalSettings
 } = require('./profile-defaults');
+const { normalizeCloudConfig } = require('./profile-secrets');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 const PROFILES_DIR = path.join(ROOT_DIR, 'profiles');
@@ -82,9 +83,7 @@ function normalizeProfileData(data = {}, fallbackName = 'Default') {
     normalized.name = (data.name || fallbackName || 'Default').toString();
     normalized.type = type;
     normalized.write = type !== 'local' ? Boolean(data.write) : true;
-    normalized.config = type !== 'local' && data.config && typeof data.config === 'object' && !Array.isArray(data.config)
-        ? data.config
-        : {};
+    normalized.config = normalizeCloudConfig(type, data.config);
     normalized.hosts = Array.isArray(data.hosts) ? data.hosts : [];
     normalized.tags = Array.isArray(data.tags) ? data.tags : [];
     normalized.knownHosts = Array.isArray(data.knownHosts) ? data.knownHosts : [];

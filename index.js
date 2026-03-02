@@ -5,8 +5,18 @@ const { loadIPC } = require('./util/ipc-loader');
 const profileManager = require('./util/profile-manager');
 const portForwardManager = require('./util/port-forwarding/manager');
 const sftpManager = require('./util/sftp/manager');
+const { enqueueProfileSync } = require('./util/cloud-sync');
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  try {
+    await enqueueProfileSync('pull', {
+      source: 'app-startup',
+      timeoutMs: 15000
+    });
+  } catch (err) {
+    console.error('Failed to pull cloud data on startup:', err);
+  }
+
   main();
   const channels = loadIPC();
   console.log('Loaded IPC channels:', channels.length);
@@ -21,20 +31,46 @@ const db = require("./util/startDb")();
 profileManager.persistActiveProfileData();
 global.Terminals = {}
 
-app.on('before-quit', () => {
-  try {
-    profileManager.persistActiveProfileData();
-  } catch (err) {
-    console.error('Failed to persist active profile:', err);
+let isQuitInProgress = false;
+
+app.on('before-quit', (event) => {
+  if (isQuitInProgress) {
+    return;
   }
 
-  portForwardManager.stopAllForwards().catch((err) => {
-    console.error('Failed to stop active port forwards:', err);
-  });
+  event.preventDefault();
+  isQuitInProgress = true;
 
-  sftpManager.disconnectAll().catch((err) => {
-    console.error('Failed to close active SFTP sessions:', err);
-  });
+  (async () => {
+    try {
+      profileManager.persistActiveProfileData();
+    } catch (err) {
+      console.error('Failed to persist active profile:', err);
+    }
+
+    try {
+      await enqueueProfileSync('push', {
+        source: 'app-shutdown',
+        timeoutMs: 15000
+      });
+    } catch (err) {
+      console.error('Failed to push cloud data on shutdown:', err);
+    }
+
+    try {
+      await portForwardManager.stopAllForwards();
+    } catch (err) {
+      console.error('Failed to stop active port forwards:', err);
+    }
+
+    try {
+      await sftpManager.disconnectAll();
+    } catch (err) {
+      console.error('Failed to close active SFTP sessions:', err);
+    }
+
+    app.quit();
+  })();
 });
 
 function main() {

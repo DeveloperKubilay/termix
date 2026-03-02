@@ -1,5 +1,6 @@
 const db = require('../../util/profile-db');
 const { encrypt } = require('../../util/crypto');
+const { enqueueProfileSync } = require('../../util/cloud-sync');
 const SSH_PORT_MIN = 1;
 const SSH_PORT_MAX = 65535;
 const SSH_PORT_DEFAULT = 22;
@@ -26,6 +27,14 @@ module.exports = async (filesPath, data) => {
         return next;
     });
 
-    return db.set('hosts', data);
+    const savedHosts = db.set('hosts', data);
+
+    enqueueProfileSync('push', {
+        source: 'hosts-set-data'
+    }).catch((err) => {
+        console.error('Auto sync push failed after hosts update:', err);
+    });
+
+    return savedHosts;
 };
 
