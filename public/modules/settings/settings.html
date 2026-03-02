@@ -75,9 +75,14 @@
                     </div>
                 </div>
 
+                <div class="form-group" style="margin-bottom: 10px;">
+                    <label style="display: block; margin-bottom: 8px; font-size: 0.9em; color: var(--text-muted);">Body (JSON)</label>
+                    <textarea id="ai-body" placeholder='{"model":"qwen2.5-coder:0.5b","prompt":"{{prompt}}","stream":false}' style="width: 100%; height: 120px; padding: 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-dark); color: var(--text-main); font-family: 'JetBrains Mono', monospace; resize: none; outline: none; font-size: 0.9em;"></textarea>
+                </div>
+
                 <div class="form-group">
-                    <label style="display: block; margin-bottom: 8px; font-size: 0.9em; color: var(--text-muted);">Headers (JSON)</label>
-                    <textarea id="ai-headers" placeholder='{"Authorization": "Bearer token"}' style="width: 100%; height: 120px; padding: 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-dark); color: var(--text-main); font-family: "JetBrains Mono", monospace; resize: none; outline: none; font-size: 0.9em;"></textarea>
+                    <label style="display: block; margin-bottom: 8px; font-size: 0.85em; color: var(--text-muted);">Headers (Optional JSON)</label>
+                    <textarea id="ai-headers" placeholder='{"Content-Type":"application/json"}' style="width: 100%; height: 70px; padding: 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-dark); color: var(--text-main); font-family: 'JetBrains Mono', monospace; resize: none; outline: none; font-size: 0.85em;"></textarea>
                 </div>
             </div>
         </div>

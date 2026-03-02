@@ -1,6 +1,7 @@
 (function() {
     const aiMethod = document.getElementById('ai-method');
     const aiUrl = document.getElementById('ai-url');
+    const aiBody = document.getElementById('ai-body');
     const aiHeaders = document.getElementById('ai-headers');
     
     const currentUser = document.getElementById('current-user-name');
@@ -66,6 +67,7 @@
             if (data.ai) {
                 aiMethod.value = data.ai.method || 'GET';
                 aiUrl.value = data.ai.url || '';
+                aiBody.value = typeof data.ai.body === 'object' ? JSON.stringify(data.ai.body, null, 2) : (data.ai.body || '');
                 aiHeaders.value = typeof data.ai.headers === 'object' ? JSON.stringify(data.ai.headers, null, 2) : (data.ai.headers || '');
             }
 
@@ -126,6 +128,7 @@
         // The URL input is inside a flex wrapper, so we target the parent
         const aiUrlWrapper = aiUrl.parentElement;
         aiUrlWrapper.style.borderColor = 'var(--border)';
+        aiBody.style.borderColor = 'var(--border)';
         aiHeaders.style.borderColor = 'var(--border)';
 
         // Validate URL
@@ -142,6 +145,22 @@
                 aiUrlWrapper.style.borderColor = '#ff4444';
                 return;
             }
+        }
+
+        // Validate Body
+        let body = {};
+        const bodyVal = aiBody.value.trim();
+
+        if (bodyVal) {
+            try {
+                body = JSON.parse(bodyVal);
+            } catch (e) {
+                aiBody.style.borderColor = '#ff4444';
+                return;
+            }
+        } else {
+            body = {};
+            aiBody.value = '{}';
         }
 
         // Validate Headers
@@ -164,6 +183,7 @@
             ai: {
                 method: aiMethod.value,
                 url: urlVal,
+                body: body,
                 headers: headers
             }
         };
