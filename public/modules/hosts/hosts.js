@@ -55,6 +55,56 @@
 
     let allHosts = [];
     let selectedTags = new Set();
+    const SSH_PORT_MIN = 1;
+    const SSH_PORT_MAX = 65535;
+    const DEFAULT_SSH_PORT = 22;
+
+    function parseSshPort(value) {
+        const text = String(value == null ? '' : value).trim();
+        if (!text) return null;
+
+        const parsed = Number(text);
+        if (!Number.isInteger(parsed)) return null;
+        if (parsed < SSH_PORT_MIN || parsed > SSH_PORT_MAX) return null;
+        return parsed;
+    }
+
+    function bindSshPortInputValidation(inputEl) {
+        if (!inputEl) return;
+
+        const sanitize = (strict = false) => {
+            const raw = String(inputEl.value || '');
+            const digitsOnly = raw.replace(/[^\d]/g, '');
+            inputEl.value = digitsOnly;
+
+            if (!digitsOnly) {
+                inputEl.setCustomValidity('');
+                return;
+            }
+
+            const parsed = Number(digitsOnly);
+            if (!Number.isInteger(parsed)) {
+                inputEl.setCustomValidity(`Port must be ${SSH_PORT_MIN}-${SSH_PORT_MAX}.`);
+                return;
+            }
+
+            if (strict) {
+                const clamped = Math.min(SSH_PORT_MAX, Math.max(SSH_PORT_MIN, parsed));
+                inputEl.value = String(clamped);
+            }
+
+            const current = Number(inputEl.value);
+            if (!Number.isInteger(current) || current < SSH_PORT_MIN || current > SSH_PORT_MAX) {
+                inputEl.setCustomValidity(`Port must be ${SSH_PORT_MIN}-${SSH_PORT_MAX}.`);
+                return;
+            }
+
+            inputEl.setCustomValidity('');
+        };
+
+        inputEl.addEventListener('input', () => sanitize(false));
+        inputEl.addEventListener('blur', () => sanitize(true));
+    }
 
     function parseSSHCommand(cmd) {
         const trimmed = cmd.trim();
@@ -62,14 +112,16 @@
         
         // Remove 'ssh' and parse args
         let args = trimmed.slice(4).trim();
-        let port = '22';
+        let port = DEFAULT_SSH_PORT;
         
         // Find port (-p 1234 or -p1234)
-        const portMatch = args.match(/-p\s*(\d+)/);
+        const portMatch = args.match(/(?:^|\s)-p\s*(\S+)/);
         if (portMatch) {
-            port = portMatch[1];
+            const parsedPort = parseSshPort(portMatch[1]);
+            if (!parsedPort) return null;
+            port = parsedPort;
             // Remove port flag from string to isolate user@host
-            args = args.replace(portMatch[0], '').trim();
+            args = args.replace(portMatch[0], ' ').trim();
         }
 
         // Get the destination part (should be what's left, taking first token)
@@ -89,7 +141,7 @@
         }
 
         return {
-            port: port,
+            port: String(port),
             username: username,
             hostname: hostname
         };
@@ -491,8 +543,15 @@
 
             const certInput = document.querySelector('input[placeholder="Certificate, FIDO2"]');
             const tagsInput = document.querySelector('input[placeholder="Tags"]');
-            const portInput = document.querySelector('input[type="number"]');
+            const portInput = document.getElementById('host-port');
             const btnConnect = document.querySelector('.btn-connect-large');
+
+            if (portInput) {
+                portInput.min = String(SSH_PORT_MIN);
+                portInput.max = String(SSH_PORT_MAX);
+                portInput.step = '1';
+                bindSshPortInputValidation(portInput);
+            }
 
             // Removed manual binding of drawer-check since it's handled globally in app.js
 
@@ -502,7 +561,7 @@
                 if (labelInput) labelInput.value = hostToEdit.name || '';
                 if (usernameInput) usernameInput.value = hostToEdit.username || '';
                 if (tagsInput && hostToEdit.tags) tagsInput.value = hostToEdit.tags.join(', ');
-                if (portInput) portInput.value = hostToEdit.port || 22;
+                if (portInput) portInput.value = String(parseSshPort(hostToEdit.port) || DEFAULT_SSH_PORT);
                 if (passwordInput) passwordInput.value = hostToEdit.password || '';
                 if (certInput) {
                     if (hostToEdit.certPath) {
@@ -718,8 +777,13 @@
                     if (addressInput) addressInput.style.border = '';
                     if (passwordInput) passwordInput.style.border = '';
                     if (certInput) certInput.style.border = '';
+                    if (portInput) {
+                        portInput.style.border = '';
+                        portInput.setCustomValidity('');
+                    }
 
                     let isValid = true;
+                    let normalizedPort = DEFAULT_SSH_PORT;
 
                     // IP/Hostname Validation
                     const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])$/;
@@ -736,6 +800,20 @@
                         if (passwordInput) passwordInput.style.border = '1px solid #f38ba8';
                         if (certInput) certInput.style.border = '1px solid #f38ba8';
                         isValid = false;
+                    }
+
+                    if (portInput) {
+                        const parsedPort = parseSshPort(portInput.value);
+                        if (!parsedPort) {
+                            portInput.style.border = '1px solid #f38ba8';
+                            portInput.setCustomValidity(`Port must be between ${SSH_PORT_MIN} and ${SSH_PORT_MAX}.`);
+                            portInput.reportValidity();
+                            isValid = false;
+                        } else {
+                            normalizedPort = parsedPort;
+                            portInput.value = String(parsedPort);
+                            portInput.setCustomValidity('');
+                        }
                     }
 
                     if (!isValid) return;
@@ -771,7 +849,7 @@
                         username: usernameInput.value || "root",
                         password: passwordInput ? passwordInput.value : "",
                         address: addressInput.value,
-                        port: portInput ? portInput.value : 22,
+                        port: String(normalizedPort),
                         tags: tagList,
                         certPath: certInput ? (certInput.dataset.fullPath || certInput.value) : '',
                         ...(hostToEdit && Number.isFinite(Number(hostToEdit.terminalFontSize))
