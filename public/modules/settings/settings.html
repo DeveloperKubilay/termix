@@ -42,18 +42,18 @@
             </div>
         </div>
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: stretch;">
             <!-- Tags Management -->
-            <div class="card">
+            <div class="card" style="display: flex; flex-direction: column;">
                 <h3 style="margin-top: 0; margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
                     <i class="fa-solid fa-tags" style="color: var(--accent);"></i> Host Tags
                 </h3>
-                <div style="background: var(--bg-dark); padding: 15px; border-radius: 8px; border: 1px solid var(--border); min-height: 150px;">
+                <div style="background: var(--bg-dark); padding: 15px; border-radius: 8px; border: 1px solid var(--border); min-height: 150px; flex: 1; margin-bottom: 5px;">
                     <div id="tags-list" style="display: flex; flex-wrap: wrap; gap: 8px;">
                         <span style="color: var(--text-muted);">Loading tags...</span>
                     </div>
                 </div>
-                <p style="color: var(--text-muted); font-size: 0.85em; margin-top: 10px; text-align: right;">
+                <p style="color: var(--text-muted); font-size: 0.85em; margin: 0; text-align: right;">
                     <i class="fa-solid fa-circle-info"></i> Click X to delete tags from all hosts.
                 </p>
             </div>
