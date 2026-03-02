@@ -58,20 +58,27 @@
         </div>
 
         <!-- AI Chat View (Hidden by default) -->
-        <div id="sidebar-ai" style="display: none; height: 100%; flex-direction: column;">
-            <div class="ai-header" style="padding: 10px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border);">
-                <button id="ai-back-btn" style="background:none; border:none; color: var(--text-main); cursor: pointer;"><i class="fa-solid fa-arrow-left"></i></button>
-                <span>AI Chat</span>
-                <button id="ai-new-chat-btn" style="background:none; border:none; color: var(--text-main); cursor: pointer;"><i class="fa-solid fa-plus"></i></button>
-            </div>
-            <div id="ai-chat-messages" style="flex-grow: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 10px;">
-                <div class="message ai" style="background: var(--bg-card); padding: 8px; border-radius: 6px; font-size: 0.9em;">
-                    How can I help you today?
+        <div id="sidebar-ai" class="ai-panel" style="display: none;">
+            <div class="ai-header">
+                <button id="ai-back-btn" class="ai-icon-btn" title="Back">
+                    <i class="fa-solid fa-arrow-left"></i>
+                </button>
+                <div class="ai-header-center">
+                    <div class="ai-title">AI Chat</div>
+                    <div class="ai-subtitle">Context enabled</div>
                 </div>
+                <button id="ai-new-chat-btn" class="ai-icon-btn" title="New Chat">
+                    <i class="fa-solid fa-plus"></i>
+                </button>
             </div>
-            <div class="ai-input-area" style="padding: 10px; border-top: 1px solid var(--border); display: flex; gap: 5px;">
-                <input type="text" id="ai-input" placeholder="Ask AI..." style="flex-grow: 1; background: var(--bg-dark); border: 1px solid var(--border); color: var(--text-main); padding: 6px; border-radius: 4px; outline: none;">
-                <button id="ai-send-btn" style="background: var(--accent); border: none; color: var(--bg-dark); padding: 0 10px; border-radius: 4px; cursor: pointer;"><i class="fa-solid fa-paper-plane"></i></button>
+
+            <div id="ai-chat-messages" class="ai-messages" aria-live="polite"></div>
+
+            <div class="ai-input-area">
+                <input type="text" id="ai-input" class="ai-input" placeholder="Ask AI...">
+                <button id="ai-send-btn" class="ai-send-btn" title="Send">
+                    <i class="fa-solid fa-paper-plane"></i>
+                </button>
             </div>
         </div>
     </div>

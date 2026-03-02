@@ -1,6 +1,7 @@
 const DEFAULT_AI_SETTINGS = {
     method: 'GET',
     url: '',
+    body: {},
     headers: {}
 };
 
@@ -47,6 +48,10 @@ function normalizeAiSettings(value) {
         return out;
     }
 
+    const body = value.body && typeof value.body === 'object' && !Array.isArray(value.body)
+        ? value.body
+        : {};
+
     const headers = value.headers && typeof value.headers === 'object' && !Array.isArray(value.headers)
         ? value.headers
         : {};
@@ -54,6 +59,7 @@ function normalizeAiSettings(value) {
     return {
         ...out,
         ...value,
+        body,
         headers
     };
 }
