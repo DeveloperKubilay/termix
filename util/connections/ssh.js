@@ -3,6 +3,18 @@ const net = require('net');
 const { EventEmitter } = require('events');
 const kubitdb = require('kubitdb');
 const db = new kubitdb();
+const SSH_PORT_MIN = 1;
+const SSH_PORT_MAX = 65535;
+const SSH_PORT_FALLBACK = 22;
+
+function parseSshPort(value, fallback = SSH_PORT_FALLBACK) {
+    const candidate = value == null || String(value).trim() === '' ? fallback : value;
+    const parsed = Number(candidate);
+    if (!Number.isInteger(parsed) || parsed < SSH_PORT_MIN || parsed > SSH_PORT_MAX) {
+        throw new Error(`SSH port must be between ${SSH_PORT_MIN} and ${SSH_PORT_MAX}.`);
+    }
+    return parsed;
+}
 
 module.exports = (data) => {
     return new Promise((resolve, reject) => {
@@ -53,7 +65,8 @@ module.exports = (data) => {
 
         // Socket logic
         try {
-            const sock = net.createConnection(data.port, data.address);
+            const port = parseSshPort(data.port);
+            const sock = net.createConnection(port, data.address);
             sock.on('connect', () => {
                 sock.setNoDelay(true);
             });
@@ -79,7 +92,7 @@ module.exports = (data) => {
                     }
                     if (!Array.isArray(knownHosts)) knownHosts = [];
 
-                    const hostEntry = knownHosts.find(h => h.address === data.address && h.port === data.port);
+                    const hostEntry = knownHosts.find(h => h.address === data.address && Number(h.port) === port);
 
                     if (hostEntry) {
                         if (hostEntry.key === key) return true;
@@ -90,7 +103,7 @@ module.exports = (data) => {
                     // Trust On First Use (TOFU)
                     knownHosts.push({
                         address: data.address,
-                        port: data.port,
+                        port,
                         key: key,
                         firstSeen: Date.now()
                     });
