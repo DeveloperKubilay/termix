@@ -1,4 +1,5 @@
 const db = require('../../util/profile-db');
+const { enqueueProfileSync } = require('../../util/cloud-sync');
 
 module.exports = async (filesPath, tagToDelete) => {
     // 1. Remove from global 'tags' list
@@ -22,6 +23,12 @@ module.exports = async (filesPath, tagToDelete) => {
     
     // Save back to DB
     db.set('hosts', updatedHosts);
+
+    enqueueProfileSync('push', {
+        source: 'hosts-delete-tag'
+    }).catch((err) => {
+        console.error('Auto sync push failed after tag delete:', err);
+    });
 
     return tags;
 };

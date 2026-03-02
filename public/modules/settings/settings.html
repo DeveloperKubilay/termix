@@ -31,11 +31,11 @@
             <div id="firebase-sync-options" style="display: none; background: rgba(137, 180, 250, 0.05); padding: 15px; border-radius: 8px; border: 1px solid var(--border);">
                 <h4 style="font-size: 0.95em; margin: 0 0 10px 0; color: var(--accent);"><i class="fa-solid fa-cloud"></i> <span id="sync-provider-name">Cloud</span> Sync</h4>
                 <p id="sync-provider-description" style="font-size: 0.9em; color: var(--text-muted); margin-bottom: 15px;">Sync your local data with cloud storage.</p>
-                <div style="display: flex; gap: 10px;">
-                    <button class="btn btn-secondary" id="btn-sync-pull">
+                <div class="sync-actions">
+                    <button class="btn btn-primary sync-action-btn" id="btn-sync-pull">
                         <i class="fa-solid fa-cloud-arrow-down" style="margin-right: 5px;"></i> Pull from Cloud
                     </button>
-                    <button class="btn btn-secondary" id="btn-sync-push">
+                    <button class="btn btn-primary sync-action-btn" id="btn-sync-push">
                         <i class="fa-solid fa-cloud-arrow-up" style="margin-right: 5px;"></i> Push to Cloud
                     </button>
                 </div>
@@ -90,6 +90,27 @@
 </div>
 
 <style>
+    .sync-actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    .sync-action-btn {
+        height: 40px;
+        border: 1px solid var(--border);
+        background: var(--bg-card);
+        color: var(--text-main);
+        transition: border-color 0.2s, color 0.2s, background 0.2s, transform 0.2s;
+    }
+
+    .sync-action-btn:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+        background: #3b3e52;
+        transform: translateY(-1px);
+    }
+
     .tag-item {
         background: rgba(137, 180, 250, 0.1);
         border: 1px solid var(--accent);

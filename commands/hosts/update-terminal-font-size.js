@@ -1,4 +1,5 @@
 const db = require('../../util/profile-db');
+const { enqueueProfileSync } = require('../../util/cloud-sync');
 
 module.exports = async (filesPath, hostId, fontSize) => {
     if (hostId == null) {
@@ -28,6 +29,11 @@ module.exports = async (filesPath, hostId, fontSize) => {
     };
 
     db.set('hosts', hosts);
+    enqueueProfileSync('push', {
+        source: 'hosts-update-terminal-font-size'
+    }).catch((err) => {
+        console.error('Auto sync push failed after terminal font size update:', err);
+    });
 
     return {
         success: true,

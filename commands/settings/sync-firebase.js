@@ -1,24 +1,10 @@
-const firebase = require('../../util/firebase');
-const qmm = require('../../util/qmm');
 const db = require('../../util/profile-db');
-const profileManager = require('../../util/profile-manager');
+const { enqueueProfileSync } = require('../../util/cloud-sync');
 
 module.exports = async function (filesPath, action) {
-    const type = db.get("type");
-    const providers = {
-        firebase: {
-            label: 'Firebase',
-            sync: firebase
-        },
-        qmm: {
-            label: 'QMM',
-            sync: qmm
-        }
-    };
+    const type = String(db.get('type') || '').toLowerCase();
 
-    const provider = providers[type];
-
-    if (!provider) {
+    if (type !== 'firebase' && type !== 'qmm') {
         throw new Error("Only available for Firebase or QMM users.");
     }
 
@@ -27,23 +13,23 @@ module.exports = async function (filesPath, action) {
     }
     
     try {
-        const isPush = action === 'push';
-        await provider.sync(isPush);
+        const result = await enqueueProfileSync(action, {
+            persistBefore: true,
+            persistAfter: true,
+            source: 'settings-manual-sync'
+        });
 
-        const actionText = isPush ? 'pushed to' : 'fetched from';
-
-        profileManager.persistActiveProfileData();
         return {
             success: true,
-            provider: type,
-            message: `Data ${actionText} ${provider.label} successfully.`
+            provider: result.provider || type,
+            message: result.message
         };
     } catch (err) {
         console.error(err);
         return {
             success: false,
             provider: type,
-            message: `Sync failed (${provider.label}): ${err.message}`
+            message: `Sync failed (${type === 'qmm' ? 'QMM' : 'Firebase'}): ${err.message}`
         };
     }
 };

@@ -3,15 +3,21 @@ const https = require('https');
 const { URL } = require('url');
 const db = require('./profile-db');
 const { encrypt, decrypt } = require('./crypto');
+const { unsealQmmSecret, PORTABLE_KEY_ENV, PORTABLE_KEY_FILE } = require('./profile-secrets');
 
 function getQmmConfig() {
     const rawConfig = db.get('config') || {};
     const baseUrl = String(rawConfig.url || rawConfig.baseUrl || '').trim();
-    const apiKey = String(rawConfig.password || rawConfig.apiKey || '').trim();
+    const rawApiKey = String(rawConfig.password || rawConfig.apiKey || '').trim();
+    const apiKey = unsealQmmSecret(rawApiKey);
     const allowSelfSigned = rawConfig.allowSelfSigned !== false;
 
     if (!baseUrl) {
         throw new Error('QMM URL is required.');
+    }
+
+    if (rawApiKey && !apiKey) {
+        throw new Error(`QMM password could not be decrypted. Use the same ${PORTABLE_KEY_ENV} or copy ${PORTABLE_KEY_FILE}.`);
     }
 
     if (!apiKey) {
