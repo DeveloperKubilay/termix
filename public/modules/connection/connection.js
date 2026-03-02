@@ -8,6 +8,43 @@ window.ConnectionModule = {
         if (!container) return;
         const tabId = containerId.replace('terminal-', '');
         let resizeObserver = null;
+        const aiContextSourceId = `terminal:${tabId}`;
+        let lastSelectionForAi = null;
+
+        const toText = (value) => String(value == null ? '' : value).trim();
+
+        const getAiContextSourceLabel = () => {
+            const protocol = toText(hostInfo && hostInfo.protocol).toUpperCase();
+            if (protocol === 'LOCAL') return 'Local Terminal';
+            if (protocol === 'SERIAL') {
+                return toText(hostInfo && (hostInfo.path || hostInfo.name)) || 'Serial Terminal';
+            }
+
+            const name = toText(hostInfo && hostInfo.name);
+            if (name) return name;
+
+            const username = toText(hostInfo && hostInfo.username);
+            const address = toText(hostInfo && (hostInfo.hostname || hostInfo.address));
+            if (username && address) return `${username}@${address}`;
+            return address || 'SSH Terminal';
+        };
+
+        const emitAiSelectionContext = (selectionText) => {
+            const normalizedSelection = toText(selectionText);
+            if (normalizedSelection === lastSelectionForAi) return;
+            lastSelectionForAi = normalizedSelection;
+
+            try {
+                window.dispatchEvent(new CustomEvent('termix:ai-context-selection', {
+                    detail: {
+                        sourceId: aiContextSourceId,
+                        sourceKind: 'terminal-selection',
+                        sourceLabel: getAiContextSourceLabel(),
+                        text: normalizedSelection
+                    }
+                }));
+            } catch (_) {}
+        };
 
         // Container rengini settings'ten gelen renkle eşle
         const TerminalSettings = await window.electronAPI.connection.getSettings();
@@ -132,6 +169,7 @@ window.ConnectionModule = {
             if (reconnecting || isUserDisconnected) return;
             reconnecting = true;
             try {
+                emitAiSelectionContext('');
                 try { window.electronAPI.send('term-close', { sessionId: currentSessionId }); } catch (_) {}
                 window.removeEventListener('keydown', handleTerminalZoomKeydown);
                 if (resizeObserver) resizeObserver.disconnect();
@@ -273,17 +311,20 @@ window.ConnectionModule = {
 
         window.addEventListener('keydown', handleTerminalZoomKeydown);
 
+        term.onSelectionChange(() => {
+            const selection = term.getSelection();
+            if (TerminalSettings.rightClickCopyPaste && selection) {
+                clipboard.writeText(selection);
+            }
+            emitAiSelectionContext(selection);
+        });
+
         if (TerminalSettings.rightClickCopyPaste) { // Sağ tık ile yapıştırma
             container.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
                 const text = clipboard.readText();
                 if (text) {
                     term.paste(text);
-                }
-            }); term.onSelectionChange(() => {
-                const selection = term.getSelection();
-                if (selection) {
-                    clipboard.writeText(selection);
                 }
             });
         }
@@ -298,6 +339,7 @@ window.ConnectionModule = {
             dispose: () => {
                 isUserDisconnected = true;
                 clearTimeout(msgTimer);
+                emitAiSelectionContext('');
                 // Observer'ı durdur
                 if (resizeObserver) resizeObserver.disconnect();
                 window.removeEventListener('keydown', handleTerminalZoomKeydown);

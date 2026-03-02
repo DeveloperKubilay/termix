@@ -181,8 +181,68 @@ body {
     padding: 10px;
     border-top: 1px solid var(--border);
     display: flex;
+    flex-direction: column;
     gap: 8px;
     background: var(--bg-sidebar);
+}
+
+.ai-context-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.ai-context-bar[hidden] {
+    display: none;
+}
+
+.ai-context-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    border: 1px solid var(--border);
+    background: #2a2d3d;
+    border-radius: 8px;
+    padding: 4px 6px 4px 8px;
+    font-size: 0.72rem;
+    color: var(--text-main);
+}
+
+.ai-context-chip i {
+    color: var(--accent);
+}
+
+.ai-context-chip-label {
+    max-width: 155px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ai-context-chip-remove {
+    width: 18px;
+    height: 18px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: color 0.2s, background-color 0.2s;
+}
+
+.ai-context-chip-remove:hover {
+    color: var(--text-main);
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.ai-input-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .ai-input {
