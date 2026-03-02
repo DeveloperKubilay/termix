@@ -81,6 +81,7 @@
                 parentPath: null,
                 entries: [],
                 selected: new Set(),
+                selectionAnchorPath: null,
                 loading: false,
                 requestId: 0
             },
@@ -95,6 +96,7 @@
                 parentPath: null,
                 entries: [],
                 selected: new Set(),
+                selectionAnchorPath: null,
                 loading: false,
                 requestId: 0
             }
@@ -818,7 +820,7 @@
         pane.path = result.path || payload.path || pane.path;
         pane.parentPath = result.parentPath || null;
         pane.entries = Array.isArray(result.entries) ? result.entries : [];
-        pane.selected.clear();
+        clearPaneSelection(pane);
 
         renderPane(key);
         return true;
@@ -843,7 +845,7 @@
         pane.path = '';
         pane.parentPath = null;
         pane.entries = [];
-        pane.selected.clear();
+        clearPaneSelection(pane);
         pane.loading = false;
 
         renderPane(key);
@@ -904,7 +906,7 @@
             pane.path = result.homePath || '/';
             pane.parentPath = null;
             pane.entries = [];
-            pane.selected.clear();
+            clearPaneSelection(pane);
 
             renderPane(key);
             const refreshed = await refreshPane(key, pane.path);
@@ -950,7 +952,7 @@
             pane.path = '';
             pane.parentPath = null;
             pane.entries = [];
-            pane.selected.clear();
+            clearPaneSelection(pane);
             renderPane(key);
             await refreshPane(key, '');
             setStatus(`${key === 'left' ? 'Sol' : 'Sag'} panel Local moda gecti.`, 'info');
@@ -961,7 +963,7 @@
         pane.path = '';
         pane.parentPath = null;
         pane.entries = [];
-        pane.selected.clear();
+        clearPaneSelection(pane);
         renderPane(key);
         setStatus(`${key === 'left' ? 'Sol' : 'Sag'} panel icin VDS secin.`, 'info');
     }
@@ -970,6 +972,17 @@
         const pane = getPaneState(key);
         if (!pane) return [];
         return pane.entries.filter((entry) => pane.selected.has(entry.path));
+    }
+
+    function clearPaneSelection(pane) {
+        if (!pane) return;
+        pane.selected.clear();
+        pane.selectionAnchorPath = null;
+    }
+
+    function findEntryIndexByPath(pane, targetPath) {
+        if (!pane || !targetPath) return -1;
+        return (pane.entries || []).findIndex((entry) => entry && entry.path === targetPath);
     }
 
     function updateSelectionClasses(key) {
@@ -1025,6 +1038,7 @@
         if (!pane) return;
         pane.selected.clear();
         pane.selected.add(targetPath);
+        pane.selectionAnchorPath = targetPath;
         updateSelectionClasses(key);
     }
 
@@ -1036,13 +1050,55 @@
         } else {
             pane.selected.add(targetPath);
         }
+        pane.selectionAnchorPath = targetPath;
+        updateSelectionClasses(key);
+    }
+
+    function selectRange(key, targetPath, additive) {
+        const pane = getPaneState(key);
+        if (!pane || !targetPath) return;
+
+        const targetIndex = findEntryIndexByPath(pane, targetPath);
+        if (targetIndex < 0) return;
+
+        const anchorPath = pane.selectionAnchorPath;
+        const anchorIndex = findEntryIndexByPath(pane, anchorPath);
+
+        if (anchorIndex < 0) {
+            if (!additive) {
+                pane.selected.clear();
+            }
+            pane.selected.add(targetPath);
+            pane.selectionAnchorPath = targetPath;
+            updateSelectionClasses(key);
+            return;
+        }
+
+        const start = Math.min(anchorIndex, targetIndex);
+        const end = Math.max(anchorIndex, targetIndex);
+
+        if (!additive) {
+            pane.selected.clear();
+        }
+
+        for (let i = start; i <= end; i += 1) {
+            const entry = pane.entries[i];
+            if (!entry || !entry.path) continue;
+            pane.selected.add(entry.path);
+        }
         updateSelectionClasses(key);
     }
 
     function selectAll(key) {
         const pane = getPaneState(key);
         if (!pane) return;
-        pane.selected = new Set((pane.entries || []).map((entry) => entry.path).filter(Boolean));
+        const allPaths = (pane.entries || []).map((entry) => entry && entry.path).filter(Boolean);
+        pane.selected = new Set(allPaths);
+        if (!allPaths.length) {
+            pane.selectionAnchorPath = null;
+        } else if (!pane.selectionAnchorPath || !pane.selected.has(pane.selectionAnchorPath)) {
+            pane.selectionAnchorPath = allPaths[0];
+        }
         updateSelectionClasses(key);
     }
 
@@ -1965,7 +2021,7 @@
                         selectOnly(key, targetPath);
                     }
                 } else {
-                    pane.selected.clear();
+                    clearPaneSelection(pane);
                     updateSelectionClasses(key);
                 }
 
@@ -1984,13 +2040,16 @@
 
                 const isParentRow = row.dataset.parent === '1';
                 const withToggle = event.ctrlKey || event.metaKey;
+                const withRange = event.shiftKey;
 
                 if (isParentRow) {
                     await refreshPane(key, targetPath);
                     return;
                 }
 
-                if (withToggle) {
+                if (withRange) {
+                    selectRange(key, targetPath, withToggle);
+                } else if (withToggle) {
                     toggleSelection(key, targetPath);
                 } else {
                     selectOnly(key, targetPath);
