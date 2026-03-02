@@ -81,9 +81,8 @@ function normalizeHost(value, fallback = '127.0.0.1') {
 
 function normalizeDirection(value, fallback = 'local_to_remote') {
     const direction = String(value || '').trim().toLowerCase();
-    if (direction === 'local_to_remote') {
-        return 'local_to_remote';
-    }
+    if (direction === 'local_to_remote') return 'local_to_remote';
+    if (direction === 'remote_to_local') return 'remote_to_local';
     return fallback;
 }
 
