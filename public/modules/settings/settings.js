@@ -68,6 +68,18 @@
         await window.electronAPI.settings.openProfileFolder();
     });
 
+    // Open Active Profile Config File
+    document.getElementById('btn-open-config-file').addEventListener('click', async () => {
+        try {
+            const result = await window.electronAPI.settings.openConfigFile();
+            if (result && result.success && result.path) {
+                window.notifyUser('Opened config: ' + result.path, 'success');
+            }
+        } catch (err) {
+            window.notifyUser('Failed to open config file: ' + err.message, 'error');
+        }
+    });
+
     // Save Settings
     document.getElementById('btn-save-settings').addEventListener('click', async function() {
         const btn = this;
