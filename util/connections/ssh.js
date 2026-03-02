@@ -1,5 +1,7 @@
 const { Client } = require('ssh2');
 const net = require('net');
+const fs = require('fs');
+const path = require('path');
 const { EventEmitter } = require('events');
 const db = require('../profile-db');
 const SSH_PORT_MIN = 1;
@@ -13,6 +15,21 @@ function parseSshPort(value, fallback = SSH_PORT_FALLBACK) {
         throw new Error(`SSH port must be between ${SSH_PORT_MIN} and ${SSH_PORT_MAX}.`);
     }
     return parsed;
+}
+
+function loadPrivateKey(certPath) {
+    const normalizedPath = String(certPath || '').trim();
+    if (!normalizedPath) return null;
+
+    let keyPath = normalizedPath;
+    if (!path.isAbsolute(keyPath)) {
+        const relativeInFiles = path.join(process.cwd(), 'files', keyPath);
+        if (fs.existsSync(relativeInFiles)) {
+            keyPath = relativeInFiles;
+        }
+    }
+
+    return fs.readFileSync(keyPath);
 }
 
 module.exports = (data) => {
@@ -65,20 +82,8 @@ module.exports = (data) => {
         // Socket logic
         try {
             const port = parseSshPort(data.port);
-            const sock = net.createConnection(port, data.address);
-            sock.on('connect', () => {
-                sock.setNoDelay(true);
-            });
-            sock.on('error', (err) => {
-                console.error('Socket Hatası:', err);
-                sendToFrontend({ type: "error", message: err.message });
-                reject(err);
-            });
-
-            conn.connect({
-                sock: sock,
+            const connectConfig = {
                 username: data.username,
-                password: data.password,
                 readyTimeout: 20000,
                 keepaliveInterval: 1000,
                 hostVerifier: (hashedKey) => {
@@ -106,13 +111,13 @@ module.exports = (data) => {
                         key: key,
                         firstSeen: Date.now()
                     });
-                    
+
                     try {
                         db.set("knownHosts", knownHosts);
                     } catch(e) {
                         console.error('Failed to save known_hosts:', e);
                     }
-                    
+
                     return true;
                 },
                 algorithms: {
@@ -123,6 +128,38 @@ module.exports = (data) => {
                         'aes128-gcm'
                     ]
                 }
+            };
+
+            if (data.password) {
+                connectConfig.password = data.password;
+            }
+
+            const certPath = String(data.certPath || '').trim();
+            if (certPath) {
+                try {
+                    connectConfig.privateKey = loadPrivateKey(certPath);
+                } catch (err) {
+                    throw new Error(`Private key cannot be read: ${err.message}`);
+                }
+            }
+
+            if (!connectConfig.password && !connectConfig.privateKey) {
+                throw new Error('Selected host has no password or private key.');
+            }
+
+            const sock = net.createConnection(port, data.address);
+            sock.on('connect', () => {
+                sock.setNoDelay(true);
+            });
+            sock.on('error', (err) => {
+                console.error('Socket Hatası:', err);
+                sendToFrontend({ type: "error", message: err.message });
+                reject(err);
+            });
+
+            conn.connect({
+                sock: sock,
+                ...connectConfig
             });
         } catch (e) {
             reject(e);
