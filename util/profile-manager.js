@@ -42,8 +42,33 @@ function toSlug(value) {
         .replace(/^-+|-+$/g, '') || 'profile';
 }
 
-function isFirebaseType(type) {
-    return String(type || '').toLowerCase() === 'firebase';
+function normalizeProfileType(type) {
+    const normalized = String(type || '').toLowerCase().trim();
+    if (normalized === 'firebase' || normalized === 'qmm') {
+        return normalized;
+    }
+    return 'local';
+}
+
+function getSyncProvider(type) {
+    const normalized = normalizeProfileType(type);
+    if (normalized === 'firebase') {
+        return {
+            key: 'firebase',
+            providerName: 'Firebase',
+            syncModulePath: './firebase'
+        };
+    }
+
+    if (normalized === 'qmm') {
+        return {
+            key: 'qmm',
+            providerName: 'QMM',
+            syncModulePath: './qmm'
+        };
+    }
+
+    return null;
 }
 
 function profileFilePath(profileId) {
@@ -51,13 +76,13 @@ function profileFilePath(profileId) {
 }
 
 function normalizeProfileData(data = {}, fallbackName = 'Default') {
-    const type = isFirebaseType(data.type) ? 'firebase' : 'local';
+    const type = normalizeProfileType(data.type);
     const normalized = { ...data };
 
     normalized.name = (data.name || fallbackName || 'Default').toString();
     normalized.type = type;
-    normalized.write = type === 'firebase' ? Boolean(data.write) : true;
-    normalized.config = type === 'firebase' && data.config && typeof data.config === 'object'
+    normalized.write = type !== 'local' ? Boolean(data.write) : true;
+    normalized.config = type !== 'local' && data.config && typeof data.config === 'object' && !Array.isArray(data.config)
         ? data.config
         : {};
     normalized.hosts = Array.isArray(data.hosts) ? data.hosts : [];
@@ -120,7 +145,7 @@ function migrateLegacyProfiles(registry) {
         const entry = {
             id: profileId,
             name: legacyName,
-            type: isFirebaseType(legacyData.type) ? 'firebase' : 'local',
+            type: normalizeProfileType(legacyData.type),
             createdAt: legacyData.createdAt || now,
             updatedAt: legacyData.updatedAt || now,
             usedAt: legacyData.usedAt || null
@@ -166,7 +191,7 @@ function ensureBaseRegistry() {
         const profile = {
             id: profileId,
             name: profileName,
-            type: isFirebaseType(legacyRootData.type) ? 'firebase' : 'local',
+            type: normalizeProfileType(legacyRootData.type),
             createdAt: now,
             updatedAt: now,
             usedAt: now
@@ -325,19 +350,40 @@ async function switchProfile(profileId, options = {}) {
     let currentData = normalizeProfileData(readJson(profileFilePath(target.id), {}), target.name);
     writeJson(profileFilePath(target.id), currentData);
 
-    let firebaseSync = null;
-    if (currentData.type === 'firebase' && options.pullFromFirebase !== false) {
+    let cloudSync = null;
+    const syncProvider = getSyncProvider(currentData.type);
+    const pullAllowed = syncProvider && options.pullFromCloud !== false;
+    const providerPullEnabled = pullAllowed
+        && (syncProvider.key !== 'firebase' || options.pullFromFirebase !== false)
+        && (syncProvider.key !== 'qmm' || options.pullFromQmm !== false);
+
+    if (providerPullEnabled) {
         try {
-            const syncFirebase = require('./firebase');
-            const result = await syncFirebase(false);
+            const syncProviderUtil = require(syncProvider.syncModulePath);
+            const result = await syncProviderUtil(false);
             if (result && result.success === false) {
-                throw new Error(result.message || 'Firebase pull failed.');
+                throw new Error(result.message || `${syncProvider.providerName} pull failed.`);
             }
+
             currentData = normalizeProfileData(readJson(profileFilePath(target.id), {}), target.name);
             writeJson(profileFilePath(target.id), currentData);
-            firebaseSync = { success: true };
+            const details = result && typeof result === 'object' ? { ...result } : {};
+            delete details.success;
+            cloudSync = {
+                success: true,
+                provider: syncProvider.key,
+                providerName: syncProvider.providerName,
+                mode: 'pull',
+                ...details
+            };
         } catch (err) {
-            firebaseSync = { success: false, message: err.message };
+            cloudSync = {
+                success: false,
+                provider: syncProvider.key,
+                providerName: syncProvider.providerName,
+                mode: 'pull',
+                message: err.message
+            };
         }
     }
 
@@ -357,7 +403,8 @@ async function switchProfile(profileId, options = {}) {
             name: currentData.name,
             type: currentData.type
         },
-        firebaseSync
+        cloudSync,
+        firebaseSync: cloudSync && cloudSync.provider === 'firebase' ? cloudSync : null
     };
 }
 
@@ -376,7 +423,7 @@ async function createProfile(payload = {}) {
         throw new Error(`Profile '${name}' already exists.`);
     }
 
-    const type = isFirebaseType(payload.type) ? 'firebase' : 'local';
+    const type = normalizeProfileType(payload.type);
     const profileId = generateProfileId(registry, name);
     const now = new Date().toISOString();
 
@@ -417,6 +464,7 @@ async function createProfile(payload = {}) {
             type
         },
         switched: Boolean(switchResult && switchResult.switched),
+        cloudSync: switchResult ? (switchResult.cloudSync || null) : null,
         firebaseSync: switchResult ? (switchResult.firebaseSync || null) : null
     };
 }

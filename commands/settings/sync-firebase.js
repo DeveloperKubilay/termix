@@ -1,12 +1,25 @@
 const firebase = require('../../util/firebase');
+const qmm = require('../../util/qmm');
 const db = require('../../util/profile-db');
 const profileManager = require('../../util/profile-manager');
 
 module.exports = async function (filesPath, action) {
     const type = db.get("type");
-    
-    if (type !== 'firebase') {
-        throw new Error("Only available for Firebase users.");
+    const providers = {
+        firebase: {
+            label: 'Firebase',
+            sync: firebase
+        },
+        qmm: {
+            label: 'QMM',
+            sync: qmm
+        }
+    };
+
+    const provider = providers[type];
+
+    if (!provider) {
+        throw new Error("Only available for Firebase or QMM users.");
     }
 
     if (action !== 'push' && action !== 'pull') {
@@ -14,18 +27,24 @@ module.exports = async function (filesPath, action) {
     }
     
     try {
-        if (action === 'push') {
-            await firebase(true);
-            profileManager.persistActiveProfileData();
-            return { success: true, message: "Data pushed to Firebase successfully." };
-        } else {
-            await firebase(false);
-            profileManager.persistActiveProfileData();
-            return { success: true, message: "Data fetched from Firebase successfully." };
-        }
+        const isPush = action === 'push';
+        await provider.sync(isPush);
+
+        const actionText = isPush ? 'pushed to' : 'fetched from';
+
+        profileManager.persistActiveProfileData();
+        return {
+            success: true,
+            provider: type,
+            message: `Data ${actionText} ${provider.label} successfully.`
+        };
     } catch (err) {
         console.error(err);
-        return { success: false, message: "Sync failed: " + err.message };
+        return {
+            success: false,
+            provider: type,
+            message: `Sync failed (${provider.label}): ${err.message}`
+        };
     }
 };
 

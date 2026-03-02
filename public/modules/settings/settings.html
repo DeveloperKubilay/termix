@@ -27,10 +27,10 @@
                 </div>
             </div>
             
-            <!-- Firebase Sync Options -->
+            <!-- Cloud Sync Options -->
             <div id="firebase-sync-options" style="display: none; background: rgba(137, 180, 250, 0.05); padding: 15px; border-radius: 8px; border: 1px solid var(--border);">
-                <h4 style="font-size: 0.95em; margin: 0 0 10px 0; color: var(--accent);"><i class="fa-solid fa-cloud"></i> Cloud Sync</h4>
-                <p style="font-size: 0.9em; color: var(--text-muted); margin-bottom: 15px;">Sync your local data with Firebase.</p>
+                <h4 style="font-size: 0.95em; margin: 0 0 10px 0; color: var(--accent);"><i class="fa-solid fa-cloud"></i> <span id="sync-provider-name">Cloud</span> Sync</h4>
+                <p id="sync-provider-description" style="font-size: 0.9em; color: var(--text-muted); margin-bottom: 15px;">Sync your local data with cloud storage.</p>
                 <div style="display: flex; gap: 10px;">
                     <button class="btn btn-secondary" id="btn-sync-pull">
                         <i class="fa-solid fa-cloud-arrow-down" style="margin-right: 5px;"></i> Pull from Cloud
