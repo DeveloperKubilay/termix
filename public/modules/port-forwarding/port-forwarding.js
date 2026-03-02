@@ -1,4 +1,7 @@
 (function() {
+    const PORT_MIN = 1;
+    const PORT_MAX = 65535;
+
     const tableBody = document.getElementById('forwards-table-body');
     const btnNewForward = document.getElementById('btn-new-forward');
     const btnRefreshForwards = document.getElementById('btn-refresh-forwards');
@@ -28,6 +31,18 @@
         return map[status] || 'Stopped';
     }
 
+    function normalizeDirection(value) {
+        return String(value || '').trim().toLowerCase() === 'remote_to_local'
+            ? 'remote_to_local'
+            : 'local_to_remote';
+    }
+
+    function directionLabel(direction) {
+        return direction === 'remote_to_local'
+            ? 'My PC => VDS'
+            : 'My PC <= VDS';
+    }
+
     function getHostMeta(forward) {
         if (forward && forward.host) {
             return forward.host;
@@ -50,13 +65,59 @@
         return `${host || '127.0.0.1'}:${port || '-'}`;
     }
 
+    function parsePortValue(value) {
+        const text = String(value == null ? '' : value).trim();
+        if (!text) return null;
+
+        const parsed = Number(text);
+        if (!Number.isInteger(parsed)) return null;
+        if (parsed < PORT_MIN || parsed > PORT_MAX) return null;
+        return parsed;
+    }
+
+    function bindPortInputValidation(inputEl) {
+        if (!inputEl) return;
+
+        const sanitize = (strict = false) => {
+            const raw = String(inputEl.value || '');
+            const digitsOnly = raw.replace(/[^\d]/g, '');
+            inputEl.value = digitsOnly;
+
+            if (!digitsOnly) {
+                inputEl.setCustomValidity('');
+                return;
+            }
+
+            const parsed = Number(digitsOnly);
+            if (!Number.isInteger(parsed)) {
+                inputEl.setCustomValidity(`Port must be ${PORT_MIN}-${PORT_MAX}.`);
+                return;
+            }
+
+            if (strict) {
+                const clamped = Math.min(PORT_MAX, Math.max(PORT_MIN, parsed));
+                inputEl.value = String(clamped);
+            }
+
+            const current = Number(inputEl.value);
+            if (!Number.isInteger(current) || current < PORT_MIN || current > PORT_MAX) {
+                inputEl.setCustomValidity(`Port must be ${PORT_MIN}-${PORT_MAX}.`);
+            } else {
+                inputEl.setCustomValidity('');
+            }
+        };
+
+        inputEl.addEventListener('input', () => sanitize(false));
+        inputEl.addEventListener('blur', () => sanitize(true));
+    }
+
     function renderTable() {
         if (!tableBody) return;
 
         if (!forwardRows.length) {
             tableBody.innerHTML = `
                 <tr>
-                    <td colspan="5" class="pf-empty-cell">
+                    <td colspan="6" class="pf-empty-cell">
                         No port forwards yet. Use NEW FORWARD to create one.
                     </td>
                 </tr>
@@ -71,6 +132,7 @@
             const statusClass = ['active', 'starting', 'error'].includes(status) ? status : 'stopped';
             const showStart = status !== 'active';
             const tooltip = runtime.message ? escapeHtml(runtime.message) : '';
+            const direction = normalizeDirection(forward.direction);
 
             const icon = host ? host.icon : 'fa-solid fa-server';
             const color = host ? host.color : '#45475a';
@@ -92,6 +154,11 @@
                     </td>
                     <td><span class="pf-endpoint">${escapeHtml(endpoint(forward.remoteHost, forward.remotePort))}</span></td>
                     <td><span class="pf-endpoint">${escapeHtml(endpoint(forward.localHost, forward.localPort))}</span></td>
+                    <td>
+                        <span class="pf-direction-tag ${direction}">
+                            ${escapeHtml(directionLabel(direction))}
+                        </span>
+                    </td>
                     <td>
                         <span class="pf-status ${statusClass}">
                             <i class="fa-solid fa-circle" style="font-size: 8px;"></i>
@@ -120,7 +187,7 @@
             if (tableBody) {
                 tableBody.innerHTML = `
                     <tr>
-                        <td colspan="5" class="pf-empty-cell" style="color: #f38ba8;">
+                        <td colspan="6" class="pf-empty-cell" style="color: #f38ba8;">
                             Port forwarding API was not loaded.
                         </td>
                     </tr>
@@ -132,7 +199,7 @@
         if (tableBody) {
             tableBody.innerHTML = `
                 <tr>
-                    <td colspan="5" class="pf-empty-cell">Loading...</td>
+                    <td colspan="6" class="pf-empty-cell">Loading...</td>
                 </tr>
             `;
         }
@@ -151,7 +218,7 @@
             if (tableBody) {
                 tableBody.innerHTML = `
                     <tr>
-                        <td colspan="5" class="pf-empty-cell" style="color: #f38ba8;">
+                        <td colspan="6" class="pf-empty-cell" style="color: #f38ba8;">
                             Failed to load forwards: ${escapeHtml(err.message)}
                         </td>
                     </tr>
@@ -183,14 +250,94 @@
             const remotePortInput = document.getElementById('pf-remote-port');
             const localHostInput = document.getElementById('pf-local-host');
             const localPortInput = document.getElementById('pf-local-port');
+            const remoteSection = document.getElementById('pf-remote-section');
+            const remoteSectionTitle = document.getElementById('pf-remote-section-title');
+            const localSection = document.getElementById('pf-local-section');
+            const localSectionTitle = document.getElementById('pf-local-section-title');
+            const routeToggle = document.getElementById('pf-route-toggle');
+            const routeLeftIcon = document.getElementById('pf-route-left-icon');
+            const routeLeftTitle = document.getElementById('pf-route-left-title');
+            const routeLeftSub = document.getElementById('pf-route-left-sub');
+            const routeRightIcon = document.getElementById('pf-route-right-icon');
+            const routeRightTitle = document.getElementById('pf-route-right-title');
+            const routeRightSub = document.getElementById('pf-route-right-sub');
+            const routeArrowIcon = document.getElementById('pf-route-arrow-icon');
             const addBtn = document.getElementById('pf-add-forward-btn');
             const errorEl = document.getElementById('pf-drawer-error');
 
             let selectedHost = null;
+            let currentDirection = 'remote_to_local';
 
             function showError(message) {
                 if (!errorEl) return;
                 errorEl.textContent = message || '';
+            }
+
+            function buildVdsRouteMeta() {
+                if (!selectedHost) {
+                    return {
+                        type: 'vds',
+                        icon: 'fa-solid fa-server',
+                        title: 'VDS',
+                        sub: 'Remote machine',
+                        color: null
+                    };
+                }
+
+                return {
+                    type: 'vds',
+                    icon: selectedHost.icon || 'fa-solid fa-server',
+                    title: selectedHost.name || selectedHost.address || 'VDS',
+                    sub: `${selectedHost.username || 'root'}@${selectedHost.address || ''}`,
+                    color: selectedHost.color || '#89b4fa'
+                };
+            }
+
+            function setRouteEndpoint(iconEl, titleEl, subEl, meta) {
+                if (!iconEl || !titleEl || !subEl || !meta) return;
+
+                iconEl.classList.remove('pc', 'vds');
+                iconEl.classList.add(meta.type === 'pc' ? 'pc' : 'vds');
+                iconEl.innerHTML = `<i class="${escapeHtml(meta.icon)}"></i>`;
+                iconEl.style.background = meta.type === 'vds' && meta.color ? meta.color : '';
+
+                titleEl.textContent = meta.title;
+                subEl.textContent = meta.sub;
+            }
+
+            function renderRouteUi() {
+                const pcMeta = {
+                    type: 'pc',
+                    icon: 'fa-solid fa-laptop',
+                    title: 'My PC',
+                    sub: 'Local machine',
+                    color: null
+                };
+                const vdsMeta = buildVdsRouteMeta();
+
+                setRouteEndpoint(routeLeftIcon, routeLeftTitle, routeLeftSub, pcMeta);
+                setRouteEndpoint(routeRightIcon, routeRightTitle, routeRightSub, vdsMeta);
+
+                if (currentDirection === 'remote_to_local') {
+                    if (routeArrowIcon) routeArrowIcon.className = 'fa-solid fa-arrow-right-long';
+
+                    if (localSection) localSection.style.order = '1';
+                    if (remoteSection) remoteSection.style.order = '2';
+                    if (localSectionTitle) localSectionTitle.textContent = '1. My PC';
+                    if (remoteSectionTitle) remoteSectionTitle.textContent = '2. VDS';
+                } else {
+                    if (routeArrowIcon) routeArrowIcon.className = 'fa-solid fa-arrow-left-long';
+
+                    if (remoteSection) remoteSection.style.order = '1';
+                    if (localSection) localSection.style.order = '2';
+                    if (remoteSectionTitle) remoteSectionTitle.textContent = '1. VDS';
+                    if (localSectionTitle) localSectionTitle.textContent = '2. My PC';
+                }
+            }
+
+            function setDirection(nextDirection) {
+                currentDirection = normalizeDirection(nextDirection);
+                renderRouteUi();
             }
 
             function updateSelectedHostUi() {
@@ -200,12 +347,14 @@
                     hostTriggerText.textContent = 'Bir VDS secin';
                     hostTriggerIcon.innerHTML = '<i class="fa-solid fa-server"></i>';
                     hostTriggerIcon.style.background = '#45475a';
+                    renderRouteUi();
                     return;
                 }
 
                 hostTriggerText.textContent = `${selectedHost.name || selectedHost.address} (${selectedHost.username || 'root'}@${selectedHost.address || ''})`;
                 hostTriggerIcon.style.background = selectedHost.color || '#89b4fa';
                 hostTriggerIcon.innerHTML = `<i class="${escapeHtml(selectedHost.icon || 'fa-solid fa-server')}"></i>`;
+                renderRouteUi();
             }
 
             function renderHostList(filterText = '') {
@@ -252,6 +401,15 @@
 
             renderHostList('');
             updateSelectedHostUi();
+            setDirection('remote_to_local');
+            bindPortInputValidation(remotePortInput);
+            bindPortInputValidation(localPortInput);
+
+            if (routeToggle) {
+                routeToggle.addEventListener('click', () => {
+                    setDirection(currentDirection === 'remote_to_local' ? 'local_to_remote' : 'remote_to_local');
+                });
+            }
 
             if (hostTrigger) {
                 hostTrigger.addEventListener('click', (event) => {
@@ -298,7 +456,8 @@
 
                     const payload = {
                         hostId: selectedHost ? selectedHost.id : null,
-                        remoteHost: remoteHostInput ? remoteHostInput.value : '127.0.0.1',
+                        direction: currentDirection,
+                        remoteHost: remoteHostInput ? remoteHostInput.value : '0.0.0.0',
                         remotePort: remotePortInput ? remotePortInput.value : '',
                         localHost: localHostInput ? localHostInput.value : '127.0.0.1',
                         localPort: localPortInput ? localPortInput.value : ''
@@ -311,6 +470,14 @@
 
                     if (!payload.remotePort || !payload.localPort) {
                         showError('Please fill both remote and local ports.');
+                        return;
+                    }
+
+                    const remotePort = parsePortValue(payload.remotePort);
+                    const localPort = parsePortValue(payload.localPort);
+
+                    if (!remotePort || !localPort) {
+                        showError(`Ports must be between ${PORT_MIN} and ${PORT_MAX}.`);
                         return;
                     }
 
