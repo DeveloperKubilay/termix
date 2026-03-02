@@ -1,5 +1,4 @@
-const kubitdb = require('kubitdb');
-const db = new kubitdb();
+const db = require('../../util/profile-db');
 
 module.exports = async function () {
     const ai = db.get("ai") || { method: 'GET', url: '', headers: '' };
@@ -16,3 +15,4 @@ module.exports = async function () {
         tags
     };
 };
+

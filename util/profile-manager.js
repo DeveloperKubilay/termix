@@ -1,10 +1,14 @@
 const fs = require('fs');
 const path = require('path');
+const {
+    normalizeAiSettings,
+    normalizeTerminalSettings
+} = require('./profile-defaults');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 const PROFILES_DIR = path.join(ROOT_DIR, 'profiles');
 const REGISTRY_FILE = path.join(PROFILES_DIR, 'registry.json');
-const ACTIVE_DB_FILE = path.join(ROOT_DIR, 'kubitdb.json');
+const LEGACY_ACTIVE_DB_FILE = path.join(ROOT_DIR, 'kubitdb.json');
 const LEGACY_PROFILES_DIR = path.join(ROOT_DIR, 'commands', 'profiles', 'profiles');
 
 let isInitialized = false;
@@ -17,10 +21,13 @@ function ensureDir(dirPath) {
 
 function readJson(filePath, fallback = {}) {
     try {
-        return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-    } catch (_) {
-        return fallback;
-    }
+        const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+        if (parsed && typeof parsed === 'object') {
+            return parsed;
+        }
+    } catch (_) {}
+
+    return fallback;
 }
 
 function writeJson(filePath, data) {
@@ -53,14 +60,12 @@ function normalizeProfileData(data = {}, fallbackName = 'Default') {
     normalized.config = type === 'firebase' && data.config && typeof data.config === 'object'
         ? data.config
         : {};
-
-    if (!Array.isArray(normalized.hosts)) normalized.hosts = [];
-    if (!Array.isArray(normalized.tags)) normalized.tags = [];
-    if (!Array.isArray(normalized.knownHosts)) normalized.knownHosts = [];
-    if (!Array.isArray(normalized.snippets)) normalized.snippets = [];
-    if (!normalized.ai || typeof normalized.ai !== 'object') {
-        normalized.ai = { method: 'GET', url: '', headers: {} };
-    }
+    normalized.hosts = Array.isArray(data.hosts) ? data.hosts : [];
+    normalized.tags = Array.isArray(data.tags) ? data.tags : [];
+    normalized.knownHosts = Array.isArray(data.knownHosts) ? data.knownHosts : [];
+    normalized.snippets = Array.isArray(data.snippets) ? data.snippets : [];
+    normalized.ai = normalizeAiSettings(data.ai);
+    normalized.terminalSettings = normalizeTerminalSettings(data.terminalSettings);
 
     return normalized;
 }
@@ -76,30 +81,8 @@ function writeRegistry(registry) {
     writeJson(REGISTRY_FILE, registry);
 }
 
-function upsertRootFromProfile(profile) {
-    const profileData = normalizeProfileData(readJson(profileFilePath(profile.id), {}), profile.name);
-    writeJson(ACTIVE_DB_FILE, profileData);
-    return profileData;
-}
-
-function saveRootToProfile(registry, profileId, markUsed = false) {
-    const profile = registry.profiles.find(item => item.id === profileId);
-    if (!profile) return null;
-
-    const currentData = normalizeProfileData(readJson(ACTIVE_DB_FILE, {}), profile.name);
-    writeJson(profileFilePath(profile.id), currentData);
-
-    const now = new Date().toISOString();
-    profile.name = currentData.name;
-    profile.type = currentData.type;
-    profile.updatedAt = now;
-    if (markUsed) profile.usedAt = now;
-
-    return currentData;
-}
-
 function generateProfileId(registry, name) {
-    const existing = new Set(registry.profiles.map(item => item.id));
+    const existing = new Set(registry.profiles.map((item) => item.id));
     const base = toSlug(name);
     let next = base;
     let index = 2;
@@ -113,7 +96,7 @@ function generateProfileId(registry, name) {
 function migrateLegacyProfiles(registry) {
     if (!fs.existsSync(LEGACY_PROFILES_DIR)) return false;
 
-    const legacyFiles = fs.readdirSync(LEGACY_PROFILES_DIR).filter(file => file.endsWith('.json'));
+    const legacyFiles = fs.readdirSync(LEGACY_PROFILES_DIR).filter((file) => file.endsWith('.json'));
     if (legacyFiles.length === 0) return false;
 
     let migrated = false;
@@ -126,7 +109,9 @@ function migrateLegacyProfiles(registry) {
         const legacyName = String(legacyData.name || file.replace('.json', '')).trim();
         if (!legacyName) continue;
 
-        const hasSameName = registry.profiles.some(profile => profile.name.toLowerCase() === legacyName.toLowerCase());
+        const hasSameName = registry.profiles.some((profile) => {
+            return String(profile.name || '').toLowerCase() === legacyName.toLowerCase();
+        });
         if (hasSameName) continue;
 
         const profileId = generateProfileId(registry, legacyName);
@@ -155,53 +140,81 @@ function migrateLegacyProfiles(registry) {
     return migrated;
 }
 
+function getActiveProfileFilePath(profileId) {
+    if (profileId) {
+        return profileFilePath(profileId);
+    }
+
+    const registry = readRegistry();
+    if (!registry.activeProfileId) return null;
+    return profileFilePath(registry.activeProfileId);
+}
+
 function ensureBaseRegistry() {
     ensureDir(PROFILES_DIR);
 
     let registry = readRegistry();
-    const rootData = readJson(ACTIVE_DB_FILE, {});
-    const hasAnyData = Object.keys(rootData).length > 0;
+    const legacyRootData = readJson(LEGACY_ACTIVE_DB_FILE, {});
+    const hasLegacyRootData = Object.keys(legacyRootData).length > 0;
     let changed = false;
 
     if (registry.profiles.length === 0) {
         const now = new Date().toISOString();
         const profileId = 'default';
-        const profileName = (rootData.name || 'Default').toString();
+        const profileName = String(legacyRootData.name || 'Default');
 
         const profile = {
             id: profileId,
             name: profileName,
-            type: isFirebaseType(rootData.type) ? 'firebase' : 'local',
+            type: isFirebaseType(legacyRootData.type) ? 'firebase' : 'local',
             createdAt: now,
             updatedAt: now,
             usedAt: now
         };
 
-        const seedData = normalizeProfileData(hasAnyData ? rootData : {}, profileName);
-
+        const seedData = normalizeProfileData(hasLegacyRootData ? legacyRootData : {}, profileName);
         writeJson(profileFilePath(profileId), seedData);
-        writeJson(ACTIVE_DB_FILE, seedData);
 
         registry = {
             activeProfileId: profileId,
             profiles: [profile]
         };
 
-        writeRegistry(registry);
         changed = true;
     }
 
-    const legacyMigrated = migrateLegacyProfiles(registry);
-    if (legacyMigrated) changed = true;
+    if (migrateLegacyProfiles(registry)) {
+        changed = true;
+    }
 
     const seen = new Set();
-    registry.profiles = registry.profiles.filter(item => {
+    registry.profiles = registry.profiles.filter((item) => {
         if (!item || typeof item !== 'object') return false;
-        if (!item.id) item.id = generateProfileId({ profiles: registry.profiles }, item.name || 'profile');
+        if (!item.id) item.id = generateProfileId(registry, item.name || 'profile');
         if (seen.has(item.id)) return false;
         seen.add(item.id);
         return true;
     });
+
+    if (!registry.profiles.length) {
+        const now = new Date().toISOString();
+        registry.profiles.push({
+            id: 'default',
+            name: 'Default',
+            type: 'local',
+            createdAt: now,
+            updatedAt: now,
+            usedAt: now
+        });
+        registry.activeProfileId = 'default';
+        writeJson(profileFilePath('default'), normalizeProfileData({}, 'Default'));
+        changed = true;
+    }
+
+    if (!registry.activeProfileId || !registry.profiles.find((item) => item.id === registry.activeProfileId)) {
+        registry.activeProfileId = registry.profiles[0].id;
+        changed = true;
+    }
 
     for (const profile of registry.profiles) {
         if (!profile.name) {
@@ -214,39 +227,32 @@ function ensureBaseRegistry() {
         }
 
         const dataPath = profileFilePath(profile.id);
-        if (!fs.existsSync(dataPath)) {
-            const seedData = normalizeProfileData(rootData, profile.name);
-            writeJson(dataPath, seedData);
+        const exists = fs.existsSync(dataPath);
+
+        let sourceData = {};
+        if (exists) {
+            sourceData = readJson(dataPath, {});
+        } else if (hasLegacyRootData && profile.id === registry.activeProfileId) {
+            sourceData = legacyRootData;
+        }
+
+        const normalized = normalizeProfileData(sourceData, profile.name);
+        if (!exists || JSON.stringify(sourceData) !== JSON.stringify(normalized)) {
+            writeJson(dataPath, normalized);
+            changed = true;
+        }
+
+        if (profile.name !== normalized.name || profile.type !== normalized.type) {
+            profile.name = normalized.name;
+            profile.type = normalized.type;
             changed = true;
         }
     }
 
-    if (!registry.activeProfileId || !registry.profiles.find(item => item.id === registry.activeProfileId)) {
-        registry.activeProfileId = registry.profiles[0].id;
-        changed = true;
+    if (changed) {
+        writeRegistry(registry);
     }
 
-    const active = registry.profiles.find(item => item.id === registry.activeProfileId);
-    const activeProfilePath = profileFilePath(active.id);
-
-    if (fs.existsSync(ACTIVE_DB_FILE)) {
-        const rootStat = fs.statSync(ACTIVE_DB_FILE);
-        const profileStat = fs.statSync(activeProfilePath);
-
-        if (rootStat.mtimeMs >= profileStat.mtimeMs) {
-            const normalizedRoot = normalizeProfileData(readJson(ACTIVE_DB_FILE, {}), active.name);
-            writeJson(activeProfilePath, normalizedRoot);
-            active.name = normalizedRoot.name;
-            active.type = normalizedRoot.type;
-            changed = true;
-        } else {
-            upsertRootFromProfile(active);
-        }
-    } else {
-        upsertRootFromProfile(active);
-    }
-
-    if (changed) writeRegistry(registry);
     return registry;
 }
 
@@ -257,14 +263,23 @@ function ensureInitialized() {
     }
 
     const registry = readRegistry();
-    const activeProfile = registry.profiles.find(item => item.id === registry.activeProfileId) || null;
+    const activeProfile = registry.profiles.find((item) => item.id === registry.activeProfileId) || null;
     return { registry, activeProfile };
 }
 
 function getProfiles() {
     const { registry } = ensureInitialized();
-    const profiles = registry.profiles.map(item => {
+    let registryChanged = false;
+    const profiles = registry.profiles.map((item) => {
         const data = normalizeProfileData(readJson(profileFilePath(item.id), {}), item.name);
+
+        if (item.name !== data.name || item.type !== data.type) {
+            item.name = data.name;
+            item.type = data.type;
+            item.updatedAt = new Date().toISOString();
+            registryChanged = true;
+        }
+
         return {
             id: item.id,
             name: data.name || item.name,
@@ -274,6 +289,10 @@ function getProfiles() {
         };
     });
 
+    if (registryChanged) {
+        writeRegistry(registry);
+    }
+
     return {
         activeProfileId: registry.activeProfileId,
         profiles
@@ -282,7 +301,7 @@ function getProfiles() {
 
 async function switchProfile(profileId, options = {}) {
     const { registry, activeProfile } = ensureInitialized();
-    const target = registry.profiles.find(item => item.id === profileId);
+    const target = registry.profiles.find((item) => item.id === profileId);
 
     if (!target) {
         throw new Error('Profile not found.');
@@ -300,12 +319,11 @@ async function switchProfile(profileId, options = {}) {
         };
     }
 
-    if (activeProfile) {
-        saveRootToProfile(registry, activeProfile.id, false);
-    }
-
     registry.activeProfileId = target.id;
-    let currentData = upsertRootFromProfile(target);
+    writeRegistry(registry);
+
+    let currentData = normalizeProfileData(readJson(profileFilePath(target.id), {}), target.name);
+    writeJson(profileFilePath(target.id), currentData);
 
     let firebaseSync = null;
     if (currentData.type === 'firebase' && options.pullFromFirebase !== false) {
@@ -315,15 +333,20 @@ async function switchProfile(profileId, options = {}) {
             if (result && result.success === false) {
                 throw new Error(result.message || 'Firebase pull failed.');
             }
-            currentData = normalizeProfileData(readJson(ACTIVE_DB_FILE, {}), target.name);
+            currentData = normalizeProfileData(readJson(profileFilePath(target.id), {}), target.name);
+            writeJson(profileFilePath(target.id), currentData);
             firebaseSync = { success: true };
         } catch (err) {
             firebaseSync = { success: false, message: err.message };
         }
     }
 
-    writeJson(ACTIVE_DB_FILE, currentData);
-    saveRootToProfile(registry, target.id, true);
+    const now = new Date().toISOString();
+    target.name = currentData.name;
+    target.type = currentData.type;
+    target.usedAt = now;
+    target.updatedAt = now;
+
     writeRegistry(registry);
 
     return {
@@ -346,7 +369,9 @@ async function createProfile(payload = {}) {
         throw new Error('Profile name is required.');
     }
 
-    const hasSameName = registry.profiles.some(item => item.name.toLowerCase() === name.toLowerCase());
+    const hasSameName = registry.profiles.some((item) => {
+        return String(item.name || '').toLowerCase() === name.toLowerCase();
+    });
     if (hasSameName) {
         throw new Error(`Profile '${name}' already exists.`);
     }
@@ -399,9 +424,18 @@ async function createProfile(payload = {}) {
 function persistActiveProfileData() {
     const { registry, activeProfile } = ensureInitialized();
     if (!activeProfile) return null;
-    const data = saveRootToProfile(registry, activeProfile.id, false);
+
+    const dataPath = profileFilePath(activeProfile.id);
+    const normalized = normalizeProfileData(readJson(dataPath, {}), activeProfile.name);
+    writeJson(dataPath, normalized);
+
+    const now = new Date().toISOString();
+    activeProfile.name = normalized.name;
+    activeProfile.type = normalized.type;
+    activeProfile.updatedAt = now;
+
     writeRegistry(registry);
-    return data;
+    return normalized;
 }
 
 module.exports = {
@@ -410,9 +444,13 @@ module.exports = {
     createProfile,
     switchProfile,
     persistActiveProfileData,
+    getActiveProfileFilePath,
     paths: {
         profilesDir: PROFILES_DIR,
         registryFile: REGISTRY_FILE,
-        activeDbFile: ACTIVE_DB_FILE
+        get activeDbFile() {
+            return getActiveProfileFilePath();
+        },
+        legacyDbFile: LEGACY_ACTIVE_DB_FILE
     }
 };

@@ -1,5 +1,4 @@
-const kubitdb = require('kubitdb');
-const db = new kubitdb();
+const db = require('../../util/profile-db');
 const { decrypt } = require('../../util/crypto');
 
 module.exports = async (path) => {
@@ -13,3 +12,4 @@ module.exports = async (path) => {
 
     return data;
 };
+

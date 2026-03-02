@@ -7,9 +7,7 @@ const {
     deleteDoc,
     doc
 } = require('firebase/firestore');
-const kubitdb = require('kubitdb');
-
-const db = new kubitdb();
+const db = require('./profile-db');
 
 function getProfileFirebaseConfig() {
     const config = db.get('config') || {};

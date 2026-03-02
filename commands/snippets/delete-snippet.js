@@ -1,5 +1,4 @@
-const kubitdb = require('kubitdb');
-const db = new kubitdb();
+const db = require('../../util/profile-db');
 
 module.exports = async (filesPath, snippetId) => {
     const id = String(snippetId || '').trim();
@@ -18,3 +17,4 @@ module.exports = async (filesPath, snippetId) => {
     db.set('snippets', nextSnippets);
     return { success: true };
 };
+

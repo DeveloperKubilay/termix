@@ -1,5 +1,4 @@
-const kubitdb = require('kubitdb');
-const db = new kubitdb();
+const db = require('../../util/profile-db');
 const { encrypt } = require('../../util/crypto');
 const SSH_PORT_MIN = 1;
 const SSH_PORT_MAX = 65535;
@@ -29,3 +28,4 @@ module.exports = async (filesPath, data) => {
 
     return db.set('hosts', data);
 };
+
