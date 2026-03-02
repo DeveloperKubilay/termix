@@ -7,19 +7,57 @@
     const storageType = document.getElementById('storage-type');
     
     const firebaseOptions = document.getElementById('firebase-sync-options');
+    const syncProviderName = document.getElementById('sync-provider-name');
+    const syncProviderDescription = document.getElementById('sync-provider-description');
     const tagsList = document.getElementById('tags-list');
+    let activeCloudProvider = null;
+
+    function getProfileMeta(type) {
+        const normalized = String(type || 'local').toLowerCase();
+
+        if (normalized === 'firebase') {
+            return {
+                storageLabel: 'Firebase',
+                isCloud: true,
+                cloudProvider: 'Firebase'
+            };
+        }
+
+        if (normalized === 'qmm') {
+            return {
+                storageLabel: 'QMM',
+                isCloud: true,
+                cloudProvider: 'QMM'
+            };
+        }
+
+        return {
+            storageLabel: 'Local JSON',
+            isCloud: false,
+            cloudProvider: null
+        };
+    }
 
     // Load Settings
     async function loadSettings() {
         try {
             const data = await window.electronAPI.settings.getSettings();
+            const profileType = data && data.profile ? data.profile.type : 'local';
+            const profileMeta = getProfileMeta(profileType);
             
             // Profile Info
             currentUser.textContent = data.profile.name;
-            storageType.textContent = data.profile.type === 'firebase' ? 'Firebase' : 'Local JSON';
+            storageType.textContent = profileMeta.storageLabel;
+            activeCloudProvider = profileMeta.cloudProvider;
 
-            if (data.profile.type === 'firebase') {
+            if (profileMeta.isCloud) {
                 firebaseOptions.style.display = 'block';
+                if (syncProviderName) {
+                    syncProviderName.textContent = profileMeta.cloudProvider;
+                }
+                if (syncProviderDescription) {
+                    syncProviderDescription.textContent = `Sync your local data with ${profileMeta.cloudProvider}.`;
+                }
             } else {
                 firebaseOptions.style.display = 'none';
             }
@@ -171,12 +209,13 @@
         }
     });
 
-    // Firebase Sync
+    // Cloud Sync
     document.getElementById('btn-sync-pull').addEventListener('click', async () => {
+        const providerLabel = activeCloudProvider || 'Cloud';
         const approved = await window.confirmAction(
-            'This will overwrite your local data with data from Firebase. Continue?',
+            `This will overwrite your local data with data from ${providerLabel}. Continue?`,
             {
-                title: 'Firebase Pull',
+                title: `${providerLabel} Pull`,
                 confirmText: 'Pull Data',
                 cancelText: 'Cancel',
                 tone: 'danger'
@@ -196,10 +235,11 @@
     });
 
     document.getElementById('btn-sync-push').addEventListener('click', async () => {
+        const providerLabel = activeCloudProvider || 'Cloud';
         const approved = await window.confirmAction(
-            'This will overwrite Firebase data with your local data. Continue?',
+            `This will overwrite ${providerLabel} data with your local data. Continue?`,
             {
-                title: 'Firebase Push',
+                title: `${providerLabel} Push`,
                 confirmText: 'Push Data',
                 cancelText: 'Cancel',
                 tone: 'danger'

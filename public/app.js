@@ -321,8 +321,14 @@ const ProfileManager = {
             row.className = `profile-menu-item profile-switch-item${isActive ? ' active' : ''}`;
             row.dataset.profileId = profile.id;
 
-            const icon = profile.type === 'firebase' ? 'fa-cloud' : 'fa-database';
-            const storageLabel = profile.type === 'firebase' ? 'Firebase' : 'Local';
+            const profileType = String(profile.type || 'local').toLowerCase();
+            const storageMeta = profileType === 'firebase'
+                ? { icon: 'fa-cloud', label: 'Firebase' }
+                : profileType === 'qmm'
+                    ? { icon: 'fa-shield-halved', label: 'QMM' }
+                    : { icon: 'fa-database', label: 'Local' };
+            const icon = storageMeta.icon;
+            const storageLabel = storageMeta.label;
             const iconEl = document.createElement('i');
             iconEl.className = `fa-solid ${icon}`;
 
@@ -367,7 +373,10 @@ const ProfileManager = {
             this.closeMenu();
             const result = await window.electronAPI.profiles.switchProfile(profileId);
             if (result && result.success) {
-                if (result.firebaseSync && result.firebaseSync.success === false) {
+                if (result.cloudSync && result.cloudSync.success === false) {
+                    const provider = result.cloudSync.providerName || 'Cloud';
+                    window.notifyUser(`Profile switched, but ${provider} pull failed: ${result.cloudSync.message}`, 'warning');
+                } else if (result.firebaseSync && result.firebaseSync.success === false) {
                     window.notifyUser('Profile switched, but Firebase pull failed: ' + result.firebaseSync.message, 'warning');
                 }
                 window.location.reload();

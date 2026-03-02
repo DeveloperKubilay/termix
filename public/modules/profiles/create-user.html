@@ -20,6 +20,11 @@
                     <i class="fa-brands fa-google" style="color: #FFA611;"></i>
                     <span>Firebase</span>
                 </label>
+                <label class="radio-card" id="type-qmm-label" style="flex: 1; padding: 15px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 10px;">
+                    <input type="radio" name="storageType" value="qmm" style="display: none;">
+                    <i class="fa-solid fa-shield-halved" style="color: #74c7ec;"></i>
+                    <span>QMM</span>
+                </label>
             </div>
         </div>
     
@@ -41,6 +46,25 @@
                     </button>
                 </div>
             </div>
+        </div>
+
+        <div id="qmm-section" style="display: none; border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 25px; background: var(--bg-sidebar);">
+            <h4 style="margin-bottom: 15px; color: var(--text-muted);"><i class="fa-solid fa-shield-halved"></i> QMM Configuration</h4>
+
+            <div class="form-group" style="margin-bottom: 16px;">
+                <label style="display: block; margin-bottom: 8px; font-size: 0.9em;">QMM URL</label>
+                <input type="text" id="qmm-url" placeholder="https://192.168.1.105:3443/" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-main); outline: none;">
+            </div>
+
+            <div class="form-group" style="margin-bottom: 14px;">
+                <label style="display: block; margin-bottom: 8px; font-size: 0.9em;">QMM Password / API Key</label>
+                <input type="password" id="qmm-password" placeholder="12345678" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-main); outline: none;">
+            </div>
+
+            <label style="display: inline-flex; align-items: center; gap: 8px; font-size: 0.9em; color: var(--text-muted);">
+                <input type="checkbox" id="qmm-allow-self-signed" checked>
+                Allow self-signed certificates
+            </label>
         </div>
     
         <button id="create-profile-btn" style="width: 100%; padding: 14px; background: var(--accent); color: var(--bg-dark); border: none; border-radius: 8px; font-size: 1em; font-weight: 600; cursor: pointer; margin-top: 10px;">
