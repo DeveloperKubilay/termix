@@ -19,13 +19,14 @@
                         <th>VDS</th>
                         <th>Remote</th>
                         <th>Local</th>
+                        <th>Direction</th>
                         <th>Status</th>
                         <th style="text-align: right;">Action</th>
                     </tr>
                 </thead>
                 <tbody id="forwards-table-body">
                     <tr>
-                        <td colspan="5" class="pf-empty-cell">Loading port forwards...</td>
+                        <td colspan="6" class="pf-empty-cell">Loading port forwards...</td>
                     </tr>
                 </tbody>
             </table>
@@ -35,8 +36,6 @@
 
 <template id="forward-drawer-template">
     <div class="pf-drawer-layout">
-        <div class="form-section-title">Uzaktan Sunucu</div>
-
         <div class="form-group">
             <label>VDS Secimi</label>
             <div class="pf-host-picker" id="pf-host-picker">
@@ -59,25 +58,56 @@
         </div>
 
         <div class="form-group">
-            <label>Uzaktan Host</label>
-            <input type="text" id="pf-remote-host" value="127.0.0.1" placeholder="127.0.0.1">
+            <label>Direction</label>
+            <button type="button" class="pf-route-toggle" id="pf-route-toggle" title="Click to swap direction">
+                <div class="pf-route-endpoint" id="pf-route-left">
+                    <div class="pf-route-icon" id="pf-route-left-icon">
+                        <i class="fa-solid fa-server"></i>
+                    </div>
+                    <div class="pf-route-text">
+                        <div class="pf-route-title" id="pf-route-left-title">VDS</div>
+                        <div class="pf-route-sub" id="pf-route-left-sub">Remote machine</div>
+                    </div>
+                </div>
+                <div class="pf-route-arrow">
+                    <i class="fa-solid fa-arrow-left-long" id="pf-route-arrow-icon"></i>
+                </div>
+                <div class="pf-route-endpoint" id="pf-route-right">
+                    <div class="pf-route-icon" id="pf-route-right-icon">
+                        <i class="fa-solid fa-laptop"></i>
+                    </div>
+                    <div class="pf-route-text">
+                        <div class="pf-route-title" id="pf-route-right-title">My PC</div>
+                        <div class="pf-route-sub" id="pf-route-right-sub">Local machine</div>
+                    </div>
+                </div>
+            </button>
         </div>
 
-        <div class="form-group">
-            <label>Uzaktan Port</label>
-            <input type="number" id="pf-remote-port" min="1" max="65535" placeholder="5432">
-        </div>
+        <div class="pf-endpoint-sections">
+            <div class="pf-endpoint-section" id="pf-remote-section">
+                <div class="form-section-title" id="pf-remote-section-title">1. VDS</div>
+                <div class="form-group">
+                    <label id="pf-remote-host-label">Host (VDS)</label>
+                    <input type="text" id="pf-remote-host" value="0.0.0.0" placeholder="0.0.0.0">
+                </div>
+                <div class="form-group">
+                    <label id="pf-remote-port-label">Port (VDS)</label>
+                    <input type="number" id="pf-remote-port" min="1" max="65535" step="1" inputmode="numeric" placeholder="5432">
+                </div>
+            </div>
 
-        <div class="form-section-title">Local Ayarlar</div>
-
-        <div class="form-group">
-            <label>Local Host</label>
-            <input type="text" id="pf-local-host" value="127.0.0.1" placeholder="127.0.0.1">
-        </div>
-
-        <div class="form-group">
-            <label>Local Port</label>
-            <input type="number" id="pf-local-port" min="1" max="65535" placeholder="15432">
+            <div class="pf-endpoint-section" id="pf-local-section">
+                <div class="form-section-title" id="pf-local-section-title">2. My PC</div>
+                <div class="form-group">
+                    <label id="pf-local-host-label">Host (My PC)</label>
+                    <input type="text" id="pf-local-host" value="127.0.0.1" placeholder="127.0.0.1">
+                </div>
+                <div class="form-group">
+                    <label id="pf-local-port-label">Port (My PC)</label>
+                    <input type="number" id="pf-local-port" min="1" max="65535" step="1" inputmode="numeric" placeholder="15432">
+                </div>
+            </div>
         </div>
 
         <button class="btn-connect-large btn-drawer-primary" id="pf-add-forward-btn">Ekle</button>
@@ -349,7 +379,128 @@
     .pf-error {
         min-height: 18px;
         margin-top: 8px;
+        margin-bottom: 14px;
         font-size: 12px;
         color: #f38ba8;
+    }
+
+    .pf-helper-text {
+        margin-top: 6px;
+        font-size: 11px;
+        color: var(--text-muted);
+        line-height: 1.35;
+    }
+
+    .pf-route-toggle {
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: linear-gradient(180deg, rgba(30, 30, 46, 0.95), rgba(24, 24, 37, 0.95));
+        padding: 10px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 22px minmax(0, 1fr);
+        align-items: center;
+        gap: 4px;
+        cursor: pointer;
+        transition: border-color 0.18s ease, transform 0.18s ease;
+    }
+
+    .pf-route-toggle:hover {
+        border-color: #89b4fa;
+        transform: translateY(-1px);
+    }
+
+    .pf-route-endpoint {
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.07);
+        border-radius: 8px;
+        padding: 7px;
+    }
+
+    .pf-route-icon {
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-size: 13px;
+        flex-shrink: 0;
+        background: #45475a;
+    }
+
+    .pf-route-icon.pc {
+        background: #74c7ec;
+    }
+
+    .pf-route-icon.vds {
+        background: #89b4fa;
+    }
+
+    .pf-route-text {
+        min-width: 0;
+        text-align: left;
+    }
+
+    .pf-route-title {
+        color: var(--text-main);
+        font-size: 12px;
+        font-weight: 700;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .pf-route-sub {
+        color: var(--text-muted);
+        font-size: 10px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .pf-route-arrow {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #cdd6f4;
+        font-size: 16px;
+    }
+
+    .pf-direction-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 600;
+        border: 1px solid #45475a;
+    }
+
+    .pf-direction-tag.local_to_remote {
+        color: #89b4fa;
+        background: rgba(137, 180, 250, 0.12);
+    }
+
+    .pf-direction-tag.remote_to_local {
+        color: #f9e2af;
+        background: rgba(249, 226, 175, 0.12);
+    }
+
+    .pf-endpoint-sections {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .pf-endpoint-section {
+        display: flex;
+        flex-direction: column;
     }
 </style>

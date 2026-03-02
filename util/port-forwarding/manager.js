@@ -79,21 +79,60 @@ function normalizeHost(value, fallback = '127.0.0.1') {
     return out || fallback;
 }
 
-function listForwards() {
-    return Array.from(forwards.values()).sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+function normalizeDirection(value, fallback = 'local_to_remote') {
+    const direction = String(value || '').trim().toLowerCase();
+    if (direction === 'local_to_remote') {
+        return 'local_to_remote';
+    }
+    return fallback;
 }
 
-function hasLocalConflict(localHost, localPort, exceptId) {
-    const normalizedHost = normalizeHost(localHost, '127.0.0.1');
-    const normalizedPort = Number(localPort);
+function listForwards() {
+    return Array.from(forwards.values())
+        .map((forward) => ({
+            ...forward,
+            direction: normalizeDirection(forward.direction, 'local_to_remote')
+        }))
+        .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+}
+
+function hasPortConflict(payload = {}, exceptId) {
+    const direction = normalizeDirection(payload.direction);
+    const localHost = normalizeHost(payload.localHost, '127.0.0.1');
+    const localPort = Number(payload.localPort);
+    const remoteHost = normalizeHost(payload.remoteHost, '127.0.0.1');
+    const remotePort = Number(payload.remotePort);
+    const hostId = payload.hostId == null ? null : normalizeId(payload.hostId);
     const except = exceptId == null ? null : normalizeId(exceptId);
 
     for (const forward of forwards.values()) {
         if (except && normalizeId(forward.id) === except) continue;
-        if (normalizeHost(forward.localHost, '127.0.0.1') === normalizedHost && Number(forward.localPort) === normalizedPort) {
+
+        const forwardDirection = normalizeDirection(forward.direction);
+
+        if (direction === 'local_to_remote') {
+            if (forwardDirection !== 'local_to_remote') continue;
+
+            if (
+                normalizeHost(forward.localHost, '127.0.0.1') === localHost &&
+                Number(forward.localPort) === localPort
+            ) {
+                return forward;
+            }
+            continue;
+        }
+
+        if (forwardDirection !== 'remote_to_local') continue;
+        if (hostId == null || normalizeId(forward.hostId) !== hostId) continue;
+
+        if (
+            normalizeHost(forward.remoteHost, '127.0.0.1') === remoteHost &&
+            Number(forward.remotePort) === remotePort
+        ) {
             return forward;
         }
     }
+
     return null;
 }
 
@@ -102,10 +141,15 @@ function saveForward(payload) {
     const normalized = normalizeId(id);
     const existing = getForwardById(normalized);
     const now = Date.now();
+    const direction = normalizeDirection(
+        payload.direction,
+        existing ? normalizeDirection(existing.direction, 'local_to_remote') : 'remote_to_local'
+    );
 
     const nextForward = {
         id: Number.isFinite(Number(id)) ? Number(id) : id,
         hostId: payload.hostId,
+        direction,
         remoteHost: normalizeHost(payload.remoteHost, '127.0.0.1'),
         remotePort: parsePort(payload.remotePort, 'Remote port'),
         localHost: normalizeHost(payload.localHost, '127.0.0.1'),
@@ -283,12 +327,15 @@ async function startForward(forwardId) {
         const localHost = String(forward.localHost || '127.0.0.1').trim() || '127.0.0.1';
         const remotePort = parsePort(forward.remotePort, 'Remote port');
         const localPort = parsePort(forward.localPort, 'Local port');
+        const direction = normalizeDirection(forward.direction);
 
         const conn = new Client();
         const session = {
             id: normalized,
+            direction,
             conn,
             server: null,
+            remoteBind: null,
             localSockets: new Set(),
             remoteStreams: new Set()
         };
@@ -334,6 +381,105 @@ async function startForward(forwardId) {
             };
 
             conn.once('ready', () => {
+                if (direction === 'remote_to_local') {
+                    conn.on('tcp connection', (details, accept, reject) => {
+                        let stream = null;
+                        try {
+                            stream = accept();
+                        } catch (_) {
+                            stream = null;
+                        }
+
+                        if (!stream) {
+                            try {
+                                if (typeof reject === 'function') reject();
+                            } catch (_) {}
+                            return;
+                        }
+
+                        const localSocket = net.createConnection({
+                            host: localHost,
+                            port: localPort
+                        });
+
+                        session.remoteStreams.add(stream);
+                        session.localSockets.add(localSocket);
+
+                        localSocket.once('connect', () => {
+                            localSocket.pipe(stream).pipe(localSocket);
+                        });
+
+                        localSocket.on('close', () => {
+                            session.localSockets.delete(localSocket);
+                        });
+
+                        stream.on('close', () => {
+                            session.remoteStreams.delete(stream);
+                        });
+
+                        localSocket.on('error', () => {
+                            try {
+                                stream.end();
+                            } catch (_) {}
+
+                            setState(normalized, {
+                                status: 'error',
+                                message: `Local target ${localHost}:${localPort} is unreachable.`,
+                                lastError: `Local target ${localHost}:${localPort} is unreachable.`
+                            });
+                        });
+
+                        stream.on('error', () => {
+                            try {
+                                localSocket.destroy();
+                            } catch (_) {}
+                        });
+                    });
+
+                    const tryForwardIn = (bindHost, fallbackUsed = false) => {
+                        conn.forwardIn(bindHost, remotePort, (err) => {
+                            if (err) {
+                                if (!fallbackUsed && bindHost === '0.0.0.0') {
+                                    tryForwardIn('127.0.0.1', true);
+                                    return;
+                                }
+
+                                const baseMessage = err && err.message ? err.message : String(err || 'Unknown error');
+                                const extra = bindHost === '0.0.0.0'
+                                    ? ' If you need public bind, enable GatewayPorts in sshd_config.'
+                                    : '';
+                                fail(new Error(`${baseMessage}${extra}`));
+                                return;
+                            }
+
+                            session.remoteBind = {
+                                host: bindHost,
+                                port: remotePort
+                            };
+
+                            const note = fallbackUsed
+                                ? ' (0.0.0.0 rejected by SSH server, fell back to 127.0.0.1)'
+                                : '';
+
+                            setState(normalized, {
+                                status: 'active',
+                                message: `Remote listening on ${bindHost}:${remotePort} -> ${localHost}:${localPort}${note}`,
+                                startedAt: Date.now()
+                            });
+
+                            finish({
+                                success: true,
+                                message: 'Forward started.',
+                                state: getState(normalized)
+                            });
+                        });
+                    };
+
+                    tryForwardIn(remoteHost, false);
+
+                    return;
+                }
+
                 const server = net.createServer((localSocket) => {
                     conn.forwardOut(
                         localSocket.remoteAddress || '127.0.0.1',
@@ -461,6 +607,16 @@ async function stopForward(forwardId) {
     destroySessionTraffic(session);
     await closeSocket(session.server);
 
+    if (session.direction === 'remote_to_local' && session.remoteBind) {
+        await new Promise((resolve) => {
+            try {
+                session.conn.unforwardIn(session.remoteBind.host, session.remoteBind.port, () => resolve());
+            } catch (_) {
+                resolve();
+            }
+        });
+    }
+
     try {
         session.conn.end();
     } catch (_) {}
@@ -498,7 +654,7 @@ async function deleteForward(forwardId) {
 module.exports = {
     listForwards,
     saveForward,
-    hasLocalConflict,
+    hasPortConflict,
     deleteForward,
     startForward,
     stopForward,

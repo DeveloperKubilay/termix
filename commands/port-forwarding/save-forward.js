@@ -21,6 +21,11 @@ function normalizePort(value) {
     return parsed;
 }
 
+function normalizeDirection(value) {
+    const direction = String(value || '').trim().toLowerCase();
+    return direction === 'local_to_remote' ? 'local_to_remote' : 'remote_to_local';
+}
+
 module.exports = async (filesPath, payload = {}) => {
     try {
         const hosts = getArray('hosts');
@@ -34,6 +39,7 @@ module.exports = async (filesPath, payload = {}) => {
         const localHost = normalizeHost(payload.localHost, '127.0.0.1');
         const remotePort = normalizePort(payload.remotePort);
         const localPort = normalizePort(payload.localPort);
+        const direction = normalizeDirection(payload.direction);
 
         if (!remotePort) {
             return { success: false, message: 'Remote port must be between 1 and 65535.' };
@@ -49,18 +55,28 @@ module.exports = async (filesPath, payload = {}) => {
             return { success: false, message: 'Forward id is invalid.' };
         }
 
-        const conflict = manager.hasLocalConflict(localHost, localPort, id);
+        const conflict = manager.hasPortConflict({
+            direction,
+            hostId: selectedHost.id,
+            remoteHost,
+            remotePort,
+            localHost,
+            localPort
+        }, id);
 
         if (conflict) {
             return {
                 success: false,
-                message: 'This local host/port is already used by another forward.'
+                message: direction === 'remote_to_local'
+                    ? 'This remote host/port is already used on this VDS.'
+                    : 'This local host/port is already used by another forward.'
             };
         }
 
         const nextForward = manager.saveForward({
             id,
             hostId: selectedHost.id,
+            direction,
             remoteHost,
             remotePort,
             localHost,
