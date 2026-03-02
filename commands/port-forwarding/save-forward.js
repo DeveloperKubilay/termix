@@ -1,7 +1,5 @@
-const kubitdb = require('kubitdb');
+const db = require('../../util/profile-db');
 const manager = require('../../util/port-forwarding/manager');
-
-const db = new kubitdb();
 
 function getArray(key) {
     const value = db.get(key);

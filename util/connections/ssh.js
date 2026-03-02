@@ -1,8 +1,7 @@
 const { Client } = require('ssh2');
 const net = require('net');
 const { EventEmitter } = require('events');
-const kubitdb = require('kubitdb');
-const db = new kubitdb();
+const db = require('../profile-db');
 const SSH_PORT_MIN = 1;
 const SSH_PORT_MAX = 65535;
 const SSH_PORT_FALLBACK = 22;
@@ -130,3 +129,4 @@ module.exports = (data) => {
         }
     });
 };
+

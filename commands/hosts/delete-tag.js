@@ -1,5 +1,4 @@
-const kubitdb = require('kubitdb');
-const db = new kubitdb();
+const db = require('../../util/profile-db');
 
 module.exports = async (filesPath, tagToDelete) => {
     // 1. Remove from global 'tags' list
@@ -26,3 +25,4 @@ module.exports = async (filesPath, tagToDelete) => {
 
     return tags;
 };
+

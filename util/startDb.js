@@ -1,70 +1,22 @@
-const kubitdb = require('kubitdb');
-const db = new kubitdb();
+const db = require('./profile-db');
+const {
+  normalizeAiSettings,
+  normalizeTerminalSettings
+} = require('./profile-defaults');
 
 module.exports = function () {
-  if (!db.has("name")) {
-    db.set("name", "Default");
-  }
+  if (!db.has('name')) db.set('name', 'Default');
+  if (!db.has('type')) db.set('type', 'local');
+  if (!db.has('config')) db.set('config', {});
+  if (!db.has('write')) db.set('write', true);
+  if (!db.has('hosts')) db.set('hosts', []);
+  if (!db.has('tags')) db.set('tags', []);
+  if (!db.has('knownHosts')) db.set('knownHosts', []);
+  if (!db.has('snippets')) db.set('snippets', []);
 
-  if(!db.has("type")) {
-    db.set("type", "local");
-  }
-
-  if (!db.has("config")) {
-    db.set("config", {});
-  }
-
-  if (!db.has("write")) {
-    db.set("write", true);
-  }
-
-  if(!db.has("hosts")) db.set("hosts", []);
-  if(!db.has("tags")) db.set("tags", []);
-  if(!db.has("knownHosts")) db.set("knownHosts", []);
-  if(!db.has("snippets")) db.set("snippets", []);
-
-  if (!db.has("ai")) {
-    db.set("ai", { method: 'GET', url: '', headers: {} });
-  }
-
-  if (!db.has('terminalSettings')) {
-    db.set("terminalSettings", {
-      cursorBlink: true,
-      fontFamily: '"JetBrains Mono", "Fira Code", Consolas, "Courier New", monospace',
-      rightClickCopyPaste: true,
-      fontSize: 14,
-      fontWeight: 500,
-      letterSpacing: 0,
-      lineHeight: 1.2,
-      scrollback: 5000,
-      theme: {
-        background: '#1e1e1e', // VS Code Dark+ benzeri
-        foreground: '#d4d4d4', // Standart yazı rengi (White)
-        cursor: '#cccccc',
-        selectionBackground: '#797979',
-
-        // Normal Renkler
-        black: '#000000',
-        red: '#c50f1f',
-        green: '#1d8e48', // Senin yeşil
-        yellow: '#c19c00',
-        blue: '#0020c7',  // Senin mavi
-        magenta: '#881798',
-        cyan: '#3a96dd',
-        white: '#cccccc',
-
-        // Parlak Renkler
-        brightBlack: '#767676',
-        brightRed: '#e74856',
-        brightGreen: '#16c60c',
-        brightYellow: '#f9f1a5',
-        brightBlue: '#3b78ff',
-        brightMagenta: '#b4009e',
-        brightCyan: '#61d6d6',
-        brightWhite: '#f2f2f2'
-      }
-    })
-  }
+  db.set('ai', normalizeAiSettings(db.get('ai')));
+  db.set('terminalSettings', normalizeTerminalSettings(db.get('terminalSettings')));
 
   return db;
 }
+

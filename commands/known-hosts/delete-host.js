@@ -1,5 +1,4 @@
-const kubitdb = require('kubitdb');
-const db = new kubitdb();
+const db = require('../../util/profile-db');
 
 module.exports = (filesPath, targetHost) => {
     try {
@@ -21,3 +20,4 @@ module.exports = (filesPath, targetHost) => {
         return { success: false, message: e.message };
     }
 };
+

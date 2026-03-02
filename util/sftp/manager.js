@@ -2,10 +2,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { Client } = require('ssh2');
-const kubitdb = require('kubitdb');
+const db = require('../profile-db');
 const { decrypt } = require('../crypto');
-
-const db = new kubitdb();
 const sessions = new Map();
 
 function normalizeId(value) {

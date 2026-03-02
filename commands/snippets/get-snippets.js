@@ -1,5 +1,4 @@
-const kubitdb = require('kubitdb');
-const db = new kubitdb();
+const db = require('../../util/profile-db');
 
 module.exports = async () => {
     const raw = db.get('snippets');
@@ -23,3 +22,4 @@ module.exports = async () => {
             return bTime - aTime;
         });
 };
+

@@ -1,6 +1,5 @@
 const firebase = require('../../util/firebase');
-const kubitdb = require('kubitdb');
-const db = new kubitdb();
+const db = require('../../util/profile-db');
 const profileManager = require('../../util/profile-manager');
 
 module.exports = async function (filesPath, action) {
@@ -29,3 +28,4 @@ module.exports = async function (filesPath, action) {
         return { success: false, message: "Sync failed: " + err.message };
     }
 };
+

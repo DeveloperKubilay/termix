@@ -1,5 +1,4 @@
-const kubitdb = require('kubitdb');
-const db = new kubitdb();
+const db = require('../../util/profile-db');
 
 module.exports = async (filesPath, hostId, fontSize) => {
     if (hostId == null) {
@@ -36,3 +35,4 @@ module.exports = async (filesPath, hostId, fontSize) => {
         terminalFontSize: normalizedFontSize
     };
 };
+

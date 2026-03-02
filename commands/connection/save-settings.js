@@ -1,5 +1,4 @@
-const kubitdb = require('kubitdb');
-const db = new kubitdb();
+const db = require('../../util/profile-db');
 
 module.exports = (filesPath, settings) => {
     const currentSettings = db.get('terminalSettings') || {};
@@ -7,3 +6,4 @@ module.exports = (filesPath, settings) => {
     db.set('terminalSettings', newSettings);
     return newSettings;
 };
+

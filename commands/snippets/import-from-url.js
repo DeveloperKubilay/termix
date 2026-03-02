@@ -1,5 +1,4 @@
-const kubitdb = require('kubitdb');
-const db = new kubitdb();
+const db = require('../../util/profile-db');
 
 function normalizeText(value) {
     return String(value == null ? '' : value).trim();
@@ -211,3 +210,4 @@ module.exports = async (filesPath, payload = {}) => {
         };
     }
 };
+
