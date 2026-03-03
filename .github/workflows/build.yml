@@ -11,14 +11,14 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     strategy:
-      fail-fast: false
-      max-parallel: 1
+      fail-fast: true
+      max-parallel: 3
       matrix:
         include:
-          - os: windows-latest
-            platform: win
           - os: ubuntu-latest
             platform: linux
+          - os: windows-latest
+            platform: win
           - os: macos-latest
             platform: mac
 
