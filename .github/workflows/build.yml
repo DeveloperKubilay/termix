@@ -29,7 +29,6 @@ jobs:
         run: npm outdated || true
 
   build:
-    needs: audit
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -82,7 +81,7 @@ jobs:
             dist/*.blockmap
 
   release:
-    needs: build
+    needs: [audit, build]
     runs-on: ubuntu-latest
 
     env:
