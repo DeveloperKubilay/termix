@@ -179,7 +179,7 @@
                 if (!hostTriggerText || !hostTriggerIcon) return;
 
                 if (!selectedHost) {
-                    hostTriggerText.textContent = 'Bir VDS secin';
+                    hostTriggerText.textContent = 'Select a VDS';
                     hostTriggerIcon.innerHTML = '<i class="fa-solid fa-server"></i>';
                     hostTriggerIcon.style.background = '#45475a';
                     return;
@@ -314,7 +314,7 @@
     function openCreateDrawer() {
         if (!window.Drawer || !drawerTemplate) return;
 
-        Drawer.open('Snippet Ekle', drawerTemplate.innerHTML);
+        Drawer.open('Add Snippet', drawerTemplate.innerHTML);
 
         setTimeout(() => {
             const urlCard = document.getElementById('sn-mode-url-card');
@@ -351,13 +351,13 @@
                     if (manualCard) manualCard.classList.remove('active');
                     if (urlSection) urlSection.style.display = 'block';
                     if (manualSection) manualSection.style.display = 'none';
-                    if (saveBtn) saveBtn.textContent = 'URL ile Ekle';
+                    if (saveBtn) saveBtn.textContent = 'Add via URL';
                 } else {
                     if (manualCard) manualCard.classList.add('active');
                     if (urlCard) urlCard.classList.remove('active');
                     if (manualSection) manualSection.style.display = 'block';
                     if (urlSection) urlSection.style.display = 'none';
-                    if (saveBtn) saveBtn.textContent = 'Manuel Kaydet';
+                    if (saveBtn) saveBtn.textContent = 'Save Manually';
                 }
 
                 showStatus('');
@@ -381,14 +381,14 @@
 
                     saveBtn.disabled = true;
                     const originalLabel = saveBtn.textContent;
-                    saveBtn.textContent = 'Kaydediliyor...';
+                    saveBtn.textContent = 'Saving...';
 
                     try {
                         if (mode === 'url') {
                             const url = urlInput ? urlInput.value.trim() : '';
                             if (!url) {
                                 if (urlInput) urlInput.style.borderColor = '#f38ba8';
-                                showStatus('URL zorunlu.');
+                                showStatus('URL is required.');
                                 return;
                             }
 
@@ -400,7 +400,7 @@
                                 }
                             } catch (_) {
                                 if (urlInput) urlInput.style.borderColor = '#f38ba8';
-                                showStatus('Gecerli bir URL girin.');
+                                showStatus('Enter a valid URL.');
                                 return;
                             }
 
@@ -420,13 +420,13 @@
 
                         if (!name) {
                             if (nameInput) nameInput.style.borderColor = '#f38ba8';
-                            showStatus('Komut ismi zorunlu.');
+                            showStatus('Command name is required.');
                             return;
                         }
 
                         if (!command) {
                             if (commandInput) commandInput.style.borderColor = '#f38ba8';
-                            showStatus('Komut alani zorunlu.');
+                            showStatus('Command field is required.');
                             return;
                         }
 

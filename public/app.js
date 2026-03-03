@@ -545,11 +545,11 @@ const TabManager = {
             closable: options.closable !== false
         };
 
-            // Create Tab Element (Daha önceki tab'da sessionObj'yi nasıl set ettik?)
+            // Create tab element (how did we attach sessionObj on previous tabs?)
         
-        // Modules'un başlattığımız yerde session objesini tab'a bağlamamız lazım
-        // Bu yüzden moduleContainer.init fonksiyonunun ne döndürdüğüne bakacağız.
-        // Ama init asenkron olabilir.
+        // We need to attach the session object to the tab where modules are initialized.
+        // So we need to inspect what moduleContainer.init returns.
+        // But init might be asynchronous.
         
         const tabEl = document.createElement('div');
         tabEl.className = 'tab';
@@ -680,7 +680,7 @@ const TabManager = {
 
         const tab = this.tabs[tabIndex];
         
-        // --- Cleanup Hook: Eğer tab bir objeye sahipse cleanup yap ---
+        // --- Cleanup hook: if the tab has an object, run cleanup ---
         if (tab.sessionObj && typeof tab.sessionObj.dispose === 'function') {
              try {
                  tab.sessionObj.dispose();

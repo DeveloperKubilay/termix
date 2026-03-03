@@ -46,7 +46,7 @@ window.ConnectionModule = {
             } catch (_) {}
         };
 
-        // Container rengini settings'ten gelen renkle eşle
+        // Match container color with the value from settings.
         const TerminalSettings = await window.electronAPI.connection.getSettings();
         if (TerminalSettings.theme && TerminalSettings.theme.background) {
             container.style.backgroundColor = TerminalSettings.theme.background;
@@ -76,7 +76,7 @@ window.ConnectionModule = {
             try { term.focus(); } catch (_) {}
         });
 
-        // WebGL Addon'u terminal açıldıktan sonra yüklemek performansı artırır ve takılmaları önler
+        // Loading the WebGL addon after terminal init improves performance and reduces stutter.
         try {
             const webglAddon = new window.WebglAddon.WebglAddon();
             webglAddon.onContextLoss(e => {
@@ -234,14 +234,14 @@ window.ConnectionModule = {
         });
 
         function sendResize() {
-            // Container görünür değilse veya boyutları 0 ise işlem yapma
+            // Skip resize if container is hidden or has zero dimensions.
             if (!container.clientWidth || !container.clientHeight) return;
 
-            // Fit addon ile boyutları hesapla
+            // Calculate dimensions via fit addon.
             fitAddon.fit();
 
-            // Backend'e yeni boyutları bildir
-            // window.electronAPI.send kontrolü
+            // Notify backend about the new dimensions.
+            // Guard for window.electronAPI.send.
             if (window.electronAPI && window.electronAPI.send) {
                 window.electronAPI.send('term-resize', {
                     sessionId: currentSessionId,
@@ -251,24 +251,24 @@ window.ConnectionModule = {
             }
         }
 
-        // ResizeObserver ile container boyut değişimlerini izle (Sidebar aç/kapa dahil)
+        // Watch container size changes with ResizeObserver (including sidebar toggle).
         resizeObserver = new ResizeObserver(() => {
-            // RequestAnimationFrame ile UI thread'i boğmadan resize yap
+            // Resize in requestAnimationFrame to avoid UI thread pressure.
             requestAnimationFrame(() => sendResize());
         });
 
         resizeObserver.observe(container);
 
-        // İlk yüklemede ve SSH hazır olduğunda da tetikle
+        // Trigger on first load and when SSH becomes ready.
         window.electronAPI.on('ssh-ready', (event, msg) => {
             if (msg && msg.sessionId === currentSessionId) {
-                term.clear(); // Connecting mesajlarını temizle
+                term.clear(); // Clear connecting messages
                 sendResize();
             }
         });
-        // window.addEventListener('resize', sendResize); // ResizeObserver bunu zaten halleder
+        // window.addEventListener('resize', sendResize); // ResizeObserver already handles this
 
-        // İlk bir kez çalıştır (zamanlama sorunu olmaması için kısa gecikme)
+        // Run once initially (small delay to avoid timing issues).
         setTimeout(sendResize, 100);
 
 
@@ -319,7 +319,7 @@ window.ConnectionModule = {
             emitAiSelectionContext(selection);
         });
 
-        if (TerminalSettings.rightClickCopyPaste) { // Sağ tık ile yapıştırma
+        if (TerminalSettings.rightClickCopyPaste) { // Paste on right-click
             container.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
                 const text = clipboard.readText();
@@ -340,12 +340,12 @@ window.ConnectionModule = {
                 isUserDisconnected = true;
                 clearTimeout(msgTimer);
                 emitAiSelectionContext('');
-                // Observer'ı durdur
+                // Stop observer
                 if (resizeObserver) resizeObserver.disconnect();
                 window.removeEventListener('keydown', handleTerminalZoomKeydown);
-                // Terminali temizle
+                // Dispose terminal
                 try { term.dispose(); } catch (_) {}
-                // Backend'e kapat isteği gönder (İstenirse)
+                // Send close request to backend (optional)
                 window.electronAPI.send('term-close', { sessionId: currentSessionId });
             }
         };

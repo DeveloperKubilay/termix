@@ -344,7 +344,7 @@
                 if (!hostTriggerText || !hostTriggerIcon) return;
 
                 if (!selectedHost) {
-                    hostTriggerText.textContent = 'Bir VDS secin';
+                    hostTriggerText.textContent = 'Select a VDS';
                     hostTriggerIcon.innerHTML = '<i class="fa-solid fa-server"></i>';
                     hostTriggerIcon.style.background = '#45475a';
                     renderRouteUi();
