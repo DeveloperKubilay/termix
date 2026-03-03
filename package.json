@@ -46,7 +46,7 @@
     }
   },
   "dependencies": {
-    "electron-updater": "^6.6.2",
+    "electron-updater": "^6.8.3",
     "firebase": "^12.10.0",
     "kubitdb": "^1.5.5",
     "node-machine-id": "^1.1.12",
