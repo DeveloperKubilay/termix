@@ -41,7 +41,7 @@ jobs:
           node -e "const fs=require('fs'); const pkg=JSON.parse(fs.readFileSync('package.json','utf8')); pkg.version=process.env.BUILD_VERSION; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n'); console.log('Version =>', pkg.version);"
 
       - name: Install Dependencies
-        run: npm ci --omit=optional
+        run: npm ci
 
       - name: Build and Publish Release
         run: npm run build -- --${{ matrix.platform }} --publish always

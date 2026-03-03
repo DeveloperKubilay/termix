@@ -1,6 +1,8 @@
 {
   "name": "Termix",
   "version": "1.0.0",
+  "description": "A modern terminal & SSH client",
+  "author": "DeveloperKubilay",
   "repository": {
     "type": "git",
     "url": "https://github.com/DeveloperKubilay/termix.git"
@@ -54,6 +56,9 @@
     "xterm": "^5.3.0",
     "xterm-addon-fit": "^0.8.0",
     "xterm-addon-webgl": "^0.16.0"
+  },
+  "optionalDependencies": {
+    "dmg-license": "^1.0.11"
   },
   "devDependencies": {
     "electron": "^40.6.1",
