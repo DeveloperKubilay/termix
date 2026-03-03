@@ -5,12 +5,11 @@ const {
     normalizeTerminalSettings
 } = require('./profile-defaults');
 const { normalizeCloudConfig } = require('./profile-secrets');
+const { DATA_ROOT, PROFILES_DIR, ASAR_ROOT } = require('./paths');
 
-const ROOT_DIR = path.resolve(__dirname, '..');
-const PROFILES_DIR = path.join(ROOT_DIR, 'profiles');
 const REGISTRY_FILE = path.join(PROFILES_DIR, 'registry.json');
-const LEGACY_ACTIVE_DB_FILE = path.join(ROOT_DIR, 'kubitdb.json');
-const LEGACY_PROFILES_DIR = path.join(ROOT_DIR, 'commands', 'profiles', 'profiles');
+const LEGACY_ACTIVE_DB_FILE = path.join(DATA_ROOT, 'kubitdb.json');
+const LEGACY_PROFILES_DIR = path.join(ASAR_ROOT, 'commands', 'profiles', 'profiles');
 
 let isInitialized = false;
 

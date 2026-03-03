@@ -1,8 +1,9 @@
 const fs = require('fs');
 const path = require('path');
+const { COMMANDS_DIR, FILES_DIR } = require('./paths');
 
 function scanHandlers() {
-  const commandsPath = path.join(__dirname, '..', 'commands');
+  const commandsPath = COMMANDS_DIR;
   const modules = fs.readdirSync(commandsPath, { withFileTypes: true });
   
   const channels = {};
@@ -37,7 +38,7 @@ function scanHandlers() {
 function loadIPC() {
   const { ipcMain } = require('electron');
   const channels = scanHandlers();
-  const filesPath = path.join(__dirname, '..', 'files');
+  const filesPath = FILES_DIR;
   
   const loaded = [];
 

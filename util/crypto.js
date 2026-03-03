@@ -2,9 +2,10 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { machineIdSync } = require('node-machine-id');
+const { PROFILES_DIR } = require('./paths');
 
 const PORTABLE_KEY_ENV = 'TERMIX_PORTABLE_KEY';
-const PORTABLE_KEY_FILE = path.join(__dirname, '..', 'profiles', '.termix-portable-key');
+const PORTABLE_KEY_FILE = path.join(PROFILES_DIR, '.termix-portable-key');
 
 function getPortableKey() {
     let material = process.env[PORTABLE_KEY_ENV] || '';
