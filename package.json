@@ -10,6 +10,16 @@
   "build": {
     "appId": "com.Termix.app",
     "productName": "Termix",
+    "directories": {
+      "output": "dist"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Termix"
+    },
     "win": {
       "target": "nsis"
     },

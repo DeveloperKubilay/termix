@@ -20,18 +20,18 @@
 
 <template id="snippet-drawer-template">
     <div class="sn-drawer-layout">
-        <div class="form-section-title">Ekleme Tipi</div>
+        <div class="form-section-title">Add Type</div>
 
         <div class="sn-mode-grid">
             <label class="sn-mode-card active" id="sn-mode-url-card">
                 <input type="radio" name="snippetMode" value="url" checked style="display: none;">
                 <i class="fa-solid fa-link"></i>
-                <span>URL Secme</span>
+                <span>Select URL</span>
             </label>
             <label class="sn-mode-card" id="sn-mode-manual-card">
                 <input type="radio" name="snippetMode" value="manual" style="display: none;">
                 <i class="fa-solid fa-keyboard"></i>
-                <span>Kendin Ekle</span>
+                <span>Add Manually</span>
             </label>
         </div>
 
@@ -41,22 +41,22 @@
                 <input type="text" id="snippet-url-input" placeholder="https://example.com/snippets.json">
             </div>
             <p class="sn-help">
-                Desteklenen formatlar: <code>[{ "name": "...", "command": "..." }]</code>, <code>{ "snippets": [...] }</code> veya <code>{ "name": "command" }</code>.
+                Supported formats: <code>[{ "name": "...", "command": "..." }]</code>, <code>{ "snippets": [...] }</code> or <code>{ "name": "command" }</code>.
             </p>
         </div>
 
         <div id="snippet-manual-section" class="sn-mode-section" style="display: none;">
             <div class="form-group">
-                <label>Komut Ismi</label>
+                <label>Command Name</label>
                 <input type="text" id="snippet-name-input" placeholder="Restart Nginx">
             </div>
             <div class="form-group" style="margin-bottom: 0;">
-                <label>Komut</label>
+                <label>Command</label>
                 <textarea id="snippet-command-input" placeholder="sudo systemctl restart nginx"></textarea>
             </div>
         </div>
 
-        <button id="snippet-save-btn" class="btn-connect-large btn-drawer-primary">Kaydet</button>
+        <button id="snippet-save-btn" class="btn-connect-large btn-drawer-primary">Save</button>
         <div id="snippet-drawer-status" class="sn-drawer-status"></div>
     </div>
 </template>
@@ -66,7 +66,7 @@
         <div class="form-section-title">Snippet</div>
         <pre class="sn-run-command" id="sn-run-command-preview"></pre>
 
-        <div class="form-section-title">VDS Secimi</div>
+        <div class="form-section-title">VDS Selection</div>
         <div class="form-group">
             <label>VDS</label>
             <div class="pf-host-picker">
@@ -74,14 +74,14 @@
                     <div class="pf-host-trigger-icon" id="sn-run-host-trigger-icon">
                         <i class="fa-solid fa-server"></i>
                     </div>
-                    <div class="pf-host-trigger-text" id="sn-run-host-trigger-text">Bir VDS secin</div>
+                    <div class="pf-host-trigger-text" id="sn-run-host-trigger-text">Select a VDS</div>
                     <i class="fa-solid fa-chevron-down"></i>
                 </button>
 
                 <div class="pf-host-dropdown" id="sn-run-host-dropdown">
                     <div class="search-tags pf-host-search">
                         <i class="fa-solid fa-magnifying-glass"></i>
-                        <input type="text" id="sn-run-host-search" placeholder="VDS ara">
+                        <input type="text" id="sn-run-host-search" placeholder="Search VDS">
                     </div>
                     <div class="pf-host-list" id="sn-run-host-list"></div>
                 </div>

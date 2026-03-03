@@ -37,20 +37,20 @@
 <template id="forward-drawer-template">
     <div class="pf-drawer-layout">
         <div class="form-group">
-            <label>VDS Secimi</label>
+            <label>VDS Selection</label>
             <div class="pf-host-picker" id="pf-host-picker">
                 <button type="button" class="pf-host-trigger" id="pf-host-trigger">
                     <div class="pf-host-trigger-icon" id="pf-host-trigger-icon">
                         <i class="fa-solid fa-server"></i>
                     </div>
-                    <div class="pf-host-trigger-text" id="pf-host-trigger-text">Bir VDS secin</div>
+                    <div class="pf-host-trigger-text" id="pf-host-trigger-text">Select a VDS</div>
                     <i class="fa-solid fa-chevron-down"></i>
                 </button>
 
                 <div class="pf-host-dropdown" id="pf-host-dropdown">
                     <div class="search-tags pf-host-search">
                         <i class="fa-solid fa-magnifying-glass"></i>
-                        <input type="text" id="pf-host-search" placeholder="VDS ara">
+                        <input type="text" id="pf-host-search" placeholder="Search VDS">
                     </div>
                     <div class="pf-host-list" id="pf-host-list"></div>
                 </div>
@@ -110,7 +110,7 @@
             </div>
         </div>
 
-        <button class="btn-connect-large btn-drawer-primary" id="pf-add-forward-btn">Ekle</button>
+        <button class="btn-connect-large btn-drawer-primary" id="pf-add-forward-btn">Add</button>
         <div id="pf-drawer-error" class="pf-error"></div>
     </div>
 </template>

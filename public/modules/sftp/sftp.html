@@ -1,7 +1,7 @@
 <div class="content-area sftp-module">
     <div class="sftp-header-row">
         <h2 class="section-title" style="margin: 0;">SFTP File Manager</h2>
-        <div id="sftp-global-status" class="sftp-status info">Hazir</div>
+        <div id="sftp-global-status" class="sftp-status info">Ready</div>
     </div>
 
     <div class="sftp-grid">
@@ -12,7 +12,7 @@
                     <button type="button" data-pane="left" data-mode="vds">VDS</button>
                 </div>
                 <div class="sftp-conn-text" id="sftp-conn-left">Local</div>
-                <button type="button" class="btn btn-primary sftp-disconnect-btn" id="sftp-disconnect-left">Baglantiyi Kes</button>
+                <button type="button" class="btn btn-primary sftp-disconnect-btn" id="sftp-disconnect-left">Disconnect</button>
             </div>
 
             <div class="sftp-path-stack">
@@ -27,18 +27,18 @@
             </div>
 
             <div class="sftp-table-head">
-                <span>Ad</span>
-                <span>Boyut</span>
-                <span>Tarih</span>
+                <span>Name</span>
+                <span>Size</span>
+                <span>Date</span>
             </div>
             <div class="sftp-file-list" id="sftp-list-left" tabindex="0"></div>
 
             <div class="sftp-host-overlay" id="sftp-overlay-left">
                 <div class="sftp-host-card">
-                    <div class="sftp-host-title">VDS Sec</div>
+                    <div class="sftp-host-title">Select VDS</div>
                     <div class="sftp-host-search-row">
                         <i class="fa-solid fa-magnifying-glass"></i>
-                        <input id="sftp-host-search-left" type="text" spellcheck="false" placeholder="VDS ara...">
+                        <input id="sftp-host-search-left" type="text" spellcheck="false" placeholder="Search VDS...">
                     </div>
                     <div class="sftp-host-list" id="sftp-host-list-left"></div>
                 </div>
@@ -51,8 +51,8 @@
                     <button type="button" data-pane="right" data-mode="local">Local</button>
                     <button type="button" data-pane="right" data-mode="vds" class="active">VDS</button>
                 </div>
-                <div class="sftp-conn-text" id="sftp-conn-right">Bagli degil</div>
-                <button type="button" class="btn btn-primary sftp-disconnect-btn" id="sftp-disconnect-right">Baglantiyi Kes</button>
+                <div class="sftp-conn-text" id="sftp-conn-right">Not connected</div>
+                <button type="button" class="btn btn-primary sftp-disconnect-btn" id="sftp-disconnect-right">Disconnect</button>
             </div>
 
             <div class="sftp-path-stack">
@@ -67,18 +67,18 @@
             </div>
 
             <div class="sftp-table-head">
-                <span>Ad</span>
-                <span>Boyut</span>
-                <span>Tarih</span>
+                <span>Name</span>
+                <span>Size</span>
+                <span>Date</span>
             </div>
             <div class="sftp-file-list" id="sftp-list-right" tabindex="0"></div>
 
             <div class="sftp-host-overlay" id="sftp-overlay-right">
                 <div class="sftp-host-card">
-                    <div class="sftp-host-title">VDS Sec</div>
+                    <div class="sftp-host-title">Select VDS</div>
                     <div class="sftp-host-search-row">
                         <i class="fa-solid fa-magnifying-glass"></i>
-                        <input id="sftp-host-search-right" type="text" spellcheck="false" placeholder="VDS ara...">
+                        <input id="sftp-host-search-right" type="text" spellcheck="false" placeholder="Search VDS...">
                     </div>
                     <div class="sftp-host-list" id="sftp-host-list-right"></div>
                 </div>
@@ -86,34 +86,34 @@
         </section>
     </div>
 
-    <div id="sftp-context-menu" class="sftp-context-menu" role="menu" aria-label="Dosya Islemleri">
+    <div id="sftp-context-menu" class="sftp-context-menu" role="menu" aria-label="File Operations">
         <button type="button" class="sftp-context-action" data-action="create-directory">
             <i class="fa-solid fa-folder-plus"></i>
-            <span>Yeni klasor</span>
+            <span>New folder</span>
         </button>
         <button type="button" class="sftp-context-action" data-action="create-file">
             <i class="fa-regular fa-file-lines"></i>
-            <span>Yeni dosya</span>
+            <span>New file</span>
         </button>
         <div class="sftp-context-sep"></div>
         <button type="button" class="sftp-context-action" data-action="rename">
             <i class="fa-solid fa-i-cursor"></i>
-            <span>Yeniden adlandir</span>
+            <span>Rename</span>
         </button>
         <button type="button" class="sftp-context-action danger" data-action="delete">
             <i class="fa-solid fa-trash"></i>
-            <span>Sil</span>
+            <span>Delete</span>
         </button>
     </div>
 
     <div id="sftp-rename-overlay" class="sftp-rename-overlay">
         <div class="sftp-rename-dialog" role="dialog" aria-modal="true" aria-labelledby="sftp-rename-title">
-            <div id="sftp-rename-title" class="sftp-rename-title">Yeniden adlandir</div>
+            <div id="sftp-rename-title" class="sftp-rename-title">Rename</div>
             <div id="sftp-rename-path" class="sftp-rename-path"></div>
             <input id="sftp-rename-input" type="text" spellcheck="false" autocomplete="off" />
             <div class="sftp-rename-actions">
-                <button id="sftp-rename-cancel" type="button" class="app-confirm-btn secondary">Vazgec</button>
-                <button id="sftp-rename-confirm" type="button" class="app-confirm-btn">Kaydet</button>
+                <button id="sftp-rename-cancel" type="button" class="app-confirm-btn secondary">Cancel</button>
+                <button id="sftp-rename-confirm" type="button" class="app-confirm-btn">Save</button>
             </div>
         </div>
     </div>

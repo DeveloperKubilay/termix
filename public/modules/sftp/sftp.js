@@ -437,9 +437,9 @@
 
     function validateEntryName(nameValue) {
         const name = normalizeNameInput(nameValue);
-        if (!name) return { valid: false, message: 'Ad bos olamaz.' };
-        if (name === '.' || name === '..') return { valid: false, message: 'Gecersiz ad.' };
-        if (/[\\/]/.test(name)) return { valid: false, message: 'Ad icinde / veya \\ olamaz.' };
+        if (!name) return { valid: false, message: 'Name cannot be empty.' };
+        if (name === '.' || name === '..') return { valid: false, message: 'Invalid name.' };
+        if (/[\\/]/.test(name)) return { valid: false, message: 'Name cannot contain / or \\.' };
         return { valid: true, name };
     }
 
@@ -491,8 +491,8 @@
     }
 
     function requestTextValue(options = {}) {
-        const title = String(options.title || 'Ad girin');
-        const confirmText = String(options.confirmText || 'Kaydet');
+        const title = String(options.title || 'Enter a name');
+        const confirmText = String(options.confirmText || 'Save');
         const initialValue = String(options.initialValue || '');
         const targetPath = String(options.targetPath || '');
         const placeholder = String(options.placeholder || '');
@@ -649,7 +649,7 @@
         });
 
         if (!filteredHosts.length) {
-            paneUi.hostList.innerHTML = '<div class="sftp-empty" style="padding: 10px;">SSH host bulunamadi.</div>';
+            paneUi.hostList.innerHTML = '<div class="sftp-empty" style="padding: 10px;">SSH host not found.</div>';
             return;
         }
 
@@ -703,9 +703,9 @@
             } else if (pane.sessionId) {
                 const host = getHostById(pane.connectedHostId);
                 const hostLabel = host ? (host.name || host.address || 'VDS') : 'VDS';
-                paneUi.connText.textContent = `Baglandi: ${hostLabel}`;
+                paneUi.connText.textContent = `Connected: ${hostLabel}`;
             } else {
-                paneUi.connText.textContent = 'Bagli degil';
+                paneUi.connText.textContent = 'Not connected';
             }
         }
 
@@ -726,9 +726,9 @@
 
         if (paneUi.list) {
             if (pane.loading) {
-                paneUi.list.innerHTML = '<div class="sftp-empty">Yukleniyor...</div>';
+                paneUi.list.innerHTML = '<div class="sftp-empty">Loading...</div>';
             } else if (isRemoteMode && !isConnected) {
-                paneUi.list.innerHTML = '<div class="sftp-empty">VDS secimi bekleniyor...</div>';
+                paneUi.list.innerHTML = '<div class="sftp-empty">Waiting for VDS selection...</div>';
             } else {
                 const rows = [];
                 if (pane.parentPath) {
@@ -745,7 +745,7 @@
                 pane.entries.forEach((entry) => rows.push({ ...entry, isParent: false }));
 
                 if (!rows.length) {
-                    paneUi.list.innerHTML = '<div class="sftp-empty">Bu klasorde oge yok.</div>';
+                    paneUi.list.innerHTML = '<div class="sftp-empty">This folder is empty.</div>';
                 } else {
                     paneUi.list.innerHTML = rows.map((item) => {
                         const selected = !item.isParent && pane.selected.has(item.path);
@@ -812,7 +812,7 @@
         pane.loading = false;
 
         if (!result || result.success === false) {
-            setStatus(result && result.message ? result.message : 'Klasor listesi alinamadi.', 'error');
+            setStatus(result && result.message ? result.message : 'Failed to list folder.', 'error');
             renderPane(key);
             return false;
         }
@@ -836,7 +836,7 @@
 
         const result = await sftpApi.disconnect(pane.sessionId);
         if (!result || result.success === false) {
-            setStatus(result && result.message ? result.message : 'Baglanti kapatilamadi.', 'error');
+            setStatus(result && result.message ? result.message : 'Failed to close connection.', 'error');
             return false;
         }
 
@@ -851,7 +851,7 @@
         renderPane(key);
 
         if (!silent) {
-            setStatus(`${key === 'left' ? 'Sol' : 'Sag'} panel baglantisi kesildi.`, 'info');
+            setStatus(`${key === 'left' ? 'Left' : 'Right'} pane disconnected.`, 'info');
         }
 
         return true;
@@ -869,7 +869,7 @@
         }
 
         if (!pane.selectedHostId) {
-            if (!opts.silent) setStatus('SSH host bulunamadi.', 'error');
+            if (!opts.silent) setStatus('SSH host not found.', 'error');
             renderPane(key);
             return false;
         }
@@ -890,13 +890,13 @@
             }
 
             if (!opts.silent) {
-                setStatus(`${key === 'left' ? 'Sol' : 'Sag'} panel baglantisi kuruluyor...`, 'info');
+                setStatus(`${key === 'left' ? 'Left' : 'Right'} pane connecting...`, 'info');
             }
 
             const result = await sftpApi.connect(pane.selectedHostId);
             if (!result || result.success === false) {
                 if (!opts.silent) {
-                    setStatus(result && result.message ? result.message : 'Baglanti kurulamadi.', 'error');
+                    setStatus(result && result.message ? result.message : 'Connection failed.', 'error');
                 }
                 return false;
             }
@@ -915,7 +915,7 @@
             if (!opts.silent) {
                 const host = getHostById(pane.selectedHostId);
                 const hostLabel = host ? (host.name || host.address || 'VDS') : 'VDS';
-                setStatus(`${key === 'left' ? 'Sol' : 'Sag'} panel baglandi: ${hostLabel}`, 'success');
+                setStatus(`${key === 'left' ? 'Left' : 'Right'} pane connected: ${hostLabel}`, 'success');
             }
 
             return true;
@@ -955,7 +955,7 @@
             clearPaneSelection(pane);
             renderPane(key);
             await refreshPane(key, '');
-            setStatus(`${key === 'left' ? 'Sol' : 'Sag'} panel Local moda gecti.`, 'info');
+            setStatus(`${key === 'left' ? 'Left' : 'Right'} pane switched to Local mode.`, 'info');
             return;
         }
 
@@ -965,7 +965,7 @@
         pane.entries = [];
         clearPaneSelection(pane);
         renderPane(key);
-        setStatus(`${key === 'left' ? 'Sol' : 'Sag'} panel icin VDS secin.`, 'info');
+        setStatus(`Select a VDS for the ${key === 'left' ? 'left' : 'right'} pane.`, 'info');
     }
 
     function getSelectedEntries(key) {
@@ -1108,7 +1108,7 @@
 
         const selected = getSelectedEntries(key);
         if (!selected.length) {
-            setStatus('Kopyalamak icin secili oge yok.', 'error');
+            setStatus('No selected item to copy.', 'error');
             return;
         }
 
@@ -1117,7 +1117,7 @@
 
         state.clipboard = payload;
 
-        setStatus(`${selected.length} oge kopyalandi.`, 'success');
+        setStatus(`${selected.length} item(s) copied.`, 'success');
     }
 
     async function executeCopyToPane(copyPayload, destinationPaneKey, destinationPathOverride, successMessage) {
@@ -1125,7 +1125,7 @@
         if (!destinationPane) return false;
 
         if (!copyPayload || !Array.isArray(copyPayload.items) || !copyPayload.items.length) {
-            setStatus('Yapistirilacak oge yok.', 'error');
+            setStatus('No item to paste.', 'error');
             return false;
         }
 
@@ -1137,7 +1137,7 @@
 
         const destinationPath = destinationPathOverride || destinationPane.path;
         if (!destinationPath) {
-            setStatus('Hedef klasor secili degil.', 'error');
+            setStatus('No target folder selected.', 'error');
             return false;
         }
 
@@ -1157,12 +1157,12 @@
         });
 
         if (!result || result.success === false) {
-            setStatus(result && result.message ? result.message : 'Kopyalama basarisiz.', 'error');
+            setStatus(result && result.message ? result.message : 'Copy failed.', 'error');
             return false;
         }
 
         await refreshPane(destinationPaneKey);
-        setStatus(successMessage || `${result.copiedCount || copyPayload.items.length} oge yapistirildi.`, 'success');
+        setStatus(successMessage || `${result.copiedCount || copyPayload.items.length} item(s) pasted.`, 'success');
         return true;
     }
 
@@ -1171,11 +1171,11 @@
         if (!destinationPane) return;
 
         if (!state.clipboard || !Array.isArray(state.clipboard.items) || !state.clipboard.items.length) {
-            setStatus('Yapistirilacak oge yok.', 'error');
+            setStatus('No item to paste.', 'error');
             return;
         }
 
-        await executeCopyToPane(state.clipboard, key, null, `${state.clipboard.items.length} oge yapistirildi.`);
+        await executeCopyToPane(state.clipboard, key, null, `${state.clipboard.items.length} item(s) pasted.`);
     }
 
     async function deleteSelected(key) {
@@ -1184,7 +1184,7 @@
 
         const selected = getSelectedEntries(key);
         if (!selected.length) {
-            setStatus('Silinecek oge secilmedi.', 'error');
+            setStatus('No item selected for deletion.', 'error');
             return;
         }
 
@@ -1194,13 +1194,13 @@
             if (!connected) return;
         }
 
-        const sure = await window.confirmAction(`${selected.length} oge silinsin mi?`, {
-            title: 'Silme Onayi',
-            confirmText: 'Sil',
-            cancelText: 'Vazgec',
+        const confirmed = await window.confirmAction(`Delete ${selected.length} item(s)?`, {
+            title: 'Delete Confirmation',
+            confirmText: 'Delete',
+            cancelText: 'Cancel',
             tone: 'danger'
         });
-        if (!sure) return;
+        if (!confirmed) return;
 
         const result = await sftpApi.deleteItems({
             side,
@@ -1209,12 +1209,12 @@
         });
 
         if (!result || result.success === false) {
-            setStatus(result && result.message ? result.message : 'Silme basarisiz.', 'error');
+            setStatus(result && result.message ? result.message : 'Delete failed.', 'error');
             return;
         }
 
         await refreshPane(key);
-        setStatus(`${selected.length} oge silindi.`, 'success');
+        setStatus(`${selected.length} item(s) deleted.`, 'success');
     }
 
     async function renameItemInPane(key, targetPath) {
@@ -1229,13 +1229,13 @@
 
         const currentName = getItemNameForPath(key, targetPath);
         if (!currentName) {
-            setStatus('Yeniden adlandirilacak oge bulunamadi.', 'error');
+            setStatus('No item found to rename.', 'error');
             return;
         }
 
         const requestedName = await requestTextValue({
-            title: 'Yeniden adlandir',
-            confirmText: 'Kaydet',
+            title: 'Rename',
+            confirmText: 'Save',
             initialValue: currentName,
             targetPath
         });
@@ -1260,17 +1260,17 @@
         });
 
         if (!result || result.success === false) {
-            setStatus(result && result.message ? result.message : 'Yeniden adlandirma basarisiz.', 'error');
+            setStatus(result && result.message ? result.message : 'Rename failed.', 'error');
             return;
         }
 
         if (result.renamed === false) {
-            setStatus('Ad degismedi.', 'info');
+            setStatus('Name unchanged.', 'info');
             return;
         }
 
         await refreshPane(key);
-        setStatus(`'${currentName}' yeniden adlandirildi.`, 'success');
+        setStatus(`'${currentName}' renamed.`, 'success');
     }
 
     function getFileNameBySide(side, targetPath) {
@@ -1372,9 +1372,9 @@
                             <div class="sftp-editor-path">${escapeHtml(targetPath)}</div>
                         </div>
                         <div class="sftp-editor-actions">
-                            <span id="${statusId}" class="sftp-editor-status">Hazir</span>
-                            <button id="${reloadId}" type="button" class="btn btn-primary">Yenile</button>
-                            <button id="${saveId}" type="button" class="btn btn-primary">Kaydet</button>
+                            <span id="${statusId}" class="sftp-editor-status">Ready</span>
+                            <button id="${reloadId}" type="button" class="btn btn-primary">Reload</button>
+                            <button id="${saveId}" type="button" class="btn btn-primary">Save</button>
                         </div>
                     </div>
                     <textarea id="${textId}" class="sftp-editor-text" spellcheck="false"></textarea>
@@ -1546,12 +1546,12 @@
                 if (saveInFlight) return;
                 saveInFlight = true;
                 saveBtn.disabled = true;
-                setEditorStatus('Kaydediliyor...', 'info');
+                setEditorStatus('Saving...', 'info');
 
                 try {
                     const sessionId = await resolveCurrentSessionId();
                     if (side === 'remote' && !sessionId) {
-                        setEditorStatus('Remote baglanti yok.', 'error');
+                        setEditorStatus('No remote connection.', 'error');
                         return;
                     }
 
@@ -1563,17 +1563,17 @@
                     });
 
                     if (!result || result.success === false) {
-                        setEditorStatus(result && result.message ? result.message : 'Kaydetme hatasi.', 'error');
-                        setStatus(result && result.message ? result.message : 'Kaydetme hatasi.', 'error');
+                        setEditorStatus(result && result.message ? result.message : 'Save failed.', 'error');
+                        setStatus(result && result.message ? result.message : 'Save failed.', 'error');
                         return;
                     }
 
                     dirty = false;
                     setTabTitle(false);
-                    setEditorStatus('Kaydedildi', 'success');
-                    setStatus(`'${fileName}' kaydedildi.`, 'success');
+                    setEditorStatus('Saved', 'success');
+                    setStatus(`'${fileName}' saved.`, 'success');
                 } catch (err) {
-                    const message = err && err.message ? err.message : 'Kaydetme hatasi.';
+                    const message = err && err.message ? err.message : 'Save failed.';
                     setEditorStatus(message, 'error');
                     setStatus(message, 'error');
                 } finally {
@@ -1585,10 +1585,10 @@
             const reloadCurrent = async () => {
                 if (reloadInFlight) return;
                 if (dirty) {
-                    const approved = await window.confirmAction('Kaydedilmemis degisiklikler silinsin mi?', {
-                        title: 'Dosya Yenileme',
-                        confirmText: 'Yenile',
-                        cancelText: 'Vazgec',
+                    const approved = await window.confirmAction('Discard unsaved changes?', {
+                        title: 'File Reload',
+                        confirmText: 'Reload',
+                        cancelText: 'Cancel',
                         tone: 'danger'
                     });
                     if (!approved) return;
@@ -1596,12 +1596,12 @@
 
                 reloadInFlight = true;
                 reloadBtn.disabled = true;
-                setEditorStatus('Yukleniyor...', 'info');
+                setEditorStatus('Loading...', 'info');
 
                 try {
                     const sessionId = await resolveCurrentSessionId();
                     if (side === 'remote' && !sessionId) {
-                        setEditorStatus('Remote baglanti yok.', 'error');
+                        setEditorStatus('No remote connection.', 'error');
                         return;
                     }
 
@@ -1613,16 +1613,16 @@
                     });
 
                     if (!result || result.success === false) {
-                        setEditorStatus(result && result.message ? result.message : 'Yenileme hatasi.', 'error');
+                        setEditorStatus(result && result.message ? result.message : 'Reload failed.', 'error');
                         return;
                     }
 
                     setEditorValue(result.content || '', true);
                     dirty = false;
                     setTabTitle(false);
-                    setEditorStatus('Yenilendi', 'success');
+                    setEditorStatus('Reloaded', 'success');
                 } catch (err) {
-                    const message = err && err.message ? err.message : 'Yenileme hatasi.';
+                    const message = err && err.message ? err.message : 'Reload failed.';
                     setEditorStatus(message, 'error');
                 } finally {
                     reloadInFlight = false;
@@ -1631,14 +1631,14 @@
             };
 
             setTabTitle(false);
-            setEditorStatus('Hazir', 'info');
+            setEditorStatus('Ready', 'info');
 
             bindEditorChange(() => {
                 if (skipDirtyMark) return;
                 if (!dirty) {
                     dirty = true;
                     setTabTitle(true);
-                    setEditorStatus('Kaydedilmedi', 'warning');
+                    setEditorStatus('Not saved', 'warning');
                 }
             });
 
@@ -1709,7 +1709,7 @@
 
         const knownSize = entry && Number.isFinite(Number(entry.size)) ? Number(entry.size) : null;
         if (knownSize != null && knownSize > MAX_EDITABLE_FILE_BYTES) {
-            const message = `Dosya acilamadi: ${formatSize(knownSize)} (limit ${formatSize(MAX_EDITABLE_FILE_BYTES)}).`;
+            const message = `File could not be opened: ${formatSize(knownSize)} (limit ${formatSize(MAX_EDITABLE_FILE_BYTES)}).`;
             setStatus(message, 'error');
             if (window.notifyUser) window.notifyUser(message, 'warning');
             return;
@@ -1724,7 +1724,7 @@
                 maxBytes: MAX_EDITABLE_FILE_BYTES
             });
         } catch (err) {
-            const message = err && err.message ? err.message : 'Dosya okunamadi.';
+            const message = err && err.message ? err.message : 'File could not be read.';
             setStatus(message, 'error');
             return;
         }
@@ -1732,13 +1732,13 @@
         if (!result || result.success === false) {
             if (result && result.tooLarge) {
                 const realSize = Number.isFinite(Number(result.size)) ? Number(result.size) : knownSize;
-                const message = `Dosya acilamadi: ${realSize != null ? formatSize(realSize) : 'Buyuk dosya'} (limit ${formatSize(MAX_EDITABLE_FILE_BYTES)}).`;
+                const message = `File could not be opened: ${realSize != null ? formatSize(realSize) : 'Large file'} (limit ${formatSize(MAX_EDITABLE_FILE_BYTES)}).`;
                 setStatus(message, 'error');
                 if (window.notifyUser) window.notifyUser(message, 'warning');
                 return;
             }
 
-            setStatus(result && result.message ? result.message : 'Dosya okunamadi.', 'error');
+            setStatus(result && result.message ? result.message : 'File could not be read.', 'error');
             return;
         }
 
@@ -1765,16 +1765,16 @@
 
         const parentPath = String(directoryPath || pane.path || '').trim();
         if (!parentPath) {
-            setStatus('Klasor olusturmak icin hedef yol secin.', 'error');
+            setStatus('Select a target path to create a folder.', 'error');
             return;
         }
 
         const rawName = await requestTextValue({
-            title: 'Yeni klasor olustur',
-            confirmText: 'Olustur',
+            title: 'Create new folder',
+            confirmText: 'Create',
             initialValue: '',
             targetPath: parentPath,
-            placeholder: 'klasor_adi'
+            placeholder: 'folder_name'
         });
         if (rawName == null) return;
 
@@ -1792,7 +1792,7 @@
         });
 
         if (!result || result.success === false) {
-            setStatus(result && result.message ? result.message : 'Klasor olusturma basarisiz.', 'error');
+            setStatus(result && result.message ? result.message : 'Failed to create folder.', 'error');
             return;
         }
 
@@ -1800,7 +1800,7 @@
         if (!refreshed) {
             await refreshPane(key, pane.path || parentPath);
         }
-        setStatus(`'${nameCheck.name}' klasoru olusturuldu.`, 'success');
+        setStatus(`Folder '${nameCheck.name}' created.`, 'success');
     }
 
     async function createFileInPane(key, directoryPath) {
@@ -1815,16 +1815,16 @@
 
         const parentPath = String(directoryPath || pane.path || '').trim();
         if (!parentPath) {
-            setStatus('Dosya olusturmak icin hedef yol secin.', 'error');
+            setStatus('Select a target path to create a file.', 'error');
             return;
         }
 
         const rawName = await requestTextValue({
-            title: 'Yeni dosya olustur',
-            confirmText: 'Olustur',
+            title: 'Create new file',
+            confirmText: 'Create',
             initialValue: 'untitled.txt',
             targetPath: parentPath,
-            placeholder: 'dosya_adi.txt'
+            placeholder: 'file_name.txt'
         });
         if (rawName == null) return;
 
@@ -1843,7 +1843,7 @@
         });
 
         if (!result || result.success === false) {
-            setStatus(result && result.message ? result.message : 'Dosya olusturma basarisiz.', 'error');
+            setStatus(result && result.message ? result.message : 'Failed to create file.', 'error');
             return;
         }
 
@@ -1851,7 +1851,7 @@
         if (!refreshed) {
             await refreshPane(key, pane.path || parentPath);
         }
-        setStatus(`'${nameCheck.name}' dosyasi olusturuldu.`, 'success');
+        setStatus(`File '${nameCheck.name}' created.`, 'success');
 
         if (result.path) {
             await openFileInEditor(key, result.path);
@@ -1899,7 +1899,7 @@
                 }
 
                 if (!targetPath) {
-                    setStatus('Bu islem icin bir oge secin.', 'error');
+                    setStatus('Select an item for this action.', 'error');
                     return;
                 }
 
@@ -2175,7 +2175,7 @@
                 clearDropIndicators();
                 state.dragPayload = null;
 
-                await executeCopyToPane(payload, key, destinationPath, 'Kopyalama tamamlandi.');
+                await executeCopyToPane(payload, key, destinationPath, 'Copy completed.');
             });
 
             paneUi.list.addEventListener('dragend', () => {
@@ -2337,10 +2337,10 @@
         await loadHosts();
         await refreshPane('left', '');
 
-        setStatus('Hazir', 'info');
+        setStatus('Ready', 'info');
     }
 
     init().catch((err) => {
-        setStatus(`SFTP baslatma hatasi: ${err.message || err}`, 'error');
+        setStatus(`SFTP startup error: ${err.message || err}`, 'error');
     });
 })();
