@@ -67,13 +67,18 @@
         updateCurrentVersion.textContent = updateState.currentVersion || '-';
         updateAvailableVersion.textContent = updateState.downloadedVersion || updateState.availableVersion || '-';
         updateLastChecked.textContent = formatDateTime(updateState.lastCheckedAt);
+        const updaterSupported = updateState.supported !== false;
         const messageText = typeof updateState.message === 'string' ? updateState.message.trim() : '';
-        updateMessage.hidden = !messageText;
-        updateMessage.textContent = messageText;
+        updateMessage.hidden = false;
+        updateMessage.textContent = messageText || (updaterSupported ? '' : 'Updater is not available in this build.');
+        if (!updateMessage.textContent) {
+            updateMessage.hidden = true;
+        }
         autoUpdateToggle.checked = Boolean(updateState.autoUpdateEnabled);
+        autoUpdateToggle.disabled = !updaterSupported;
 
         const progress = Number(updateState.progress || 0);
-        const showProgress = updateState.status === 'downloading';
+        const showProgress = updaterSupported && updateState.status === 'downloading';
         updateProgressWrap.hidden = !showProgress;
         updateProgressFill.style.width = `${Math.max(0, Math.min(100, progress))}%`;
         updateProgressText.textContent = showProgress ? `${Math.round(progress)}%` : '';
@@ -82,8 +87,8 @@
         const isDownloading = updateState.status === 'downloading';
         const canInstall = updateState.status === 'downloaded';
 
-        btnCheckUpdate.disabled = isChecking || isDownloading;
-        btnInstallUpdate.disabled = !canInstall;
+        btnCheckUpdate.disabled = !updaterSupported || isChecking || isDownloading;
+        btnInstallUpdate.disabled = !updaterSupported || !canInstall;
     }
 
     async function loadUpdateState(initialAutoUpdateEnabled) {

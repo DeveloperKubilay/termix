@@ -2,14 +2,13 @@ const db = require('../../util/profile-db');
 const { decrypt } = require('../../util/crypto');
 
 module.exports = async (path) => {
+    const raw = db.get('hosts');
+    const data = Array.isArray(raw) ? raw : [];
 
-    let data = db.get('hosts');
-
-    data = data.map(item => {
-        if(item.password) item.password = decrypt(item.password);
-        return item;
-    })
-
-    return data;
+    return data.map((item) => {
+        const next = item && typeof item === 'object' ? { ...item } : {};
+        if (next.password) next.password = decrypt(next.password);
+        return next;
+    });
 };
 

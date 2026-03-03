@@ -14,9 +14,10 @@ function normalizeSshPort(value) {
 }
 
 module.exports = async (filesPath, data) => {
+    const normalizedInput = Array.isArray(data) ? data : [];
 
-    data = data.map((item) => {
-        const next = { ...item };
+    const normalizedHosts = normalizedInput.map((item) => {
+        const next = item && typeof item === 'object' ? { ...item } : {};
         if (next.password) next.password = encrypt(next.password || "");
 
         const protocol = String(next.protocol || 'SSH').toUpperCase();
@@ -27,7 +28,7 @@ module.exports = async (filesPath, data) => {
         return next;
     });
 
-    const savedHosts = db.set('hosts', data);
+    const savedHosts = db.set('hosts', normalizedHosts);
 
     enqueueProfileSync('push', {
         source: 'hosts-set-data'
