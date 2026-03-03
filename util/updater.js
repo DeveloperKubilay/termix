@@ -349,8 +349,8 @@ function init() {
 
     if (!app.isPackaged) {
         state.supported = false;
-        state.status = 'idle';
-        state.message = '';
+        state.status = 'disabled';
+        state.message = 'Updates are available only in packaged builds.';
         emitState();
         return getState();
     }

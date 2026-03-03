@@ -1,8 +1,20 @@
 const path = require('path');
-const { app } = require('electron');
+const electron = require('electron');
 
 const ASAR_ROOT = path.resolve(__dirname, '..');
-const DATA_ROOT = app.isPackaged ? app.getPath('userData') : ASAR_ROOT;
+
+function resolveDataRoot() {
+    const app = electron && electron.app;
+    if (app && typeof app.getPath === 'function') {
+        return app.isPackaged ? app.getPath('userData') : ASAR_ROOT;
+    }
+
+    // Preload/renderer can import this module while electron.app is unavailable.
+    // Fall back to workspace root to keep channel discovery working.
+    return ASAR_ROOT;
+}
+
+const DATA_ROOT = resolveDataRoot();
 
 module.exports = {
     ASAR_ROOT,

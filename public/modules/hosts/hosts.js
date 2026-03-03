@@ -7,8 +7,15 @@
     const btnTopConnect = document.querySelector('.top-bar .btn-connect');
 
     // Select buttons by icon
-    const btnTerminal = document.querySelector('button i.fa-terminal').closest('button');
-    const btnSerial = document.querySelector('button i.fa-microchip').closest('button');
+    const terminalIcon = document.querySelector('button i.fa-terminal');
+    const serialIcon = document.querySelector('button i.fa-microchip');
+    const btnTerminal = terminalIcon ? terminalIcon.closest('button') : null;
+    const btnSerial = serialIcon ? serialIcon.closest('button') : null;
+
+    if (!hostsGrid || !btnNewHost || !btnTags || !tagsPopup) {
+        console.error('Hosts module failed to initialize due to missing DOM nodes.');
+        return;
+    }
     
     // Create Serial Popup
     const serialPopup = document.createElement('div');
@@ -33,8 +40,8 @@
         // We will calculate position on click
     }
 
-    const tagsListContainer = document.querySelector('.tags-list');
-    const tagsFooter = document.querySelector('.tags-footer');
+    const tagsListContainer = tagsPopup.querySelector('.tags-list');
+    const tagsFooter = tagsPopup.querySelector('.tags-footer');
     
     // Tag Search Logic
     const tagsSearchInput = tagsPopup.querySelector('.search-tags input');
@@ -1086,7 +1093,7 @@
 
     document.addEventListener('click', (e) => {
          // Close serial popup on outside click
-        if (serialPopup && !serialPopup.contains(e.target) && !btnSerial.contains(e.target)) {
+        if (serialPopup && btnSerial && !serialPopup.contains(e.target) && !btnSerial.contains(e.target)) {
             serialPopup.classList.remove('show');
         }
 
