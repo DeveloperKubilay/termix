@@ -7,7 +7,29 @@ permissions:
   contents: write
 
 jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v6
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Security Audit
+        run: npm audit --omit=dev --audit-level=critical
+
+      - name: Check for outdated packages
+        run: npm outdated || true
+
   build:
+    needs: audit
     runs-on: ${{ matrix.os }}
 
     strategy:
