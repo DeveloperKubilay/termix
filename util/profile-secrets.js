@@ -2,11 +2,12 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { decrypt } = require('./crypto');
+const { PROFILES_DIR } = require('./paths');
 
 const QMM_SECRET_PREFIX = 'enc::portable::v1::';
 const LEGACY_MACHINE_PREFIX = 'enc::machine::';
 const PORTABLE_KEY_ENV = 'TERMIX_PORTABLE_KEY';
-const PORTABLE_KEY_FILE = path.join(__dirname, '..', 'profiles', '.termix-portable-key');
+const PORTABLE_KEY_FILE = path.join(PROFILES_DIR, '.termix-portable-key');
 
 function ensurePortableKeyMaterial() {
     const envKey = String(process.env[PORTABLE_KEY_ENV] || '').trim();
