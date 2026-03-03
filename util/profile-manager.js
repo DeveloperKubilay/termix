@@ -2,7 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const {
     normalizeAiSettings,
-    normalizeTerminalSettings
+    normalizeTerminalSettings,
+    normalizeUiTheme
 } = require('./profile-defaults');
 const { normalizeCloudConfig } = require('./profile-secrets');
 const { DATA_ROOT, PROFILES_DIR, ASAR_ROOT } = require('./paths');
@@ -89,6 +90,7 @@ function normalizeProfileData(data = {}, fallbackName = 'Default') {
     normalized.snippets = Array.isArray(data.snippets) ? data.snippets : [];
     normalized.ai = normalizeAiSettings(data.ai);
     normalized.terminalSettings = normalizeTerminalSettings(data.terminalSettings);
+    normalized.uiTheme = normalizeUiTheme(data.uiTheme);
 
     return normalized;
 }

@@ -3,6 +3,7 @@
     const aiUrl = document.getElementById('ai-url');
     const aiBody = document.getElementById('ai-body');
     const aiHeaders = document.getElementById('ai-headers');
+    const btnToggleTheme = document.getElementById('btn-toggle-theme');
 
     const currentUser = document.getElementById('current-user-name');
     const storageType = document.getElementById('storage-type');
@@ -24,6 +25,43 @@
 
     let activeCloudProvider = null;
     let updateState = null;
+    let isThemeSaveInProgress = false;
+
+    function normalizeUiTheme(theme) {
+        return String(theme || '').trim().toLowerCase() === 'modern' ? 'modern' : 'classic';
+    }
+
+    let selectedUiTheme = normalizeUiTheme(
+        document.documentElement.getAttribute('data-theme')
+        || (window.ThemeManager ? window.ThemeManager.getCurrentTheme() : 'classic')
+    );
+
+    function renderThemeButton() {
+        if (!btnToggleTheme) return;
+        const isClassic = selectedUiTheme === 'classic';
+        btnToggleTheme.innerHTML = isClassic
+            ? '<i class="fa-solid fa-palette"></i> Theme: Classic'
+            : '<i class="fa-solid fa-palette"></i> Theme: Modern';
+    }
+
+    function applyUiTheme(theme, options = {}) {
+        const next = normalizeUiTheme(theme);
+        selectedUiTheme = window.ThemeManager
+            ? window.ThemeManager.apply(next, options)
+            : next;
+        renderThemeButton();
+    }
+
+    async function persistUiTheme(theme) {
+        if (!window.electronAPI || !window.electronAPI.settings || !window.electronAPI.settings.saveSettings) {
+            return false;
+        }
+
+        await window.electronAPI.settings.saveSettings({
+            uiTheme: normalizeUiTheme(theme)
+        });
+        return true;
+    }
 
     function getProfileMeta(type) {
         const normalized = String(type || 'local').toLowerCase();
@@ -168,6 +206,14 @@
                 aiHeaders.value = typeof data.ai.headers === 'object' ? JSON.stringify(data.ai.headers, null, 2) : (data.ai.headers || '');
             }
 
+            selectedUiTheme = normalizeUiTheme(
+                data.uiTheme
+                || (window.ThemeManager ? window.ThemeManager.getCurrentTheme() : null)
+                || document.documentElement.getAttribute('data-theme')
+            );
+            applyUiTheme(selectedUiTheme, { persist: true });
+            renderThemeButton();
+
             renderTags(data.tags);
             await loadUpdateState(data.updateSettings && data.updateSettings.autoUpdateEnabled);
         } catch (err) {
@@ -198,6 +244,31 @@
             window.notifyUser('Failed to open config file: ' + err.message, 'error');
         }
     });
+
+    if (btnToggleTheme) {
+        btnToggleTheme.addEventListener('click', async () => {
+            if (isThemeSaveInProgress) return;
+
+            const previousTheme = selectedUiTheme;
+            const next = selectedUiTheme === 'classic' ? 'modern' : 'classic';
+            applyUiTheme(next, { persist: true });
+
+            isThemeSaveInProgress = true;
+            btnToggleTheme.style.pointerEvents = 'none';
+            btnToggleTheme.style.opacity = '0.78';
+
+            try {
+                await persistUiTheme(next);
+            } catch (err) {
+                applyUiTheme(previousTheme, { persist: true });
+                window.notifyUser('Theme save failed: ' + err.message, 'error');
+            } finally {
+                isThemeSaveInProgress = false;
+                btnToggleTheme.style.pointerEvents = 'auto';
+                btnToggleTheme.style.opacity = '1';
+            }
+        });
+    }
 
     autoUpdateToggle.addEventListener('change', async () => {
         try {
@@ -312,7 +383,8 @@
                 url: urlVal,
                 body,
                 headers
-            }
+            },
+            uiTheme: selectedUiTheme
         };
 
         const originalText = btn.innerHTML;
@@ -394,5 +466,6 @@
     });
 
     setupUpdaterEventBridge();
+    renderThemeButton();
     loadSettings();
 })();

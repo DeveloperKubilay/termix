@@ -43,6 +43,15 @@ const DEFAULT_UPDATE_SETTINGS = {
     lastCheckedAt: null
 };
 
+const UI_THEMES = ['classic', 'modern'];
+const DEFAULT_UI_THEME = 'classic';
+const LEGACY_THEME_MAP = {
+    ocean: 'modern',
+    graphite: 'modern',
+    emerald: 'modern',
+    sunset: 'modern'
+};
+
 function clone(value) {
     return JSON.parse(JSON.stringify(value));
 }
@@ -106,11 +115,25 @@ function normalizeUpdateSettings(value) {
     return out;
 }
 
+function normalizeUiTheme(value) {
+    let normalized = String(value || '').trim().toLowerCase();
+    if (LEGACY_THEME_MAP[normalized]) {
+        normalized = LEGACY_THEME_MAP[normalized];
+    }
+    if (UI_THEMES.includes(normalized)) {
+        return normalized;
+    }
+    return DEFAULT_UI_THEME;
+}
+
 module.exports = {
     DEFAULT_AI_SETTINGS,
     DEFAULT_TERMINAL_SETTINGS,
     DEFAULT_UPDATE_SETTINGS,
+    UI_THEMES,
+    DEFAULT_UI_THEME,
     normalizeAiSettings,
     normalizeTerminalSettings,
-    normalizeUpdateSettings
+    normalizeUpdateSettings,
+    normalizeUiTheme
 };
