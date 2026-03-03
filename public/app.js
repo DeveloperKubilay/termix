@@ -51,6 +51,66 @@ const Drawer = {
 
 window.Drawer = Drawer;
 
+const ThemeManager = {
+    themes: ['classic', 'modern'],
+    defaultTheme: 'classic',
+    storageKey: 'termix-ui-theme',
+    currentTheme: 'classic',
+    legacyThemeMap: {
+        ocean: 'modern',
+        graphite: 'modern',
+        emerald: 'modern',
+        sunset: 'modern'
+    },
+
+    normalizeTheme(theme) {
+        let normalized = String(theme || '').trim().toLowerCase();
+        if (this.legacyThemeMap[normalized]) {
+            normalized = this.legacyThemeMap[normalized];
+        }
+        return this.themes.includes(normalized) ? normalized : this.defaultTheme;
+    },
+
+    apply(theme, options = {}) {
+        const nextTheme = this.normalizeTheme(theme);
+        this.currentTheme = nextTheme;
+        document.documentElement.setAttribute('data-theme', nextTheme);
+
+        if (options.persist !== false) {
+            try {
+                localStorage.setItem(this.storageKey, nextTheme);
+            } catch (_) {}
+        }
+
+        return nextTheme;
+    },
+
+    async init() {
+        if (window.electronAPI && window.electronAPI.settings && window.electronAPI.settings.getSettings) {
+            try {
+                const payload = await window.electronAPI.settings.getSettings();
+                this.apply(payload && payload.uiTheme, { persist: true });
+                return this.currentTheme;
+            } catch (err) {
+                console.warn('Failed to load UI theme from profile settings:', err);
+            }
+        }
+
+        let cachedTheme = null;
+        try {
+            cachedTheme = localStorage.getItem(this.storageKey);
+        } catch (_) {}
+
+        this.apply(cachedTheme, { persist: false });
+        return this.currentTheme;
+    },
+
+    getCurrentTheme() {
+        return this.currentTheme;
+    }
+};
+window.ThemeManager = ThemeManager;
+
 const AppNotify = {
     container: null,
     maxItems: 5,
@@ -777,6 +837,7 @@ const ModuleLoader = {
 window.ModuleLoader = ModuleLoader;
 
 document.addEventListener('DOMContentLoaded', () => {
+    if (window.ThemeManager) window.ThemeManager.init();
     Drawer.init();
     AppNotify.init();
     AppConfirm.init();
