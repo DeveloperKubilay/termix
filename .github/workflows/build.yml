@@ -1,6 +1,9 @@
 name: Build/Release
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -23,7 +26,7 @@ jobs:
             platform: mac
 
     env:
-      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BUILD_VERSION: 1.0.${{ github.run_number }}
 
     steps:
@@ -41,7 +44,7 @@ jobs:
           node -e "const fs=require('fs'); const pkg=JSON.parse(fs.readFileSync('package.json','utf8')); pkg.version=process.env.BUILD_VERSION; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n'); console.log('Version =>', pkg.version);"
 
       - name: Install Dependencies
-        run: npm ci
+        run: npm ci --omit=optional
 
       - name: Build and Publish Release
         run: npm run build -- --${{ matrix.platform }} --publish always
