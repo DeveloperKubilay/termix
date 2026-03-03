@@ -1,10 +1,23 @@
 version: 2
 updates:
-  - package-ecosystem: "npm" # package.json
+  - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+    groups:
+      firebase:
+        patterns:
+          - "firebase*"
+          - "@firebase/*"
+      xterm:
+        patterns:
+          - "xterm*"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "monthly"
+    labels:
+      - "ci"
