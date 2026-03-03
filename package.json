@@ -42,7 +42,7 @@
     "xterm-addon-webgl": "^0.16.0"
   },
   "devDependencies": {
-    "electron": "^28.0.0",
+    "electron": "^40.6.1",
     "electron-builder": "^24.9.1"
   }
 }
