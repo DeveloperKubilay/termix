@@ -1,15 +1,33 @@
 name: Build/Release
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  build:
+  build-release:
     runs-on: ${{ matrix.os }}
 
     strategy:
+      fail-fast: false
+      max-parallel: 1
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        include:
+          - os: windows-latest
+            platform: win
+          - os: ubuntu-latest
+            platform: linux
+          - os: macos-latest
+            platform: mac
+
+    env:
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+      BUILD_VERSION: 1.0.${{ github.run_number }}
 
     steps:
       - name: Check out Git repository
@@ -18,22 +36,15 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 18
+          node-version: 22
+          cache: npm
+
+      - name: Set auto version
+        run: |
+          node -e "const fs=require('fs'); const pkg=JSON.parse(fs.readFileSync('package.json','utf8')); pkg.version=process.env.BUILD_VERSION; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n'); console.log('Version =>', pkg.version);"
 
       - name: Install Dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Build Electron App
-        run: npm run build -- --publish never
-
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: Termix-${{ matrix.os }}
-          path: |
-            dist/*.exe
-            dist/*.dmg
-            dist/*.AppImage
-            dist/*.snap
-            dist/*.blockmap
-            dist/latest*.yml
+      - name: Build and Publish Release
+        run: npm run build -- --${{ matrix.platform }} --publish always

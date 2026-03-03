@@ -1,17 +1,29 @@
-(function() {
+(function () {
     const aiMethod = document.getElementById('ai-method');
     const aiUrl = document.getElementById('ai-url');
     const aiBody = document.getElementById('ai-body');
     const aiHeaders = document.getElementById('ai-headers');
-    
+
     const currentUser = document.getElementById('current-user-name');
     const storageType = document.getElementById('storage-type');
-    
     const firebaseOptions = document.getElementById('firebase-sync-options');
     const syncProviderName = document.getElementById('sync-provider-name');
     const syncProviderDescription = document.getElementById('sync-provider-description');
     const tagsList = document.getElementById('tags-list');
+
+    const autoUpdateToggle = document.getElementById('auto-update-toggle');
+    const updateCurrentVersion = document.getElementById('update-current-version');
+    const updateAvailableVersion = document.getElementById('update-available-version');
+    const updateLastChecked = document.getElementById('update-last-checked');
+    const updateMessage = document.getElementById('update-message');
+    const updateProgressWrap = document.getElementById('update-progress-wrap');
+    const updateProgressFill = document.getElementById('update-progress-fill');
+    const updateProgressText = document.getElementById('update-progress-text');
+    const btnCheckUpdate = document.getElementById('btn-check-update');
+    const btnInstallUpdate = document.getElementById('btn-install-update');
+
     let activeCloudProvider = null;
+    let updateState = null;
 
     function getProfileMeta(type) {
         const normalized = String(type || 'local').toLowerCase();
@@ -39,44 +51,75 @@
         };
     }
 
-    // Load Settings
-    async function loadSettings() {
-        try {
-            const data = await window.electronAPI.settings.getSettings();
-            const profileType = data && data.profile ? data.profile.type : 'local';
-            const profileMeta = getProfileMeta(profileType);
-            
-            // Profile Info
-            currentUser.textContent = data.profile.name;
-            storageType.textContent = profileMeta.storageLabel;
-            activeCloudProvider = profileMeta.cloudProvider;
+    function formatDateTime(value) {
+        if (!value) return 'Never';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return 'Never';
+        return date.toLocaleString();
+    }
 
-            if (profileMeta.isCloud) {
-                firebaseOptions.style.display = 'block';
-                if (syncProviderName) {
-                    syncProviderName.textContent = profileMeta.cloudProvider;
-                }
-                if (syncProviderDescription) {
-                    syncProviderDescription.textContent = `Sync your local data with ${profileMeta.cloudProvider}.`;
-                }
-            } else {
-                firebaseOptions.style.display = 'none';
-            }
+    function renderUpdateState(nextState = {}) {
+        updateState = {
+            ...(updateState || {}),
+            ...(nextState || {})
+        };
 
-            // AI Settings
-            if (data.ai) {
-                aiMethod.value = data.ai.method || 'GET';
-                aiUrl.value = data.ai.url || '';
-                aiBody.value = typeof data.ai.body === 'object' ? JSON.stringify(data.ai.body, null, 2) : (data.ai.body || '');
-                aiHeaders.value = typeof data.ai.headers === 'object' ? JSON.stringify(data.ai.headers, null, 2) : (data.ai.headers || '');
-            }
+        updateCurrentVersion.textContent = updateState.currentVersion || '-';
+        updateAvailableVersion.textContent = updateState.downloadedVersion || updateState.availableVersion || '-';
+        updateLastChecked.textContent = formatDateTime(updateState.lastCheckedAt);
+        const messageText = typeof updateState.message === 'string' ? updateState.message.trim() : '';
+        updateMessage.hidden = !messageText;
+        updateMessage.textContent = messageText;
+        autoUpdateToggle.checked = Boolean(updateState.autoUpdateEnabled);
 
-            // Tags
-            renderTags(data.tags);
+        const progress = Number(updateState.progress || 0);
+        const showProgress = updateState.status === 'downloading';
+        updateProgressWrap.hidden = !showProgress;
+        updateProgressFill.style.width = `${Math.max(0, Math.min(100, progress))}%`;
+        updateProgressText.textContent = showProgress ? `${Math.round(progress)}%` : '';
 
-        } catch (err) {
-            console.error('Failed to load settings:', err);
+        const isChecking = updateState.status === 'checking';
+        const isDownloading = updateState.status === 'downloading';
+        const canInstall = updateState.status === 'downloaded';
+
+        btnCheckUpdate.disabled = isChecking || isDownloading;
+        btnInstallUpdate.disabled = !canInstall;
+    }
+
+    async function loadUpdateState(initialAutoUpdateEnabled) {
+        if (!window.electronAPI.settings || !window.electronAPI.settings.getUpdateSettings) {
+            renderUpdateState({
+                supported: false,
+                autoUpdateEnabled: Boolean(initialAutoUpdateEnabled),
+                status: 'disabled',
+                message: 'Updater channel is unavailable in this build.'
+            });
+            return;
         }
+
+        try {
+            const state = await window.electronAPI.settings.getUpdateSettings();
+            renderUpdateState(state);
+        } catch (err) {
+            renderUpdateState({
+                status: 'error',
+                message: `Failed to load updater state: ${err.message}`
+            });
+        }
+    }
+
+    function setupUpdaterEventBridge() {
+        if (!window.__termixUpdaterEventBridgeReady) {
+            window.__termixUpdaterEventBridgeReady = true;
+            window.electronAPI.on('updater:status', (event, payload) => {
+                if (typeof window.__termixUpdaterStateHandler === 'function') {
+                    window.__termixUpdaterStateHandler(payload);
+                }
+            });
+        }
+        window.__termixUpdaterStateHandler = (payload) => {
+            renderUpdateState(payload);
+        };
     }
 
     function renderTags(tags) {
@@ -93,7 +136,40 @@
         `).join('');
     }
 
-    // Expose delete tag function globally
+    async function loadSettings() {
+        try {
+            const data = await window.electronAPI.settings.getSettings();
+            const profileType = data && data.profile ? data.profile.type : 'local';
+            const profileMeta = getProfileMeta(profileType);
+
+            currentUser.textContent = data.profile.name;
+            storageType.textContent = profileMeta.storageLabel;
+            activeCloudProvider = profileMeta.cloudProvider;
+
+            if (profileMeta.isCloud) {
+                firebaseOptions.style.display = 'block';
+                if (syncProviderName) syncProviderName.textContent = profileMeta.cloudProvider;
+                if (syncProviderDescription) {
+                    syncProviderDescription.textContent = `Sync your local data with ${profileMeta.cloudProvider}.`;
+                }
+            } else {
+                firebaseOptions.style.display = 'none';
+            }
+
+            if (data.ai) {
+                aiMethod.value = data.ai.method || 'GET';
+                aiUrl.value = data.ai.url || '';
+                aiBody.value = typeof data.ai.body === 'object' ? JSON.stringify(data.ai.body, null, 2) : (data.ai.body || '');
+                aiHeaders.value = typeof data.ai.headers === 'object' ? JSON.stringify(data.ai.headers, null, 2) : (data.ai.headers || '');
+            }
+
+            renderTags(data.tags);
+            await loadUpdateState(data.updateSettings && data.updateSettings.autoUpdateEnabled);
+        } catch (err) {
+            console.error('Failed to load settings:', err);
+        }
+    }
+
     window.deleteTag = async (tag) => {
         try {
             const newTags = await window.electronAPI.hosts.deleteTag(tag);
@@ -103,12 +179,10 @@
         }
     };
 
-    // Open Profile Folder
     document.getElementById('btn-open-profile-folder').addEventListener('click', async () => {
         await window.electronAPI.settings.openProfileFolder();
     });
 
-    // Open Active Profile Config File
     document.getElementById('btn-open-config-file').addEventListener('click', async () => {
         try {
             const result = await window.electronAPI.settings.openConfigFile();
@@ -120,18 +194,72 @@
         }
     });
 
-    // Save Settings
-    document.getElementById('btn-save-settings').addEventListener('click', async function() {
+    autoUpdateToggle.addEventListener('change', async () => {
+        try {
+            const result = await window.electronAPI.settings.setUpdateSettings({
+                autoUpdateEnabled: autoUpdateToggle.checked
+            });
+            if (result && result.success) {
+                renderUpdateState(result.state);
+                window.notifyUser(
+                    autoUpdateToggle.checked
+                        ? 'Automatic update checks enabled.'
+                        : 'Automatic update checks disabled.',
+                    'success'
+                );
+                return;
+            }
+            throw new Error(result && result.message ? result.message : 'Failed to save update settings.');
+        } catch (err) {
+            autoUpdateToggle.checked = !autoUpdateToggle.checked;
+            window.notifyUser('Failed to change update preference: ' + err.message, 'error');
+        }
+    });
+
+    btnCheckUpdate.addEventListener('click', async () => {
+        try {
+            const res = await window.electronAPI.settings.checkForUpdates();
+            if (!res.success) {
+                window.notifyUser(res.message || 'Update check failed.', 'error');
+            } else {
+                window.notifyUser('Checking for updates...', 'info');
+            }
+            if (res.state) renderUpdateState(res.state);
+        } catch (err) {
+            window.notifyUser('Failed to check updates: ' + err.message, 'error');
+        }
+    });
+
+    btnInstallUpdate.addEventListener('click', async () => {
+        const approved = await window.confirmAction(
+            'The app will restart to install the downloaded update. Continue?',
+            {
+                title: 'Install Update',
+                confirmText: 'Install & Restart',
+                cancelText: 'Cancel'
+            }
+        );
+        if (!approved) return;
+
+        try {
+            const res = await window.electronAPI.settings.installUpdate();
+            if (!res.success) {
+                window.notifyUser(res.message || 'Update install failed.', 'error');
+                return;
+            }
+            window.notifyUser('Installing update and restarting...', 'success');
+        } catch (err) {
+            window.notifyUser('Failed to install update: ' + err.message, 'error');
+        }
+    });
+
+    document.getElementById('btn-save-settings').addEventListener('click', async function () {
         const btn = this;
-        
-        // Reset styles
-        // The URL input is inside a flex wrapper, so we target the parent
         const aiUrlWrapper = aiUrl.parentElement;
         aiUrlWrapper.style.borderColor = 'var(--border)';
         aiBody.style.borderColor = 'var(--border)';
         aiHeaders.style.borderColor = 'var(--border)';
 
-        // Validate URL
         let urlVal = aiUrl.value.trim();
         if (urlVal && !/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(urlVal)) {
             urlVal = `http://${urlVal}`;
@@ -147,35 +275,29 @@
             }
         }
 
-        // Validate Body
         let body = {};
         const bodyVal = aiBody.value.trim();
-
         if (bodyVal) {
             try {
                 body = JSON.parse(bodyVal);
-            } catch (e) {
+            } catch (_) {
                 aiBody.style.borderColor = '#ff4444';
                 return;
             }
         } else {
-            body = {};
             aiBody.value = '{}';
         }
 
-        // Validate Headers
         let headers = {};
         const hVal = aiHeaders.value.trim();
-        
         if (hVal) {
             try {
                 headers = JSON.parse(hVal);
-            } catch (e) {
+            } catch (_) {
                 aiHeaders.style.borderColor = '#ff4444';
                 return;
             }
         } else {
-            headers = {};
             aiHeaders.value = '{}';
         }
 
@@ -183,8 +305,8 @@
             ai: {
                 method: aiMethod.value,
                 url: urlVal,
-                body: body,
-                headers: headers
+                body,
+                headers
             }
         };
 
@@ -192,19 +314,15 @@
         const originalBg = btn.style.background;
         const originalColor = btn.style.color;
 
-        // Loading state
         btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
         btn.style.pointerEvents = 'none';
         btn.style.opacity = '0.8';
 
         try {
             await window.electronAPI.settings.saveSettings(settings);
-            
-            // Success state
             btn.innerHTML = '<i class="fa-solid fa-check"></i> Saved!';
-            btn.style.background = '#a6e3a1'; // Green
-            btn.style.color = '#1e1e2e';      // Dark Text
-            
+            btn.style.background = '#a6e3a1';
+            btn.style.color = '#1e1e2e';
             setTimeout(() => {
                 btn.innerHTML = originalText;
                 btn.style.background = originalBg;
@@ -214,11 +332,9 @@
             }, 1000);
         } catch (err) {
             console.error(err);
-            // Error state
             btn.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Error';
-            btn.style.background = '#f38ba8'; // Red
+            btn.style.background = '#f38ba8';
             btn.style.color = '#1e1e2e';
-            
             setTimeout(() => {
                 btn.innerHTML = originalText;
                 btn.style.background = originalBg;
@@ -229,7 +345,6 @@
         }
     });
 
-    // Cloud Sync
     document.getElementById('btn-sync-pull').addEventListener('click', async () => {
         const providerLabel = activeCloudProvider || 'Cloud';
         const approved = await window.confirmAction(
@@ -245,9 +360,8 @@
         try {
             const res = await window.electronAPI.settings.syncFirebase('pull');
             window.notifyUser(res.message, res && res.success ? 'success' : 'error');
-            if(res.success) {
-                // If pull is successful, we should probably update the UI tag list etc if the page isn't reloaded
-                loadSettings(); 
+            if (res.success) {
+                loadSettings();
             }
         } catch (e) {
             window.notifyUser('Sync error: ' + e.message, 'error');
@@ -274,5 +388,6 @@
         }
     });
 
+    setupUpdaterEventBridge();
     loadSettings();
 })();

@@ -1,7 +1,8 @@
 const db = require('./profile-db');
 const {
   normalizeAiSettings,
-  normalizeTerminalSettings
+  normalizeTerminalSettings,
+  normalizeUpdateSettings
 } = require('./profile-defaults');
 
 module.exports = function () {
@@ -16,6 +17,7 @@ module.exports = function () {
 
   db.set('ai', normalizeAiSettings(db.get('ai')));
   db.set('terminalSettings', normalizeTerminalSettings(db.get('terminalSettings')));
+  db.set('updateSettings', normalizeUpdateSettings(db.get('updateSettings')));
 
   return db;
 }

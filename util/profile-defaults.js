@@ -38,6 +38,11 @@ const DEFAULT_TERMINAL_SETTINGS = {
     }
 };
 
+const DEFAULT_UPDATE_SETTINGS = {
+    autoUpdateEnabled: true,
+    lastCheckedAt: null
+};
+
 function clone(value) {
     return JSON.parse(JSON.stringify(value));
 }
@@ -84,9 +89,28 @@ function normalizeTerminalSettings(value) {
     };
 }
 
+function normalizeUpdateSettings(value) {
+    const out = clone(DEFAULT_UPDATE_SETTINGS);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return out;
+    }
+
+    if (typeof value.autoUpdateEnabled === 'boolean') {
+        out.autoUpdateEnabled = value.autoUpdateEnabled;
+    }
+
+    if (typeof value.lastCheckedAt === 'string' && value.lastCheckedAt.trim()) {
+        out.lastCheckedAt = value.lastCheckedAt;
+    }
+
+    return out;
+}
+
 module.exports = {
     DEFAULT_AI_SETTINGS,
     DEFAULT_TERMINAL_SETTINGS,
+    DEFAULT_UPDATE_SETTINGS,
     normalizeAiSettings,
-    normalizeTerminalSettings
+    normalizeTerminalSettings,
+    normalizeUpdateSettings
 };

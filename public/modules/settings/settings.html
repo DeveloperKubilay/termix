@@ -1,100 +1,333 @@
 <div class="content-area">
     <h2 class="section-title">Settings</h2>
 
-    <div style="max-width: 900px; margin: 0 auto;">
-        
-        <!-- Profile Section -->
-        <div class="card" style="margin-bottom: 20px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 15px; margin-bottom: 15px; gap: 12px;">
-                <div style="display: flex; align-items: center; gap: 15px;">
-                    <div style="width: 50px; height: 50px; border-radius: 50%; background: var(--accent); display: flex; align-items: center; justify-content: center; color: var(--bg-dark); font-size: 1.5em;">
+    <div class="settings-container">
+        <div class="card settings-card profile-card">
+            <div class="profile-header-row">
+                <div class="profile-header-main">
+                    <div class="profile-avatar">
                         <i class="fa-solid fa-user"></i>
                     </div>
                     <div>
-                        <h3 style="margin: 0; font-size: 1.2em;" id="current-user-name">Loading...</h3>
-                        <p style="margin: 5px 0 0 0; color: var(--text-muted); font-size: 0.9em;">
-                            <i class="fa-solid fa-database" style="margin-right: 5px;"></i> <span id="storage-type">...</span>
+                        <h3 id="current-user-name">Loading...</h3>
+                        <p class="profile-storage">
+                            <i class="fa-solid fa-database"></i>
+                            <span id="storage-type">...</span>
                         </p>
                     </div>
                 </div>
-                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end;">
-                    <button class="btn btn-primary" id="btn-open-config-file" style="height: 40px; border: 1px solid var(--border);">
-                        <i class="fa-solid fa-file-code" style="margin-right: 8px;"></i> Config File
+                <div class="profile-actions">
+                    <button class="btn btn-primary" id="btn-open-config-file">
+                        <i class="fa-solid fa-file-code"></i> Config File
                     </button>
-                    <button class="btn btn-primary" id="btn-open-profile-folder" style="height: 40px; border: 1px solid var(--border);">
-                        <i class="fa-solid fa-folder-open" style="margin-right: 8px;"></i> Data Folder
+                    <button class="btn btn-primary" id="btn-open-profile-folder">
+                        <i class="fa-solid fa-folder-open"></i> Data Folder
                     </button>
                 </div>
             </div>
-            
-            <!-- Cloud Sync Options -->
-            <div id="firebase-sync-options" style="display: none; background: rgba(137, 180, 250, 0.05); padding: 15px; border-radius: 8px; border: 1px solid var(--border);">
-                <h4 style="font-size: 0.95em; margin: 0 0 10px 0; color: var(--accent);"><i class="fa-solid fa-cloud"></i> <span id="sync-provider-name">Cloud</span> Sync</h4>
-                <p id="sync-provider-description" style="font-size: 0.9em; color: var(--text-muted); margin-bottom: 15px;">Sync your local data with cloud storage.</p>
+
+            <div id="firebase-sync-options" class="cloud-sync-card" style="display: none;">
+                <h4>
+                    <i class="fa-solid fa-cloud"></i>
+                    <span id="sync-provider-name">Cloud</span> Sync
+                </h4>
+                <p id="sync-provider-description">Sync your local data with cloud storage.</p>
                 <div class="sync-actions">
                     <button class="btn btn-primary sync-action-btn" id="btn-sync-pull">
-                        <i class="fa-solid fa-cloud-arrow-down" style="margin-right: 5px;"></i> Pull from Cloud
+                        <i class="fa-solid fa-cloud-arrow-down"></i> Pull from Cloud
                     </button>
                     <button class="btn btn-primary sync-action-btn" id="btn-sync-push">
-                        <i class="fa-solid fa-cloud-arrow-up" style="margin-right: 5px;"></i> Push to Cloud
+                        <i class="fa-solid fa-cloud-arrow-up"></i> Push to Cloud
                     </button>
                 </div>
             </div>
         </div>
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: stretch;">
-            <!-- Tags Management -->
-            <div class="card" style="display: flex; flex-direction: column;">
-                <h3 style="margin-top: 0; margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
-                    <i class="fa-solid fa-tags" style="color: var(--accent);"></i> Host Tags
+        <div class="settings-grid">
+            <div class="card settings-card">
+                <h3 class="card-title">
+                    <i class="fa-solid fa-tags"></i> Host Tags
                 </h3>
-                <div style="background: var(--bg-dark); padding: 15px; border-radius: 8px; border: 1px solid var(--border); min-height: 150px; flex: 1; margin-bottom: 5px;">
+                <div class="tags-surface">
                     <div id="tags-list" style="display: flex; flex-wrap: wrap; gap: 8px;">
                         <span style="color: var(--text-muted);">Loading tags...</span>
                     </div>
                 </div>
-                <p style="color: var(--text-muted); font-size: 0.85em; margin: 0; text-align: right;">
+                <p class="card-help">
                     <i class="fa-solid fa-circle-info"></i> Click X to delete tags from all hosts.
                 </p>
             </div>
 
-            <!-- AI Settings -->
-            <div class="card">
-                <h3 style="margin-top: 0; margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
-                    <i class="fa-solid fa-robot" style="color: var(--accent);"></i> AI Integration
+            <div class="card settings-card">
+                <h3 class="card-title">
+                    <i class="fa-solid fa-robot"></i> AI Integration
                 </h3>
-                
+
                 <div style="margin-bottom: 15px;">
-                    <label style="display: block; margin-bottom: 8px; font-size: 0.9em; color: var(--text-muted);">Endpoint</label>
-                    <div style="display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden;">
-                        <select id="ai-method" style="background: var(--bg-card); color: var(--accent); border: none; padding: 10px; border-right: 1px solid var(--border); outline: none; font-weight: 600; cursor: pointer;">
+                    <label class="field-label">Endpoint</label>
+                    <div class="endpoint-row">
+                        <select id="ai-method">
                             <option value="GET">GET</option>
                             <option value="POST">POST</option>
                         </select>
-                        <input type="text" id="ai-url" placeholder="https://api.example.com/v1/chat" style="flex: 1; border: none; background: var(--bg-dark); padding: 10px; color: var(--text-main); outline: none;">
+                        <input type="text" id="ai-url" placeholder="https://api.example.com/v1/chat">
                     </div>
                 </div>
 
                 <div class="form-group" style="margin-bottom: 10px;">
-                    <label style="display: block; margin-bottom: 8px; font-size: 0.9em; color: var(--text-muted);">Body (JSON)</label>
-                    <textarea id="ai-body" placeholder='{"model":"qwen2.5-coder:0.5b","prompt":"{{prompt}}","stream":false}' style="width: 100%; height: 120px; padding: 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-dark); color: var(--text-main); font-family: 'JetBrains Mono', monospace; resize: none; outline: none; font-size: 0.9em;"></textarea>
+                    <label class="field-label">Body (JSON)</label>
+                    <textarea id="ai-body" placeholder='{"model":"qwen2.5-coder:0.5b","prompt":"{{prompt}}","stream":false}'></textarea>
                 </div>
 
                 <div class="form-group">
-                    <label style="display: block; margin-bottom: 8px; font-size: 0.85em; color: var(--text-muted);">Headers (Optional JSON)</label>
-                    <textarea id="ai-headers" placeholder='{"Content-Type":"application/json"}' style="width: 100%; height: 70px; padding: 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-dark); color: var(--text-main); font-family: 'JetBrains Mono', monospace; resize: none; outline: none; font-size: 0.85em;"></textarea>
+                    <label class="field-label">Headers (Optional JSON)</label>
+                    <textarea id="ai-headers" placeholder='{"Content-Type":"application/json"}'></textarea>
                 </div>
             </div>
         </div>
 
-        <button id="btn-save-settings" class="btn btn-primary" style="width: 100%; padding: 14px; margin-top: 20px; font-size: 1.1em; display: flex; align-items: center; justify-content: center; gap: 10px;">
+        <div class="card settings-card update-card">
+            <div class="update-header">
+                <div>
+                    <h3 class="card-title update-title">
+                        <i class="fa-solid fa-rocket"></i> Update Center
+                    </h3>
+                    <p class="update-subtitle">Auto-update with GitHub Releases. You can disable automatic checks and still update manually.</p>
+                </div>
+            </div>
+
+            <div class="update-meta-grid">
+                <div class="update-meta-item">
+                    <span class="update-meta-label">Current Version</span>
+                    <strong id="update-current-version">-</strong>
+                </div>
+                <div class="update-meta-item">
+                    <span class="update-meta-label">Available Version</span>
+                    <strong id="update-available-version">-</strong>
+                </div>
+                <div class="update-meta-item">
+                    <span class="update-meta-label">Last Check</span>
+                    <strong id="update-last-checked">Never</strong>
+                </div>
+            </div>
+
+            <div class="update-toggle-row">
+                <label class="switch">
+                    <input type="checkbox" id="auto-update-toggle" checked>
+                    <span class="slider"></span>
+                </label>
+                <div class="toggle-text">
+                    <div class="toggle-title">Automatic Update Checks</div>
+                    <div class="toggle-subtitle">Check and prepare updates automatically in background.</div>
+                </div>
+            </div>
+
+            <div id="update-progress-wrap" class="update-progress-wrap" hidden>
+                <div class="update-progress-track">
+                    <div id="update-progress-fill" class="update-progress-fill" style="width: 0%;"></div>
+                </div>
+                <div id="update-progress-text" class="update-progress-text"></div>
+            </div>
+
+            <div class="update-actions">
+                <button class="btn btn-primary update-action-btn" id="btn-check-update">
+                    <i class="fa-solid fa-rotate"></i> Check Now
+                </button>
+                <button class="btn btn-primary update-action-btn" id="btn-install-update" disabled>
+                    <i class="fa-solid fa-power-off"></i> Install & Restart
+                </button>
+            </div>
+
+            <p id="update-message" class="update-message" hidden></p>
+        </div>
+
+        <button id="btn-save-settings" class="btn btn-primary save-btn">
             <i class="fa-solid fa-floppy-disk"></i> Save All Settings
         </button>
-
     </div>
 </div>
 
 <style>
+    .settings-container {
+        max-width: 960px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+    }
+
+    .settings-card {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 18px;
+        background: linear-gradient(180deg, rgba(49, 50, 68, 0.88), rgba(30, 30, 46, 0.96));
+    }
+
+    .profile-header-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 15px;
+        margin-bottom: 15px;
+        gap: 12px;
+    }
+
+    .profile-header-main {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+
+    .profile-avatar {
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        background: var(--accent);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--bg-dark);
+        font-size: 1.5em;
+    }
+
+    .profile-storage {
+        margin: 5px 0 0 0;
+        color: var(--text-muted);
+        font-size: 0.9em;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .profile-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+
+    .profile-actions button {
+        height: 40px;
+        border: 1px solid var(--border);
+        background: var(--bg-card);
+    }
+
+    .settings-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        align-items: stretch;
+    }
+
+    .card-title {
+        margin-top: 0;
+        margin-bottom: 15px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .card-title i {
+        color: var(--accent);
+    }
+
+    .tags-surface {
+        background: var(--bg-dark);
+        padding: 15px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        min-height: 150px;
+        margin-bottom: 6px;
+    }
+
+    .card-help {
+        color: var(--text-muted);
+        font-size: 0.85em;
+        margin: 0;
+        text-align: right;
+    }
+
+    .field-label {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 0.9em;
+        color: var(--text-muted);
+    }
+
+    .endpoint-row {
+        display: flex;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        overflow: hidden;
+    }
+
+    #ai-method {
+        background: var(--bg-card);
+        color: var(--accent);
+        border: none;
+        padding: 10px;
+        border-right: 1px solid var(--border);
+        outline: none;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    #ai-url {
+        flex: 1;
+        border: none;
+        background: var(--bg-dark);
+        padding: 10px;
+        color: var(--text-main);
+        outline: none;
+    }
+
+    #ai-body,
+    #ai-headers {
+        width: 100%;
+        padding: 10px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: var(--bg-dark);
+        color: var(--text-main);
+        font-family: 'JetBrains Mono', monospace;
+        resize: none;
+        outline: none;
+    }
+
+    #ai-body {
+        height: 120px;
+        font-size: 0.9em;
+    }
+
+    #ai-headers {
+        height: 70px;
+        font-size: 0.85em;
+    }
+
+    .cloud-sync-card {
+        background: rgba(137, 180, 250, 0.06);
+        padding: 15px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+    }
+
+    .cloud-sync-card h4 {
+        font-size: 0.95em;
+        margin: 0 0 10px 0;
+        color: var(--accent);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .cloud-sync-card p {
+        font-size: 0.9em;
+        color: var(--text-muted);
+        margin-bottom: 15px;
+    }
+
     .sync-actions {
         display: flex;
         gap: 10px;
@@ -128,17 +361,216 @@
         gap: 8px;
         transition: all 0.2s;
     }
+
     .tag-item:hover {
         background: rgba(137, 180, 250, 0.2);
     }
+
     .tag-delete {
         cursor: pointer;
         opacity: 0.6;
         transition: 0.2s;
         font-size: 0.9em;
     }
+
     .tag-delete:hover {
         opacity: 1;
         color: #ff4444;
+    }
+
+    .update-card {
+        position: relative;
+    }
+
+    .update-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        position: relative;
+        z-index: 1;
+    }
+
+    .update-title {
+        margin-bottom: 4px;
+    }
+
+    .update-subtitle {
+        color: var(--text-muted);
+        font-size: 0.88rem;
+        line-height: 1.35;
+        max-width: 620px;
+    }
+
+    .update-meta-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 16px;
+    }
+
+    .update-meta-item {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 12px;
+        background: rgba(24, 24, 37, 0.55);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .update-meta-label {
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.25px;
+    }
+
+    .update-toggle-row {
+        margin-top: 14px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: rgba(24, 24, 37, 0.45);
+        padding: 12px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .switch {
+        position: relative;
+        display: inline-block;
+        width: 50px;
+        height: 28px;
+        flex-shrink: 0;
+    }
+
+    .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+
+    .slider {
+        position: absolute;
+        cursor: pointer;
+        inset: 0;
+        background-color: #53586d;
+        transition: 0.22s;
+        border-radius: 999px;
+    }
+
+    .slider:before {
+        position: absolute;
+        content: "";
+        height: 22px;
+        width: 22px;
+        left: 3px;
+        top: 3px;
+        background-color: #fff;
+        transition: 0.22s;
+        border-radius: 50%;
+    }
+
+    .switch input:checked + .slider {
+        background-color: #89b4fa;
+    }
+
+    .switch input:checked + .slider:before {
+        transform: translateX(22px);
+    }
+
+    .toggle-title {
+        font-weight: 600;
+    }
+
+    .toggle-subtitle {
+        font-size: 0.84rem;
+        color: var(--text-muted);
+    }
+
+    .update-progress-wrap {
+        margin-top: 14px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .update-progress-wrap[hidden] {
+        display: none !important;
+    }
+
+    .update-progress-track {
+        flex: 1;
+        height: 10px;
+        border-radius: 999px;
+        background: rgba(24, 24, 37, 0.8);
+        border: 1px solid var(--border);
+        overflow: hidden;
+    }
+
+    .update-progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #89b4fa, #a6e3a1);
+        transition: width 0.2s ease;
+    }
+
+    .update-progress-text {
+        min-width: 44px;
+        font-size: 0.82rem;
+        color: var(--text-muted);
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .update-actions {
+        margin-top: 14px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .update-action-btn {
+        min-height: 40px;
+        border: 1px solid var(--border);
+    }
+
+    .update-message {
+        margin-top: 12px;
+        color: var(--text-muted);
+        font-size: 0.86rem;
+        line-height: 1.35;
+    }
+
+    .save-btn {
+        width: 100%;
+        padding: 14px;
+        font-size: 1.1em;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+    }
+
+    @media (max-width: 980px) {
+        .settings-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @media (max-width: 760px) {
+        .profile-header-row,
+        .update-header {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .update-meta-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .profile-actions {
+            width: 100%;
+            justify-content: flex-start;
+        }
     }
 </style>

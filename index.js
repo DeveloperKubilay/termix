@@ -6,6 +6,7 @@ const profileManager = require('./util/profile-manager');
 const portForwardManager = require('./util/port-forwarding/manager');
 const sftpManager = require('./util/sftp/manager');
 const { enqueueProfileSync } = require('./util/cloud-sync');
+const updater = require('./util/updater');
 
 app.whenReady().then(async () => {
   try {
@@ -18,6 +19,7 @@ app.whenReady().then(async () => {
   }
 
   main();
+  updater.init();
   const channels = loadIPC();
   console.log('Loaded IPC channels:', channels.length);
 });
