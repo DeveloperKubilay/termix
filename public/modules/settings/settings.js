@@ -4,6 +4,11 @@
     const aiBody = document.getElementById('ai-body');
     const aiHeaders = document.getElementById('ai-headers');
     const btnToggleTheme = document.getElementById('btn-toggle-theme');
+    const btnDeleteAccount = document.getElementById('btn-delete-account');
+    const deleteAccountPanel = document.getElementById('delete-account-panel');
+    const deleteAccountMessage = document.getElementById('delete-account-message');
+    const btnConfirmDeleteAccount = document.getElementById('btn-confirm-delete-account');
+    const btnCancelDeleteAccount = document.getElementById('btn-cancel-delete-account');
 
     const currentUser = document.getElementById('current-user-name');
     const storageType = document.getElementById('storage-type');
@@ -24,8 +29,18 @@
     const btnInstallUpdate = document.getElementById('btn-install-update');
 
     let activeCloudProvider = null;
+    let activeProfileId = null;
+    let activeProfileName = 'this account';
+    let profileCount = 0;
     let updateState = null;
     let isThemeSaveInProgress = false;
+    let isDeleteInProgress = false;
+
+    const deleteButtonDefaults = {
+        trigger: btnDeleteAccount ? btnDeleteAccount.innerHTML : '',
+        confirm: btnConfirmDeleteAccount ? btnConfirmDeleteAccount.innerHTML : '',
+        cancel: btnCancelDeleteAccount ? btnCancelDeleteAccount.innerHTML : ''
+    };
 
     function normalizeUiTheme(theme) {
         return String(theme || '').trim().toLowerCase() === 'modern' ? 'modern' : 'classic';
@@ -94,6 +109,52 @@
         const date = new Date(value);
         if (Number.isNaN(date.getTime())) return 'Never';
         return date.toLocaleString();
+    }
+
+    function setDeletePanelVisible(visible) {
+        if (!deleteAccountPanel) return;
+        deleteAccountPanel.hidden = !visible;
+    }
+
+    function renderDeletePanelMessage() {
+        if (!deleteAccountMessage) return;
+
+        let message = `Delete '${activeProfileName}' and remove its saved hosts, snippets, tags, and settings from this device.`;
+        if (activeCloudProvider) {
+            message += ' Cloud data is not deleted automatically.';
+        }
+        if (profileCount <= 1) {
+            message += ' Because this is the last profile, Termix will create a fresh default profile after deletion.';
+        } else {
+            message += ' This action cannot be undone.';
+        }
+
+        deleteAccountMessage.textContent = message;
+    }
+
+    function renderDeleteButtonState() {
+        if (btnDeleteAccount) {
+            btnDeleteAccount.disabled = !activeProfileId || isDeleteInProgress;
+            btnDeleteAccount.style.opacity = btnDeleteAccount.disabled ? '0.72' : '1';
+            btnDeleteAccount.style.pointerEvents = btnDeleteAccount.disabled ? 'none' : 'auto';
+            btnDeleteAccount.innerHTML = deleteButtonDefaults.trigger;
+        }
+
+        if (btnConfirmDeleteAccount) {
+            btnConfirmDeleteAccount.disabled = !activeProfileId || isDeleteInProgress;
+            btnConfirmDeleteAccount.style.opacity = btnConfirmDeleteAccount.disabled ? '0.72' : '1';
+            btnConfirmDeleteAccount.style.pointerEvents = btnConfirmDeleteAccount.disabled ? 'none' : 'auto';
+            btnConfirmDeleteAccount.innerHTML = isDeleteInProgress
+                ? '<i class="fa-solid fa-spinner fa-spin"></i> Deleting...'
+                : deleteButtonDefaults.confirm;
+        }
+
+        if (btnCancelDeleteAccount) {
+            btnCancelDeleteAccount.disabled = isDeleteInProgress;
+            btnCancelDeleteAccount.style.opacity = btnCancelDeleteAccount.disabled ? '0.72' : '1';
+            btnCancelDeleteAccount.style.pointerEvents = btnCancelDeleteAccount.disabled ? 'none' : 'auto';
+            btnCancelDeleteAccount.innerHTML = deleteButtonDefaults.cancel;
+        }
     }
 
     function renderUpdateState(nextState = {}) {
@@ -184,10 +245,26 @@
             const data = await window.electronAPI.settings.getSettings();
             const profileType = data && data.profile ? data.profile.type : 'local';
             const profileMeta = getProfileMeta(profileType);
+            let profilesPayload = null;
+
+            if (window.electronAPI.profiles && window.electronAPI.profiles.getProfiles) {
+                try {
+                    profilesPayload = await window.electronAPI.profiles.getProfiles();
+                } catch (profileErr) {
+                    console.warn('Failed to load profile list for settings:', profileErr);
+                }
+            }
 
             currentUser.textContent = data.profile.name;
             storageType.textContent = profileMeta.storageLabel;
             activeCloudProvider = profileMeta.cloudProvider;
+            activeProfileName = data.profile.name || 'this account';
+            activeProfileId = profilesPayload && profilesPayload.activeProfileId
+                ? profilesPayload.activeProfileId
+                : null;
+            profileCount = profilesPayload && Array.isArray(profilesPayload.profiles)
+                ? profilesPayload.profiles.length
+                : (activeProfileId ? 1 : 0);
 
             if (profileMeta.isCloud) {
                 firebaseOptions.style.display = 'block';
@@ -213,6 +290,9 @@
             );
             applyUiTheme(selectedUiTheme, { persist: true });
             renderThemeButton();
+            renderDeletePanelMessage();
+            renderDeleteButtonState();
+            setDeletePanelVisible(false);
 
             renderTags(data.tags);
             await loadUpdateState(data.updateSettings && data.updateSettings.autoUpdateEnabled);
@@ -266,6 +346,43 @@
                 isThemeSaveInProgress = false;
                 btnToggleTheme.style.pointerEvents = 'auto';
                 btnToggleTheme.style.opacity = '1';
+            }
+        });
+    }
+
+    if (btnDeleteAccount) {
+        btnDeleteAccount.addEventListener('click', () => {
+            if (!activeProfileId || isDeleteInProgress) return;
+            renderDeletePanelMessage();
+            setDeletePanelVisible(deleteAccountPanel ? deleteAccountPanel.hidden : false);
+        });
+    }
+
+    if (btnCancelDeleteAccount) {
+        btnCancelDeleteAccount.addEventListener('click', () => {
+            if (isDeleteInProgress) return;
+            setDeletePanelVisible(false);
+        });
+    }
+
+    if (btnConfirmDeleteAccount) {
+        btnConfirmDeleteAccount.addEventListener('click', async () => {
+            if (!activeProfileId || isDeleteInProgress) return;
+
+            isDeleteInProgress = true;
+            renderDeleteButtonState();
+
+            try {
+                const result = await window.electronAPI.profiles.deleteProfile(activeProfileId);
+                if (!result || result.success !== true) {
+                    throw new Error(result && result.message ? result.message : 'Account delete failed.');
+                }
+
+                window.location.reload();
+            } catch (err) {
+                isDeleteInProgress = false;
+                renderDeleteButtonState();
+                window.notifyUser('Failed to delete account: ' + err.message, 'error');
             }
         });
     }
@@ -467,5 +584,6 @@
 
     setupUpdaterEventBridge();
     renderThemeButton();
+    renderDeleteButtonState();
     loadSettings();
 })();

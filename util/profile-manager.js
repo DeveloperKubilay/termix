@@ -324,29 +324,7 @@ function getProfiles() {
     };
 }
 
-async function switchProfile(profileId, options = {}) {
-    const { registry, activeProfile } = ensureInitialized();
-    const target = registry.profiles.find((item) => item.id === profileId);
-
-    if (!target) {
-        throw new Error('Profile not found.');
-    }
-
-    if (activeProfile && activeProfile.id === target.id) {
-        return {
-            success: true,
-            switched: false,
-            profile: {
-                id: target.id,
-                name: target.name,
-                type: target.type
-            }
-        };
-    }
-
-    registry.activeProfileId = target.id;
-    writeRegistry(registry);
-
+async function syncProfileFromCloud(target, options = {}) {
     let currentData = normalizeProfileData(readJson(profileFilePath(target.id), {}), target.name);
     writeJson(profileFilePath(target.id), currentData);
 
@@ -387,6 +365,40 @@ async function switchProfile(profileId, options = {}) {
         }
     }
 
+    return {
+        currentData,
+        cloudSync,
+        firebaseSync: cloudSync && cloudSync.provider === 'firebase' ? cloudSync : null
+    };
+}
+
+async function switchProfile(profileId, options = {}) {
+    const { registry, activeProfile } = ensureInitialized();
+    const target = registry.profiles.find((item) => item.id === profileId);
+
+    if (!target) {
+        throw new Error('Profile not found.');
+    }
+
+    if (activeProfile && activeProfile.id === target.id) {
+        return {
+            success: true,
+            switched: false,
+            profile: {
+                id: target.id,
+                name: target.name,
+                type: target.type
+            }
+        };
+    }
+
+    registry.activeProfileId = target.id;
+    writeRegistry(registry);
+
+    const syncResult = await syncProfileFromCloud(target, options);
+    const currentData = syncResult.currentData;
+    const cloudSync = syncResult.cloudSync;
+
     const now = new Date().toISOString();
     target.name = currentData.name;
     target.type = currentData.type;
@@ -404,7 +416,7 @@ async function switchProfile(profileId, options = {}) {
             type: currentData.type
         },
         cloudSync,
-        firebaseSync: cloudSync && cloudSync.provider === 'firebase' ? cloudSync : null
+        firebaseSync: syncResult.firebaseSync
     };
 }
 
@@ -486,11 +498,106 @@ function persistActiveProfileData() {
     return normalized;
 }
 
+async function deleteProfile(profileId, options = {}) {
+    const { registry, activeProfile } = ensureInitialized();
+    const target = registry.profiles.find((item) => item.id === profileId);
+
+    if (!target) {
+        throw new Error('Profile not found.');
+    }
+
+    const targetData = normalizeProfileData(readJson(profileFilePath(target.id), {}), target.name);
+    const wasActive = activeProfile && activeProfile.id === target.id;
+    const targetPath = profileFilePath(target.id);
+
+    registry.profiles = registry.profiles.filter((item) => item.id !== target.id);
+
+    if (fs.existsSync(targetPath)) {
+        fs.unlinkSync(targetPath);
+    }
+
+    const now = new Date().toISOString();
+    let nextActiveProfile = null;
+    let replacementCreated = false;
+    let cloudSync = null;
+    let firebaseSync = null;
+
+    if (wasActive) {
+        if (registry.profiles.length > 0) {
+            const nextTarget = registry.profiles[0];
+            registry.activeProfileId = nextTarget.id;
+            writeRegistry(registry);
+            const syncResult = await syncProfileFromCloud(nextTarget, options);
+            const nextData = syncResult.currentData;
+            nextTarget.name = nextData.name;
+            nextTarget.type = nextData.type;
+            nextTarget.usedAt = now;
+            nextTarget.updatedAt = now;
+            nextActiveProfile = {
+                id: nextTarget.id,
+                name: nextData.name,
+                type: nextData.type
+            };
+            cloudSync = syncResult.cloudSync;
+            firebaseSync = syncResult.firebaseSync;
+        } else {
+            const replacementId = 'default';
+            const replacementName = 'Default';
+            const replacementData = normalizeProfileData({}, replacementName);
+            const replacementEntry = {
+                id: replacementId,
+                name: replacementName,
+                type: replacementData.type,
+                createdAt: now,
+                updatedAt: now,
+                usedAt: now
+            };
+
+            writeJson(profileFilePath(replacementId), replacementData);
+            registry.profiles.push(replacementEntry);
+            registry.activeProfileId = replacementId;
+            replacementCreated = true;
+            nextActiveProfile = {
+                id: replacementId,
+                name: replacementData.name,
+                type: replacementData.type
+            };
+        }
+    } else if (activeProfile) {
+        registry.activeProfileId = activeProfile.id;
+        nextActiveProfile = {
+            id: activeProfile.id,
+            name: activeProfile.name,
+            type: activeProfile.type
+        };
+    }
+
+    writeRegistry(registry);
+
+    return {
+        success: true,
+        message: replacementCreated
+            ? `Profile '${targetData.name}' deleted. A fresh default profile was created.`
+            : `Profile '${targetData.name}' deleted successfully.`,
+        deletedProfile: {
+            id: target.id,
+            name: targetData.name,
+            type: targetData.type
+        },
+        activeProfile: nextActiveProfile,
+        switched: Boolean(wasActive && nextActiveProfile),
+        replacementCreated,
+        cloudSync,
+        firebaseSync
+    };
+}
+
 module.exports = {
     ensureInitialized,
     getProfiles,
     createProfile,
     switchProfile,
+    deleteProfile,
     persistActiveProfileData,
     getActiveProfileFilePath,
     paths: {
