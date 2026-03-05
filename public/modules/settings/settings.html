@@ -17,6 +17,9 @@
                     </div>
                 </div>
                 <div class="profile-actions">
+                    <button class="btn btn-primary btn-danger-inline" id="btn-delete-account" type="button">
+                        <i class="fa-solid fa-trash"></i> Delete Account
+                    </button>
                     <button class="btn btn-primary" id="btn-toggle-theme">
                         <i class="fa-solid fa-palette"></i> Theme: Classic
                     </button>
@@ -25,6 +28,25 @@
                     </button>
                     <button class="btn btn-primary" id="btn-open-profile-folder">
                         <i class="fa-solid fa-folder-open"></i> Data Folder
+                    </button>
+                </div>
+            </div>
+
+            <div id="delete-account-panel" class="delete-account-panel" hidden>
+                <div class="delete-account-copy">
+                    <h4 class="delete-account-title">
+                        <i class="fa-solid fa-triangle-exclamation"></i> Delete this account?
+                    </h4>
+                    <p id="delete-account-message" class="delete-account-message">
+                        This action removes the current profile data from this device.
+                    </p>
+                </div>
+                <div class="delete-account-actions">
+                    <button class="btn btn-primary btn-danger-inline" id="btn-confirm-delete-account" type="button">
+                        <i class="fa-solid fa-trash"></i> Yes, Delete
+                    </button>
+                    <button class="btn btn-primary" id="btn-cancel-delete-account" type="button">
+                        <i class="fa-solid fa-arrow-left"></i> Cancel
                     </button>
                 </div>
             </div>
@@ -216,6 +238,61 @@
         height: 40px;
         border: 1px solid var(--border);
         background: var(--bg-card);
+    }
+
+    .btn-danger-inline {
+        background: rgba(243, 139, 168, 0.12) !important;
+        border-color: rgba(243, 139, 168, 0.4) !important;
+        color: #f6c1d1 !important;
+    }
+
+    .btn-danger-inline:hover {
+        background: rgba(243, 139, 168, 0.18) !important;
+        border-color: rgba(243, 139, 168, 0.55) !important;
+    }
+
+    .delete-account-panel {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        margin-bottom: 15px;
+        padding: 14px 16px;
+        border-radius: 10px;
+        border: 1px solid rgba(243, 139, 168, 0.32);
+        background: rgba(243, 139, 168, 0.08);
+    }
+
+    .delete-account-panel[hidden] {
+        display: none !important;
+    }
+
+    .delete-account-copy {
+        min-width: 0;
+    }
+
+    .delete-account-title {
+        margin: 0 0 6px 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: #f6c1d1;
+        font-size: 0.96rem;
+    }
+
+    .delete-account-message {
+        margin: 0;
+        color: var(--text-muted);
+        font-size: 0.88rem;
+        line-height: 1.4;
+    }
+
+    .delete-account-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
     }
 
     .settings-grid {
@@ -563,7 +640,8 @@
 
     @media (max-width: 760px) {
         .profile-header-row,
-        .update-header {
+        .update-header,
+        .delete-account-panel {
             flex-direction: column;
             align-items: flex-start;
         }
@@ -573,6 +651,11 @@
         }
 
         .profile-actions {
+            width: 100%;
+            justify-content: flex-start;
+        }
+
+        .delete-account-actions {
             width: 100%;
             justify-content: flex-start;
         }
