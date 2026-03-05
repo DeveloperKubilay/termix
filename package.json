@@ -16,6 +16,7 @@
   "build": {
     "appId": "com.Termix.app",
     "productName": "Termix",
+    "icon": "public/icons/512.png",
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "dist"
@@ -36,7 +37,8 @@
       "shortcutName": "Termix"
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "public/icons/favicon.ico"
     },
     "linux": {
       "target": "AppImage"

@@ -1,4 +1,5 @@
-const { app, BrowserWindow, screen } = require('electron');
+const fs = require('fs');
+const { app, BrowserWindow, nativeImage, screen } = require('electron');
 const path = require('path');
 
 const { loadIPC } = require('./util/ipc-loader');
@@ -8,7 +9,20 @@ const sftpManager = require('./util/sftp/manager');
 const { enqueueProfileSync } = require('./util/cloud-sync');
 const updater = require('./util/updater');
 
+function getAppIcon() {
+  const iconPath = path.join(__dirname, 'public/icons/favicon.ico');
+  if (!fs.existsSync(iconPath)) return undefined;
+  const icon = nativeImage.createFromPath(iconPath);
+  return icon.isEmpty() ? undefined : icon;
+}
+
 app.whenReady().then(async () => {
+  const appIcon = getAppIcon();
+
+  if (process.platform === 'darwin' && app.dock && appIcon) {
+    app.dock.setIcon(appIcon);
+  }
+
   try {
     await enqueueProfileSync('pull', {
       source: 'app-startup',
@@ -78,6 +92,7 @@ app.on('before-quit', (event) => {
 function main() {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
   const savedBounds = db.get('windowBounds') || {};
+  const appIcon = getAppIcon();
 
   let mainWindow = new BrowserWindow({
     width: savedBounds.width || Math.round(width * 0.75),
@@ -85,6 +100,7 @@ function main() {
     x: savedBounds.x,
     y: savedBounds.y,
     autoHideMenuBar: true,
+    icon: appIcon,
     webPreferences: {
       preload: path.join(__dirname, 'util/ipc-preloader.js'),
       contextIsolation: true,

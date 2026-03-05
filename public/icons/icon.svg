@@ -1,0 +1,25 @@
+<svg viewBox="65 65 370 370" xmlns="http://www.w3.org/2000/svg">
+
+  <!-- gölge -->
+  <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+    <feDropShadow dx="0" dy="12" stdDeviation="15" flood-color="#000000" flood-opacity="0.6"></feDropShadow>
+  </filter>
+
+  <!-- yüz -->
+  <circle cx="250" cy="250" r="140" fill="#181825" filter="url(#shadow)"></circle>
+
+  <!-- gözler ve ağız -->
+  <g fill="none" stroke="#cdd6f4" stroke-width="15" stroke-linecap="round" stroke-linejoin="round">
+
+    <!-- sol göz -->
+    <path d="M 190 165 L 235 205 L 190 245"></path>
+
+    <!-- sağ göz -->
+    <path d="M 270 165 L 315 205 L 270 245"></path>
+
+    <!-- ağız -->
+    <path d="M 215 295 Q 250 330 285 295"></path>
+
+  </g>
+
+</svg>
