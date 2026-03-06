@@ -164,7 +164,10 @@
         };
 
         updateCurrentVersion.textContent = updateState.currentVersion || '-';
-        updateAvailableVersion.textContent = updateState.downloadedVersion || updateState.availableVersion || '-';
+        updateAvailableVersion.textContent =
+            updateState.downloadedVersion
+            || updateState.availableVersion
+            || (updateState.status === 'up-to-date' ? (updateState.currentVersion || '-') : '-');
         updateLastChecked.textContent = formatDateTime(updateState.lastCheckedAt);
         const updaterSupported = updateState.supported !== false;
         const messageText = typeof updateState.message === 'string' ? updateState.message.trim() : '';
@@ -184,10 +187,11 @@
 
         const isChecking = updateState.status === 'checking';
         const isDownloading = updateState.status === 'downloading';
+        const isInstalling = updateState.status === 'installing';
         const canInstall = updateState.status === 'downloaded';
 
-        btnCheckUpdate.disabled = !updaterSupported || isChecking || isDownloading;
-        btnInstallUpdate.disabled = !updaterSupported || !canInstall;
+        btnCheckUpdate.disabled = !updaterSupported || isChecking || isDownloading || isInstalling;
+        btnInstallUpdate.disabled = !updaterSupported || !canInstall || isInstalling;
     }
 
     async function loadUpdateState(initialAutoUpdateEnabled) {
@@ -414,8 +418,6 @@
             const res = await window.electronAPI.settings.checkForUpdates();
             if (!res.success) {
                 window.notifyUser(res.message || 'Update check failed.', 'error');
-            } else {
-                window.notifyUser('Checking for updates...', 'info');
             }
             if (res.state) renderUpdateState(res.state);
         } catch (err) {
@@ -440,7 +442,7 @@
                 window.notifyUser(res.message || 'Update install failed.', 'error');
                 return;
             }
-            window.notifyUser('Installing update and restarting...', 'success');
+            if (res.state) renderUpdateState(res.state);
         } catch (err) {
             window.notifyUser('Failed to install update: ' + err.message, 'error');
         }

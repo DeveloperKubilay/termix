@@ -8,12 +8,17 @@ try {
     autoUpdater = null;
 }
 
-const AUTO_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
-
 let initialized = false;
 let checkPromise = null;
 let downloadPromise = null;
-let autoCheckTimer = null;
+let installTimer = null;
+let installScheduled = false;
+let installingUpdate = false;
+let lastCheckContext = {
+    manual: false,
+    source: 'startup'
+};
+let autoInstallAfterDownload = false;
 
 const state = {
     initialized: false,
@@ -36,6 +41,88 @@ function roundPercent(value) {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return 0;
     return Math.max(0, Math.min(100, Math.round(parsed * 10) / 10));
+}
+
+function pickVersion(...values) {
+    for (const value of values) {
+        if (typeof value === 'string' && value.trim()) {
+            return value.trim();
+        }
+    }
+    return null;
+}
+
+function resolveVersion(info = {}) {
+    if (!info || typeof info !== 'object') {
+        return null;
+    }
+
+    return pickVersion(
+        info.version,
+        info.tag,
+        info.releaseName,
+        info.releaseInfo && info.releaseInfo.version,
+        info.releaseInfo && info.releaseInfo.tag,
+        info.releaseInfo && info.releaseInfo.releaseName
+    );
+}
+
+function syncAvailableVersion(info = {}) {
+    const version = resolveVersion(info);
+    if (version) {
+        state.availableVersion = version;
+    }
+    return version;
+}
+
+function resetTransferStats() {
+    state.bytesPerSecond = 0;
+    state.transferred = 0;
+    state.total = 0;
+}
+
+function clearInstallTimer() {
+    if (installTimer) {
+        clearTimeout(installTimer);
+        installTimer = null;
+    }
+}
+
+function scheduleInstallAndRestart({ autoTriggered = false, delayMs = 0 } = {}) {
+    if (installScheduled || installingUpdate) {
+        return false;
+    }
+
+    const version = state.downloadedVersion || state.availableVersion || null;
+    installScheduled = true;
+    state.status = 'installing';
+    state.message = autoTriggered
+        ? (version
+            ? `Version ${version} downloaded. Restarting to install...`
+            : 'Update downloaded. Restarting to install...')
+        : (version
+            ? `Installing version ${version} and restarting...`
+            : 'Installing update and restarting...');
+    emitState();
+
+    installTimer = setTimeout(() => {
+        clearInstallTimer();
+        installScheduled = false;
+        installingUpdate = true;
+
+        try {
+            autoUpdater.quitAndInstall(false, true);
+        } catch (err) {
+            installingUpdate = false;
+            markError(err);
+        }
+    }, Math.max(0, Number(delayMs) || 0));
+
+    if (installTimer && typeof installTimer.unref === 'function') {
+        installTimer.unref();
+    }
+
+    return true;
 }
 
 function normalizeUpdateSettings(value) {
@@ -83,6 +170,9 @@ function emitState() {
 
 function markError(err) {
     const message = err && err.message ? err.message : String(err || 'Unknown update error');
+    autoInstallAfterDownload = false;
+    installScheduled = false;
+    clearInstallTimer();
     state.status = 'error';
     state.message = `Update failed: ${message}`;
     state.lastError = message;
@@ -95,18 +185,22 @@ function bindUpdaterEvents() {
         state.message = 'Checking for updates...';
         state.progress = 0;
         state.lastError = null;
+        resetTransferStats();
         emitState();
     });
 
     autoUpdater.on('update-available', (info = {}) => {
-        const version = info.version || null;
-        state.availableVersion = version;
+        const version = syncAvailableVersion(info);
         state.downloadedVersion = null;
         state.status = 'available';
         state.message = version
             ? `Version ${version} is available.`
             : 'A new update is available.';
         state.progress = 0;
+        resetTransferStats();
+        autoInstallAfterDownload = state.autoUpdateEnabled
+            && !lastCheckContext.manual
+            && lastCheckContext.source === 'startup';
         emitState();
         downloadUpdate().catch(markError);
     });
@@ -117,6 +211,8 @@ function bindUpdaterEvents() {
         state.status = 'up-to-date';
         state.message = 'You are using the latest version.';
         state.progress = 0;
+        resetTransferStats();
+        autoInstallAfterDownload = false;
         emitState();
     });
 
@@ -131,13 +227,23 @@ function bindUpdaterEvents() {
     });
 
     autoUpdater.on('update-downloaded', (info = {}) => {
-        const version = info.version || state.availableVersion || null;
+        const version = syncAvailableVersion(info) || state.availableVersion || null;
         state.downloadedVersion = version;
+        state.progress = 100;
+        resetTransferStats();
+
+        if (autoInstallAfterDownload) {
+            scheduleInstallAndRestart({
+                autoTriggered: true,
+                delayMs: 900
+            });
+            return;
+        }
+
         state.status = 'downloaded';
         state.message = version
             ? `Version ${version} is ready to install.`
             : 'Update downloaded and ready to install.';
-        state.progress = 100;
         emitState();
     });
 
@@ -146,24 +252,11 @@ function bindUpdaterEvents() {
     });
 }
 
-function scheduleAutoChecks() {
-    if (autoCheckTimer) return;
-    autoCheckTimer = setInterval(() => {
-        if (!state.autoUpdateEnabled) return;
-        checkForUpdates({ manual: false }).catch((err) => {
-            console.error('Background update check failed:', err);
-        });
-    }, AUTO_CHECK_INTERVAL_MS);
-    if (typeof autoCheckTimer.unref === 'function') {
-        autoCheckTimer.unref();
-    }
-}
-
 function getState() {
     return { ...state };
 }
 
-async function checkForUpdates({ manual = false } = {}) {
+async function checkForUpdates({ manual = false, source = manual ? 'manual' : 'background' } = {}) {
     if (!initialized) {
         return {
             success: false,
@@ -186,6 +279,11 @@ async function checkForUpdates({ manual = false } = {}) {
 
     checkPromise = (async () => {
         try {
+            lastCheckContext = {
+                manual: Boolean(manual),
+                source: source || (manual ? 'manual' : 'background')
+            };
+            autoInstallAfterDownload = false;
             const lastCheckedAt = new Date().toISOString();
             const settings = readUpdateSettings();
             writeUpdateSettings({
@@ -199,7 +297,26 @@ async function checkForUpdates({ manual = false } = {}) {
                 state.message = 'Checking for updates...';
                 emitState();
             }
-            await autoUpdater.checkForUpdates();
+            const result = await autoUpdater.checkForUpdates();
+            const hasUpdate = result && result.isUpdateAvailable === true;
+
+            if (hasUpdate) {
+                const version = syncAvailableVersion(result.updateInfo);
+                if (state.status === 'checking' || state.status === 'idle') {
+                    state.status = 'available';
+                    state.message = version
+                        ? `Version ${version} is available.`
+                        : 'A new update is available.';
+                    emitState();
+                }
+            } else if (result && result.isUpdateAvailable === false && (state.status === 'checking' || state.status === 'idle')) {
+                state.availableVersion = null;
+                state.downloadedVersion = null;
+                state.status = 'up-to-date';
+                state.message = 'You are using the latest version.';
+                emitState();
+            }
+
             return {
                 success: true,
                 message: 'Update check started.',
@@ -241,6 +358,14 @@ async function downloadUpdate() {
         return {
             success: true,
             message: 'Update already downloaded.',
+            state: getState()
+        };
+    }
+
+    if (state.status === 'installing' || installScheduled || installingUpdate) {
+        return {
+            success: true,
+            message: 'Update install is already in progress.',
             state: getState()
         };
     }
@@ -296,6 +421,14 @@ async function installUpdate() {
         };
     }
 
+    if (state.status === 'installing' || installScheduled || installingUpdate) {
+        return {
+            success: true,
+            message: 'Update install is already in progress.',
+            state: getState()
+        };
+    }
+
     if (state.status !== 'downloaded') {
         return {
             success: false,
@@ -304,8 +437,9 @@ async function installUpdate() {
         };
     }
 
-    setImmediate(() => {
-        autoUpdater.quitAndInstall(false, true);
+    scheduleInstallAndRestart({
+        autoTriggered: false,
+        delayMs: 100
     });
 
     return {
@@ -324,12 +458,6 @@ function setAutoUpdateEnabled(enabled) {
 
     state.autoUpdateEnabled = settings.autoUpdateEnabled;
     emitState();
-
-    if (state.autoUpdateEnabled && state.supported) {
-        checkForUpdates({ manual: false }).catch((err) => {
-            console.error('Failed to start automatic update check:', err);
-        });
-    }
 
     return getState();
 }
@@ -368,14 +496,16 @@ function init() {
     state.message = '';
 
     autoUpdater.autoDownload = false;
-    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.autoInstallOnAppQuit = false;
 
     bindUpdaterEvents();
-    scheduleAutoChecks();
+    app.on('before-quit-for-update', () => {
+        installingUpdate = true;
+    });
     emitState();
 
     if (state.autoUpdateEnabled) {
-        checkForUpdates({ manual: false }).catch((err) => {
+        checkForUpdates({ manual: false, source: 'startup' }).catch((err) => {
             console.error('Initial update check failed:', err);
         });
     }
@@ -386,6 +516,7 @@ function init() {
 module.exports = {
     init,
     getState,
+    isInstallingUpdate: () => installingUpdate || installScheduled,
     setAutoUpdateEnabled,
     checkForUpdates,
     downloadUpdate,
