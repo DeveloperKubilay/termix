@@ -400,8 +400,8 @@
                 renderUpdateState(result.state);
                 window.notifyUser(
                     autoUpdateToggle.checked
-                        ? 'Automatic update checks enabled.'
-                        : 'Automatic update checks disabled.',
+                        ? 'Startup update checks enabled.'
+                        : 'Startup update checks disabled.',
                     'success'
                 );
                 return;
