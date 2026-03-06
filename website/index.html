@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Termix | Free Terminal For Production Work</title>
+    <meta
+        name="description"
+        content="Termix is a free terminal and SSH client for production environments with SSH, SFTP, serial access, port forwarding and multiple profile backends."
+    >
+    <link rel="icon" type="image/svg+xml" href="./assets/icon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;700&display=swap"
+        rel="stylesheet"
+    >
+    <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+    <div class="site-backdrop" aria-hidden="true"></div>
+
+    <header class="topbar">
+        <a class="brand" href="#top" aria-label="Termix home">
+            <img src="./assets/icon.svg" alt="" width="36" height="36">
+            <span>Termix</span>
+        </a>
+
+        <nav class="topnav" aria-label="Primary">
+            <a href="#features">Features</a>
+            <a href="#accounts">Accounts</a>
+            <a href="#download">Download</a>
+            <a href="https://github.com/DeveloperKubilay/termix" target="_blank" rel="noreferrer">Open source</a>
+        </nav>
+
+        <a
+            id="topbar-latest-link"
+            class="button button-small button-outline"
+            href="#download"
+        >
+            Desktop builds
+        </a>
+    </header>
+
+    <main id="top">
+        <section class="section hero">
+            <div class="hero-copy reveal">
+                <p class="eyebrow">Production terminal workspace</p>
+                <h1>Termix brings SSH, SFTP, port forwarding and serial access into one disciplined desktop client.</h1>
+                <p class="lede">
+                    Termix is built for operators and developers who need direct host access, reusable command flows,
+                    encrypted storage and multiple profile backends without turning day-to-day terminal work into a SaaS dependency.
+                </p>
+
+                <div class="hero-actions">
+                    <a id="hero-download-link" class="button primary" href="#download">Download latest</a>
+                    <a
+                        class="button secondary"
+                        href="https://github.com/DeveloperKubilay/termix"
+                        target="_blank"
+                        rel="noreferrer"
+                    >
+                        View source
+                    </a>
+                </div>
+
+                <p id="hero-download-note" class="hero-note">
+                    Latest stable desktop build is being resolved automatically.
+                </p>
+
+                <div class="hero-trust" aria-label="Product highlights">
+                    <span>100% free in production</span>
+                    <span>Apache 2.0</span>
+                    <span>Local / Firebase / QMM</span>
+                </div>
+
+                <div class="release-strip">
+                    <article>
+                        <span>Latest stable</span>
+                        <strong id="release-tag">v1.0.13</strong>
+                    </article>
+                    <article>
+                        <span>Published</span>
+                        <strong id="release-date">Mar 6, 2026</strong>
+                    </article>
+                    <article>
+                        <span>Desktop builds</span>
+                        <strong id="release-builds">3 installers</strong>
+                    </article>
+                </div>
+            </div>
+
+            <div class="hero-visual reveal">
+                <div class="terminal-stage">
+                    <div class="shell-window">
+                        <div class="shell-topbar">
+                            <div class="shell-dot shell-dot-red"></div>
+                            <div class="shell-dot shell-dot-amber"></div>
+                            <div class="shell-dot shell-dot-green"></div>
+                            <div class="shell-title">termix / production workspace</div>
+                        </div>
+
+                        <div class="shell-body">
+                            <aside class="shell-sidebar">
+                                <div class="shell-nav-title">Modules</div>
+                                <ul class="shell-nav">
+                                    <li class="is-active">Hosts</li>
+                                    <li>Keychain</li>
+                                    <li>Port Forwarding</li>
+                                    <li>Snippets</li>
+                                    <li>SFTP</li>
+                                    <li>AI</li>
+                                    <li>Settings</li>
+                                </ul>
+                            </aside>
+
+                            <div class="shell-main">
+                                <div class="shell-output">
+                                    <p><span class="prompt">$</span> ssh prod-edge</p>
+                                    <p><span class="prompt">termix:</span> connected with saved key</p>
+                                    <p><span class="prompt">termix:</span> forward 5432 -> db.internal:5432</p>
+                                    <p><span class="prompt">termix:</span> SFTP mounted at /var/www/app</p>
+                                    <p><span class="success">ready for deploy tasks</span></p>
+                                </div>
+
+                                <div class="shell-grid">
+                                    <article class="shell-mini">
+                                        <span class="token">SSH</span>
+                                        <strong>Saved hosts</strong>
+                                        <p>Jump into repeated production targets without rebuilding the connection every time.</p>
+                                    </article>
+                                    <article class="shell-mini">
+                                        <span class="token">SFTP</span>
+                                        <strong>File access</strong>
+                                        <p>Move, rename, edit and inspect remote files in the same workspace.</p>
+                                    </article>
+                                    <article class="shell-mini">
+                                        <span class="token">PF</span>
+                                        <strong>Forwarding</strong>
+                                        <p>Keep database and internal service tunnels visible instead of hidden in shell history.</p>
+                                    </article>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <article class="floating-card card-release">
+                        <span class="floating-label">Latest stable build</span>
+                        <strong id="hero-release-tag">v1.0.13</strong>
+                        <p id="hero-release-mode">Pinned stable build</p>
+                    </article>
+
+                    <article class="floating-card card-platforms">
+                        <span class="floating-label">Connection surface</span>
+                        <strong>SSH, local shell and serial / COM access</strong>
+                        <p>Termix covers remote servers, local sessions and device-level serial connections in one UI.</p>
+                    </article>
+
+                    <article class="floating-card card-free">
+                        <span class="floating-label">Positioning</span>
+                        <strong>Open-source desktop terminal for production operations.</strong>
+                        <p>Designed as a full client, not a thin marketing layer around a restricted feature set.</p>
+                    </article>
+                </div>
+            </div>
+        </section>
+
+        <section class="section proof">
+            <article class="proof-card reveal">
+                <p class="proof-label">Operational scope</p>
+                <h2>From direct SSH sessions to file transfer and tunnel management.</h2>
+                <p>Termix is not just a terminal tab. The product already includes dedicated modules for remote files, forwarding, snippets, key material and host management.</p>
+            </article>
+
+            <article class="proof-card reveal">
+                <p class="proof-label">Profile architecture</p>
+                <h2>Local JSON, Firebase and QMM-backed account models.</h2>
+                <p>The application already supports multiple profile types, profile switching and optional sync workflows instead of locking every user into one storage model.</p>
+            </article>
+
+            <article class="proof-card reveal">
+                <p class="proof-label">Trust model</p>
+                <h2>Encrypted secrets, known-host verification and an audited dependency path.</h2>
+                <p>Saved credentials are encrypted, host fingerprints are persisted, and the release workflow includes dependency tracking and security audit steps before builds are published.</p>
+            </article>
+        </section>
+
+        <section id="features" class="section">
+            <div class="section-heading reveal">
+                <p class="eyebrow">Core capabilities</p>
+                <h2>Each major workflow in Termix deserves its own place in the product story.</h2>
+                <p>
+                    The application already covers a broad operational surface. The site now highlights the major workflows separately instead of compressing them into generic claims.
+                </p>
+            </div>
+
+            <div class="showcase-grid">
+                <article class="showcase-card showcase-wide reveal">
+                    <span class="feature-kicker">SFTP</span>
+                    <h3>Remote file work without leaving the client.</h3>
+                    <p>Termix ships with a dedicated SFTP manager for browsing, reading, writing, renaming, copying and creating files and folders. That means remote maintenance stays inside the same workspace as the shell session.</p>
+                    <div class="showcase-tags">
+                        <span>Remote browsing</span>
+                        <span>Read / write</span>
+                        <span>Rename and copy</span>
+                        <span>Inline editing</span>
+                    </div>
+                </article>
+
+                <article class="showcase-card reveal">
+                    <span class="feature-kicker">Forwarding</span>
+                    <h3>Port forwarding with explicit state and conflict checks.</h3>
+                    <p>Local-to-remote and remote-to-local tunnels can be stored, started, stopped and validated from a dedicated module instead of disappearing into shell history.</p>
+                    <div class="showcase-tags">
+                        <span>Local to remote</span>
+                        <span>Remote to local</span>
+                        <span>Conflict detection</span>
+                    </div>
+                </article>
+
+                <article class="showcase-card reveal">
+                    <span class="feature-kicker">Serial</span>
+                    <h3>Serial / COM access alongside regular shell work.</h3>
+                    <p>COM and tty ports can be discovered directly from the app, opened with a selected baud rate and managed next to SSH and local terminal sessions.</p>
+                    <div class="showcase-tags">
+                        <span>COM4 / ttyUSB</span>
+                        <span>Baud rate</span>
+                        <span>Device sessions</span>
+                    </div>
+                </article>
+
+                <article class="showcase-card reveal">
+                    <span class="feature-kicker">Terminal</span>
+                    <h3>SSH, local shell and known-host handling in one place.</h3>
+                    <p>Saved hosts, native local terminal sessions and known-host verification are part of the same application model, which makes repeated operational work more consistent.</p>
+                    <div class="showcase-tags">
+                        <span>SSH</span>
+                        <span>PowerShell / bash</span>
+                        <span>Known hosts</span>
+                    </div>
+                </article>
+
+                <article class="showcase-card reveal">
+                    <span class="feature-kicker">Snippets</span>
+                    <h3>Reusable command snippets with host-aware execution.</h3>
+                    <p>Operational commands can be stored manually or imported from JSON URLs, then executed against a selected VDS or SSH target from the snippet workflow itself.</p>
+                    <div class="showcase-tags">
+                        <span>Manual or URL import</span>
+                        <span>Run on VDS</span>
+                        <span>Structured command reuse</span>
+                    </div>
+                </article>
+
+                <article class="showcase-card reveal">
+                    <span class="feature-kicker">Security</span>
+                    <h3>Encrypted storage for passwords, API keys and profile secrets.</h3>
+                    <p>Saved credentials are encrypted, portable keys are supported and known-host fingerprints are persisted so the client carries its own trust and storage model instead of leaving that responsibility to ad hoc files.</p>
+                    <div class="showcase-tags">
+                        <span>Encrypted passwords</span>
+                        <span>Portable key support</span>
+                        <span>Known-host verification</span>
+                    </div>
+                </article>
+
+                <article class="showcase-card showcase-wide reveal">
+                    <span class="feature-kicker">Profiles</span>
+                    <h3>Multiple account systems for local, cloud-backed and self-hosted workflows.</h3>
+                    <p>Profiles can be created as local JSON, Firebase-backed or QMM-backed accounts. The app can switch between them, sync profile data when required and keep the storage model aligned with the environment.</p>
+                    <div class="showcase-tags">
+                        <span>Local JSON</span>
+                        <span>Firebase</span>
+                        <span>QMM</span>
+                        <span>Profile switching</span>
+                    </div>
+                </article>
+
+                <article class="showcase-card reveal">
+                    <span class="feature-kicker">Release discipline</span>
+                    <h3>Open-source codebase with dependency and audit controls.</h3>
+                    <p>Apache 2.0 licensing, automated dependency updates and audit checks in the build pipeline support a cleaner maintenance story than a closed binary with opaque release practices.</p>
+                    <div class="showcase-tags">
+                        <span>Apache 2.0</span>
+                        <span>Dependabot</span>
+                        <span>Audit checks</span>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section id="accounts" class="section">
+            <div class="section-heading reveal">
+                <p class="eyebrow">Account models</p>
+                <h2>Three storage models, depending on how you want to operate.</h2>
+                <p>Termix does not force every user into the same profile architecture. Local-only, Firebase-backed and QMM-backed accounts are all first-class options.</p>
+            </div>
+
+            <div class="storage-grid">
+                <article class="storage-card reveal">
+                    <span class="feature-kicker">Local JSON</span>
+                    <h3>Fast, local and direct.</h3>
+                    <p>Profiles, hosts, snippets, tags and settings can stay as local JSON data for users who want simple, self-contained storage on the device.</p>
+                </article>
+
+                <article class="storage-card reveal">
+                    <span class="feature-kicker">Firebase</span>
+                    <h3>Cloud-backed profile sync.</h3>
+                    <p>Firebase-backed profiles are available for teams or users who want synchronized profile data without changing the rest of the desktop workflow.</p>
+                </article>
+
+                <article class="storage-card reveal">
+                    <span class="feature-kicker">QMM</span>
+                    <h3>Self-hosted host sync with encrypted secrets.</h3>
+                    <p>QMM-backed accounts support encrypted API key storage and optional self-signed certificate handling for environments that prefer self-hosted infrastructure.</p>
+                </article>
+            </div>
+        </section>
+
+        <section id="download" class="section">
+            <div class="section-heading reveal">
+                <p class="eyebrow">Desktop builds</p>
+                <h2>Stable builds for Windows, Linux and macOS.</h2>
+                <p>The latest desktop installers are resolved automatically, and the matching operating system gets priority on the current device.</p>
+            </div>
+
+            <div class="download-status-bar reveal">
+                <div class="download-status-copy">
+                    <div id="release-status" class="release-status is-fallback">Loading latest stable release...</div>
+                    <div class="download-status-meta">
+                        Updated <span id="release-status-date">Mar 6, 2026</span>
+                    </div>
+                </div>
+
+                <a
+                    id="release-page-link"
+                    class="text-link"
+                    href="https://github.com/DeveloperKubilay/termix/releases/tag/v1.0.13"
+                    target="_blank"
+                    rel="noreferrer"
+                >
+                    Release notes
+                </a>
+            </div>
+
+            <div id="download-grid" class="download-grid reveal" aria-live="polite"></div>
+        </section>
+
+        <section class="section bottom-banner reveal">
+            <div>
+                <p class="eyebrow">Source available</p>
+                <h2>Ship the product page and the desktop app from the same repo.</h2>
+            </div>
+
+            <div class="bottom-actions">
+                <a class="button primary" href="https://github.com/DeveloperKubilay/termix" target="_blank" rel="noreferrer">
+                    View source
+                </a>
+                <a class="button secondary" href="https://github.com/DeveloperKubilay/termix/releases" target="_blank" rel="noreferrer">
+                    Release notes
+                </a>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <p>Made with ❤️ by <a href="https://github.com/DeveloperKubilay" target="_blank" rel="noreferrer">DeveloperKubilay</a></p>
+        <p>
+            <a href="https://github.com/DeveloperKubilay/termix/releases/latest" target="_blank" rel="noreferrer">Latest stable build</a>
+        </p>
+    </footer>
+
+    <script src="./app.js"></script>
+</body>
+</html>
