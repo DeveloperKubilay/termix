@@ -50,6 +50,11 @@ global.Terminals = {}
 let isQuitInProgress = false;
 
 app.on('before-quit', (event) => {
+  if (updater.isInstallingUpdate()) {
+    isQuitInProgress = true;
+    return;
+  }
+
   if (isQuitInProgress) {
     return;
   }
