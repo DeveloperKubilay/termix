@@ -2,6 +2,9 @@ window.ConnectionModule = {
     init: async function (containerId, hostInfo) {
         if (!containerId) return;
         const DEFAULT_TAB_FONT_SCALE = 1.1;
+        const IDLE_RECONNECT_THRESHOLD_MS = 30000;
+        const QUICK_RECONNECT_DELAY_MS = 1500;
+        const RETRY_RECONNECT_DELAY_MS = 5000;
         let isUserDisconnected = false;
         let reconnecting = false;
         const container = document.getElementById(containerId);
@@ -10,6 +13,9 @@ window.ConnectionModule = {
         let resizeObserver = null;
         const aiContextSourceId = `terminal:${tabId}`;
         let lastSelectionForAi = null;
+        let lastActivityAt = Date.now();
+        let reconnectTimerId = null;
+        let restartHandler = null;
 
         const toText = (value) => String(value == null ? '' : value).trim();
 
@@ -44,6 +50,25 @@ window.ConnectionModule = {
                     }
                 }));
             } catch (_) {}
+        };
+
+        const markActivity = () => {
+            lastActivityAt = Date.now();
+        };
+
+        const clearReconnectTimer = () => {
+            if (reconnectTimerId) {
+                clearTimeout(reconnectTimerId);
+                reconnectTimerId = null;
+            }
+        };
+
+        const clearRestartHandler = () => {
+            if (!restartHandler) return;
+            try {
+                restartHandler.dispose();
+            } catch (_) {}
+            restartHandler = null;
         };
 
         // Match container color with the value from settings.
@@ -160,6 +185,7 @@ window.ConnectionModule = {
         // Backend -> Frontend (Output)
         const outputHandler = (event, msg) => {
             if (msg && msg.sessionId === currentSessionId) {
+                markActivity();
                 term.write(msg.data);
             }
         };
@@ -169,6 +195,8 @@ window.ConnectionModule = {
             if (reconnecting || isUserDisconnected) return;
             reconnecting = true;
             try {
+                clearReconnectTimer();
+                clearRestartHandler();
                 emitAiSelectionContext('');
                 try { window.electronAPI.send('term-close', { sessionId: currentSessionId }); } catch (_) {}
                 window.removeEventListener('keydown', handleTerminalZoomKeydown);
@@ -194,19 +222,41 @@ window.ConnectionModule = {
             if (msg && msg.sessionId === currentSessionId) {
                 if (isUserDisconnected) return;
 
-                if (msg.exitCode === 0) {
+                clearReconnectTimer();
+                clearRestartHandler();
+
+                const disconnectMessage = toText(msg.message);
+                const idleForMs = Date.now() - lastActivityAt;
+                const lowerDisconnectMessage = disconnectMessage.toLowerCase();
+                const shouldQuickReconnect = msg.exitCode === 0 && (
+                    idleForMs >= IDLE_RECONNECT_THRESHOLD_MS
+                    || lowerDisconnectMessage.includes('idle')
+                    || lowerDisconnectMessage.includes('timeout')
+                );
+
+                if (shouldQuickReconnect) {
+                    term.writeln('');
+                    term.writeln('\x1b[33mSession closed while idle. Reconnecting...\x1b[0m');
+                    reconnectTimerId = setTimeout(() => {
+                        reconnectTimerId = null;
+                        if (isUserDisconnected) return;
+                        triggerReload().catch(e => {
+                            if (!isUserDisconnected) term.writeln(`\x1b[31mReconnect failed: ${e && e.message ? e.message : e}\x1b[0m`);
+                        });
+                    }, QUICK_RECONNECT_DELAY_MS);
+                } else if (msg.exitCode === 0) {
                     term.writeln('');
                     term.writeln('\x1b[33mSession ended.\x1b[0m');
                     term.writeln('Press Enter to restart...');
                     try { term.focus(); } catch (_) {}
                     
-                    const restartHandler = term.onData(data => {
+                    restartHandler = term.onData(data => {
                         if (isUserDisconnected) {
-                            restartHandler.dispose();
+                            clearRestartHandler();
                             return;
                         }
                         if (typeof data === 'string' && (data.includes('\r') || data.includes('\n'))) {
-                            restartHandler.dispose();
+                            clearRestartHandler();
                             term.writeln('Restarting...');
                             triggerReload().catch(e => {
                                 if (!isUserDisconnected) term.writeln(`\x1b[31mRestart failed: ${e && e.message ? e.message : e}\x1b[0m`);
@@ -215,13 +265,15 @@ window.ConnectionModule = {
                     });
                 } else {
                     term.clear();
-                    term.writeln(`\x1b[31mConnection lost (Code: ${msg.exitCode}). Retrying in 5 seconds...\x1b[0m`);
-                    setTimeout(() => {
+                    const messageSuffix = disconnectMessage ? ` ${disconnectMessage}` : '';
+                    term.writeln(`\x1b[31mConnection lost (Code: ${msg.exitCode ?? 'unknown'}). Retrying in 5 seconds...${messageSuffix}\x1b[0m`);
+                    reconnectTimerId = setTimeout(() => {
+                        reconnectTimerId = null;
                         if (isUserDisconnected) return;
                         triggerReload().catch(e => {
                             if (!isUserDisconnected) term.writeln(`\x1b[31mReconnect failed: ${e && e.message ? e.message : e}\x1b[0m`);
                         });
-                    }, 5000);
+                    }, RETRY_RECONNECT_DELAY_MS);
                 }
             }
         };
@@ -230,6 +282,7 @@ window.ConnectionModule = {
         // Frontend -> Backend (Input)
         term.onData(data => {
             if (isUserDisconnected) return;
+            markActivity();
             window.electronAPI.send('term-input', { sessionId: currentSessionId, data });
         });
 
@@ -262,6 +315,8 @@ window.ConnectionModule = {
         // Trigger on first load and when SSH becomes ready.
         window.electronAPI.on('ssh-ready', (event, msg) => {
             if (msg && msg.sessionId === currentSessionId) {
+                clearReconnectTimer();
+                markActivity();
                 term.clear(); // Clear connecting messages
                 sendResize();
             }
@@ -339,6 +394,8 @@ window.ConnectionModule = {
             dispose: () => {
                 isUserDisconnected = true;
                 clearTimeout(msgTimer);
+                clearReconnectTimer();
+                clearRestartHandler();
                 emitAiSelectionContext('');
                 // Stop observer
                 if (resizeObserver) resizeObserver.disconnect();
