@@ -1203,6 +1203,14 @@ body {
     backdrop-filter: blur(6px);
 }
 
+:root[data-theme="modern"] .sidebar.collapsed {
+    width: 0;
+    padding: 0;
+    border-right: none;
+    box-shadow: none;
+    opacity: 0;
+}
+
 :root[data-theme="modern"] .ai-panel {
     background: rgba(16, 22, 34, 0.72);
     border: 1px solid var(--border-soft);
