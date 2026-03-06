@@ -6,6 +6,12 @@ const db = require('../profile-db');
 const { decrypt } = require('../crypto');
 const sessions = new Map();
 
+const SSH_READY_TIMEOUT_MS = 20000;
+const SSH_KEEPALIVE_INTERVAL_MS = 10000;
+const SSH_KEEPALIVE_COUNT_MAX = 6;
+const SFTP_IDLE_PING_INTERVAL_MS = 20000;
+const SFTP_IDLE_PING_MIN_IDLE_MS = 15000;
+
 function normalizeId(value) {
     return String(value);
 }
@@ -93,13 +99,18 @@ function trimTrailingSeparator(value, separator) {
 }
 
 function getDefaultLocalRoot() {
-    if (process.platform === 'win32') {
-        const driveCandidates = ['C:\\', 'D:\\', 'E:\\', 'F:\\'];
-        for (const drive of driveCandidates) {
-            if (fs.existsSync(drive)) return drive;
-        }
+    const desktopPath = path.join(os.homedir(), 'Desktop');
+    if (fs.existsSync(desktopPath)) {
+        return desktopPath;
     }
-    return path.parse(process.cwd()).root || '/';
+    
+    // Turkish localization fallback in case of older OS issues
+    const trDesktop = path.join(os.homedir(), 'Masaüstü');
+    if (fs.existsSync(trDesktop)) {
+        return trDesktop;
+    }
+
+    return os.homedir();
 }
 
 function normalizeLocalPath(inputPath) {
@@ -219,9 +230,9 @@ function buildConnectConfig(host) {
         host: String(host.address || '').trim(),
         port: parsePort(host.port || 22, 22),
         username: String(host.username || 'root').trim() || 'root',
-        readyTimeout: 20000,
-        keepaliveInterval: 10000,
-        keepaliveCountMax: 3,
+        readyTimeout: SSH_READY_TIMEOUT_MS,
+        keepaliveInterval: SSH_KEEPALIVE_INTERVAL_MS,
+        keepaliveCountMax: SSH_KEEPALIVE_COUNT_MAX,
         hostVerifier: (hashedKey) => verifyAndPersistHost(host, hashedKey)
     };
 
@@ -270,6 +281,44 @@ function touchSession(session) {
     session.lastUsedAt = Date.now();
 }
 
+function clearSessionKeepalive(session) {
+    if (!session || !session.keepaliveTimer) return;
+    clearInterval(session.keepaliveTimer);
+    session.keepaliveTimer = null;
+}
+
+function startSessionKeepalive(session) {
+    if (!session) return;
+    clearSessionKeepalive(session);
+    session.keepaliveTimer = setInterval(() => {
+        keepSftpSessionAlive(session.id).catch(() => {});
+    }, SFTP_IDLE_PING_INTERVAL_MS);
+
+    if (session.keepaliveTimer && typeof session.keepaliveTimer.unref === 'function') {
+        session.keepaliveTimer.unref();
+    }
+}
+
+async function keepSftpSessionAlive(sessionId) {
+    const session = sessions.get(normalizeId(sessionId));
+    if (!session || session.isClosing || session.keepaliveInFlight) {
+        return;
+    }
+
+    const idleForMs = Date.now() - Number(session.lastUsedAt || 0);
+    if (idleForMs < SFTP_IDLE_PING_MIN_IDLE_MS) {
+        return;
+    }
+
+    session.keepaliveInFlight = true;
+    try {
+        await sftpPing(session.sftp, session.homePath || '.');
+        session.lastKeepaliveAt = Date.now();
+    } finally {
+        session.keepaliveInFlight = false;
+    }
+}
+
 function sftpRealpath(sftp, targetPath) {
     return new Promise((resolve) => {
         sftp.realpath(targetPath, (err, out) => {
@@ -278,6 +327,18 @@ function sftpRealpath(sftp, targetPath) {
                 return;
             }
             resolve(out);
+        });
+    });
+}
+
+function sftpPing(sftp, targetPath) {
+    return new Promise((resolve, reject) => {
+        sftp.realpath(targetPath, (err) => {
+            if (err) {
+                reject(err);
+                return;
+            }
+            resolve();
         });
     });
 }
@@ -779,12 +840,18 @@ async function connect(hostId) {
                         sftp,
                         homePath,
                         createdAt: Date.now(),
-                        lastUsedAt: Date.now()
+                        lastUsedAt: Date.now(),
+                        lastKeepaliveAt: null,
+                        keepaliveTimer: null,
+                        keepaliveInFlight: false,
+                        isClosing: false
                     };
 
                     sessions.set(sessionId, session);
+                    startSessionKeepalive(session);
 
                     conn.on('close', () => {
+                        clearSessionKeepalive(session);
                         sessions.delete(sessionId);
                     });
 
@@ -841,6 +908,8 @@ async function disconnect(sessionId) {
         return { success: true, message: 'Session already closed.' };
     }
 
+    session.isClosing = true;
+    clearSessionKeepalive(session);
     sessions.delete(normalized);
 
     return await new Promise((resolve) => {

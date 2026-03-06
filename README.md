@@ -4,6 +4,6 @@ A 100% self-contained, open-source, and reliable AI-powered terminal application
 
 Website: [https://developerkubilay.github.io/termix/](https://developerkubilay.github.io/termix/) 🚀
 
-![alt text](image.png)
-![alt text](image2.png)
-![alt text](image3.png)
+![alt text](https://raw.githubusercontent.com/DeveloperKubilay/termix/refs/heads/main/website/assets/image.png)
+![alt text](https://raw.githubusercontent.com/DeveloperKubilay/termix/refs/heads/main/website/assets/image2.png)
+![alt text](https://raw.githubusercontent.com/DeveloperKubilay/termix/refs/heads/main/website/assets/image3.png)
