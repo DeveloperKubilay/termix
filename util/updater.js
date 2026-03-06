@@ -11,7 +11,6 @@ try {
 let initialized = false;
 let checkPromise = null;
 let downloadPromise = null;
-let installTimer = null;
 let installScheduled = false;
 let installingUpdate = false;
 let lastCheckContext = {
@@ -81,14 +80,7 @@ function resetTransferStats() {
     state.total = 0;
 }
 
-function clearInstallTimer() {
-    if (installTimer) {
-        clearTimeout(installTimer);
-        installTimer = null;
-    }
-}
-
-function scheduleInstallAndRestart({ autoTriggered = false, delayMs = 0 } = {}) {
+function installAndRestart({ autoTriggered = false } = {}) {
     if (installScheduled || installingUpdate) {
         return false;
     }
@@ -105,21 +97,11 @@ function scheduleInstallAndRestart({ autoTriggered = false, delayMs = 0 } = {}) 
             : 'Installing update and restarting...');
     emitState();
 
-    installTimer = setTimeout(() => {
-        clearInstallTimer();
+    try {
+        autoUpdater.quitAndInstall(false, true);
+    } catch (err) {
         installScheduled = false;
-        installingUpdate = true;
-
-        try {
-            autoUpdater.quitAndInstall(false, true);
-        } catch (err) {
-            installingUpdate = false;
-            markError(err);
-        }
-    }, Math.max(0, Number(delayMs) || 0));
-
-    if (installTimer && typeof installTimer.unref === 'function') {
-        installTimer.unref();
+        markError(err);
     }
 
     return true;
@@ -172,7 +154,6 @@ function markError(err) {
     const message = err && err.message ? err.message : String(err || 'Unknown update error');
     autoInstallAfterDownload = false;
     installScheduled = false;
-    clearInstallTimer();
     state.status = 'error';
     state.message = `Update failed: ${message}`;
     state.lastError = message;
@@ -233,10 +214,7 @@ function bindUpdaterEvents() {
         resetTransferStats();
 
         if (autoInstallAfterDownload) {
-            scheduleInstallAndRestart({
-                autoTriggered: true,
-                delayMs: 900
-            });
+            installAndRestart({ autoTriggered: true });
             return;
         }
 
@@ -437,10 +415,7 @@ async function installUpdate() {
         };
     }
 
-    scheduleInstallAndRestart({
-        autoTriggered: false,
-        delayMs: 100
-    });
+    installAndRestart({ autoTriggered: false });
 
     return {
         success: true,
@@ -505,6 +480,7 @@ function init() {
     emitState();
 
     if (state.autoUpdateEnabled) {
+        // Automatic update checks run once on startup; there is no polling loop.
         checkForUpdates({ manual: false, source: 'startup' }).catch((err) => {
             console.error('Initial update check failed:', err);
         });
