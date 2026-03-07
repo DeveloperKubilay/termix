@@ -1,16 +1,18 @@
 /**
- * scripts/build-android-web.js
+ * util/android/build-android-web.js
  *
  * Bundles the Termix web UI into the www/ directory so Capacitor can sync
  * it into the Android project's assets.
  *
  * What it does:
- *   1. Copies the app HTML, CSS, and JS files to www/
- *   2. Copies xterm.js libraries from node_modules into www/node_modules/
- *   3. Produces www/index.html ready to be served from a Capacitor WebView
+ *   1. Writes capacitor.config.json to the project root (Capacitor requires
+ *      it there; the source-of-truth copy lives in util/android/).
+ *   2. Copies the app HTML, CSS, and JS files to www/
+ *   3. Copies xterm.js libraries from node_modules into www/node_modules/
+ *   4. Produces www/index.html ready to be served from a Capacitor WebView
  *
  * Usage:
- *   node scripts/build-android-web.js
+ *   node util/android/build-android-web.js
  */
 
 'use strict';
@@ -18,7 +20,8 @@
 const fs = require('fs');
 const path = require('path');
 
-const ROOT = path.resolve(__dirname, '..');
+// util/android/ → project root (two levels up)
+const ROOT = path.resolve(__dirname, '..', '..');
 const WWW = path.join(ROOT, 'www');
 
 // ─── Utilities ───────────────────────────────────────────────────────────────
@@ -45,23 +48,33 @@ function copyDir(src, dest) {
     }
 }
 
-// ─── Main ────────────────────────────────────────────────────────────────────
+// ─── Step 1: Sync capacitor.config.json to root ──────────────────────────────
+// Capacitor's CLI always reads the config from the project root (CWD).
+// The source-of-truth copy lives in util/android/capacitor.config.json so
+// all Android configuration stays in one place. We write it to root here.
+
+const configSrc = path.join(__dirname, 'capacitor.config.json');
+const configDest = path.join(ROOT, 'capacitor.config.json');
+fs.copyFileSync(configSrc, configDest);
+console.log('Synced util/android/capacitor.config.json → capacitor.config.json');
+
+// ─── Step 2: Build www/ ───────────────────────────────────────────────────────
 
 console.log('Building Android web assets into www/ ...');
 
 ensureDir(WWW);
 
-// 1. Copy index.html (same as the Electron version - platform.js handles differences)
+// Copy index.html (same as the Electron version — platform.js handles differences)
 copyFile(path.join(ROOT, 'index.html'), path.join(WWW, 'index.html'));
 
-// 2. Copy the public/ directory (app.js, style.css, modules/, platform.js, icons/)
+// Copy the public/ directory (app.js, style.css, modules/, platform.js, icons/)
 copyDir(path.join(ROOT, 'public'), path.join(WWW, 'public'));
 
-// 3. Copy xterm.js libraries that index.html references from node_modules/
+// Copy xterm.js libraries that index.html references from node_modules/
 const XTERM_LIBS = [
-    ['xterm/css/xterm.css',                     'xterm/css/xterm.css'],
-    ['xterm/lib/xterm.js',                      'xterm/lib/xterm.js'],
-    ['xterm-addon-fit/lib/xterm-addon-fit.js',  'xterm-addon-fit/lib/xterm-addon-fit.js'],
+    ['xterm/css/xterm.css',                        'xterm/css/xterm.css'],
+    ['xterm/lib/xterm.js',                         'xterm/lib/xterm.js'],
+    ['xterm-addon-fit/lib/xterm-addon-fit.js',     'xterm-addon-fit/lib/xterm-addon-fit.js'],
     ['xterm-addon-webgl/lib/xterm-addon-webgl.js', 'xterm-addon-webgl/lib/xterm-addon-webgl.js'],
 ];
 
