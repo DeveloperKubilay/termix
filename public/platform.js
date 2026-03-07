@@ -104,6 +104,25 @@
         };
     }
 
+    // ─── Update helpers ──────────────────────────────────────────────────────────
+
+    /** Returns true when version string a is strictly newer than b (semver). */
+    function semverGt(a, b) {
+        var pa = a.split('.').map(Number);
+        var pb = b.split('.').map(Number);
+        for (var i = 0; i < Math.max(pa.length, pb.length); i++) {
+            var da = pa[i] || 0;
+            var db = pb[i] || 0;
+            if (da > db) return true;
+            if (da < db) return false;
+        }
+        return false;
+    }
+
+    var cachedUpdateResult = null;
+    var cachedUpdateTime = 0;
+    var UPDATE_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
     // ─── polyfill API ────────────────────────────────────────────────────────────
 
     var api = {
@@ -276,10 +295,58 @@
                 return Promise.resolve({ success: true });
             },
             checkForUpdates: function () {
-                return Promise.resolve({ status: 'not-supported' });
+                var updatePlugin = window.Capacitor &&
+                    window.Capacitor.Plugins &&
+                    window.Capacitor.Plugins.Update;
+                if (!updatePlugin) {
+                    return Promise.resolve({ status: 'not-supported' });
+                }
+                var now = Date.now();
+                if (cachedUpdateResult && (now - cachedUpdateTime) < UPDATE_CACHE_TTL) {
+                    return Promise.resolve(cachedUpdateResult);
+                }
+                return updatePlugin.getAppVersion()
+                    .then(function (result) {
+                        var currentVersion = result.version;
+                        return fetch(
+                            'https://api.github.com/repos/DeveloperKubilay/termix/releases/latest'
+                        )
+                            .then(function (r) {
+                                if (r.status === 403 || r.status === 429) {
+                                    return Promise.reject(
+                                        new Error('GitHub API rate limit exceeded. Try again later.')
+                                    );
+                                }
+                                return r.json();
+                            })
+                            .then(function (release) {
+                                var latestTag = (release.tag_name || '').replace(/^v/, '');
+                                var updateAvailable = !!latestTag && semverGt(latestTag, currentVersion);
+                                var ret = {
+                                    status: 'checked',
+                                    updateAvailable: updateAvailable,
+                                    currentVersion: currentVersion,
+                                    latestVersion: latestTag
+                                };
+                                cachedUpdateResult = ret;
+                                cachedUpdateTime = now;
+                                return ret;
+                            });
+                    })
+                    .catch(function (e) {
+                        return { status: 'error', message: e.message };
+                    });
             },
             downloadUpdate: function () {
-                return Promise.resolve({ status: 'not-supported' });
+                var updatePlugin = window.Capacitor &&
+                    window.Capacitor.Plugins &&
+                    window.Capacitor.Plugins.Update;
+                if (!updatePlugin) {
+                    return Promise.resolve({ status: 'not-supported' });
+                }
+                return updatePlugin.openReleasesPage().then(function () {
+                    return { status: 'opening-browser' };
+                });
             },
             installUpdate: function () {
                 return Promise.resolve({ status: 'not-supported' });
