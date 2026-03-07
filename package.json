@@ -11,7 +11,7 @@
   "scripts": {
     "start": "electron .",
     "build": "electron-builder",
-    "build:android-web": "node scripts/build-android-web.js",
+    "build:android-web": "node util/android/build-android-web.js",
     "sync:android": "npm run build:android-web && npx cap sync android",
     "open:android": "npx cap open android",
     "site:preview": "node website/server.js",
