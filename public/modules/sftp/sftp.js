@@ -80,14 +80,18 @@
         transferQueues: {
             upload: {
                 processing: false,
+                resetToken: 0,
                 activeOperationId: null,
                 activeProgress: null,
+                activeJob: null,
                 pendingJobs: []
             },
             download: {
                 processing: false,
+                resetToken: 0,
                 activeOperationId: null,
                 activeProgress: null,
+                activeJob: null,
                 pendingJobs: []
             }
         },
@@ -237,6 +241,65 @@
         return `sftp-copy-${direction || 'transfer'}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     }
 
+    function buildTransferCancellationError(reason) {
+        const error = new Error(reason || 'Transfer cancelled.');
+        error.cancelled = true;
+        return error;
+    }
+
+    function isTransferCancelled(error) {
+        return Boolean(error && error.cancelled);
+    }
+
+    function getTransferErrorMessage(error, fallback) {
+        if (error instanceof Error && error.message) {
+            return error.message;
+        }
+        if (error && typeof error === 'object' && error.message) {
+            return String(error.message);
+        }
+        if (typeof error === 'string' && error) {
+            return error;
+        }
+        return fallback || 'Copy failed.';
+    }
+
+    function resolveTransferJob(job, result) {
+        if (!job || job.settled) return;
+        job.settled = true;
+        job.resolve(result);
+    }
+
+    function rejectTransferJob(job, error) {
+        if (!job || job.settled) return;
+        job.settled = true;
+        job.reject(error);
+    }
+
+    function clearTransferQueues(reason) {
+        ['upload', 'download'].forEach((direction) => {
+            const queue = getTransferQueue(direction);
+            if (!queue) return;
+            queue.resetToken += 1;
+
+            queue.pendingJobs.forEach((job) => {
+                rejectTransferJob(job, buildTransferCancellationError(reason));
+            });
+            queue.pendingJobs = [];
+
+            if (queue.activeJob) {
+                queue.activeJob.cancelled = true;
+                rejectTransferJob(queue.activeJob, buildTransferCancellationError(reason));
+            }
+
+            queue.processing = false;
+            queue.activeJob = null;
+            queue.activeOperationId = null;
+            queue.activeProgress = null;
+            renderTransferQueue(direction);
+        });
+    }
+
     function enqueueTransferOperation(direction, runner) {
         const queue = getTransferQueue(direction);
         if (!queue) {
@@ -250,7 +313,9 @@
                 operationId,
                 runner,
                 resolve,
-                reject
+                reject,
+                settled: false,
+                cancelled: false
             });
 
             renderTransferQueue(direction);
@@ -264,11 +329,13 @@
         const queue = getTransferQueue(direction);
         if (!queue || queue.processing) return;
 
+        const runToken = queue.resetToken;
         queue.processing = true;
 
         try {
-            while (queue.pendingJobs.length) {
+            while (queue.pendingJobs.length && queue.resetToken === runToken) {
                 const job = queue.pendingJobs.shift();
+                queue.activeJob = job;
                 queue.activeOperationId = job.operationId;
                 queue.activeProgress = {
                     direction,
@@ -279,18 +346,32 @@
 
                 try {
                     const result = await job.runner(job.operationId);
-                    job.resolve(result);
+                    if (!job.cancelled) {
+                        resolveTransferJob(job, result);
+                    }
                 } catch (err) {
-                    job.reject(err);
+                    if (!job.cancelled) {
+                        rejectTransferJob(
+                            job,
+                            err instanceof Error
+                                ? err
+                                : new Error(getTransferErrorMessage(err, 'Copy failed.'))
+                        );
+                    }
                 } finally {
-                    queue.activeOperationId = null;
-                    queue.activeProgress = null;
-                    renderTransferQueue(direction);
+                    if (queue.resetToken === runToken) {
+                        queue.activeJob = null;
+                        queue.activeOperationId = null;
+                        queue.activeProgress = null;
+                        renderTransferQueue(direction);
+                    }
                 }
             }
         } finally {
-            queue.processing = false;
-            renderTransferQueue(direction);
+            if (queue.resetToken === runToken) {
+                queue.processing = false;
+                renderTransferQueue(direction);
+            }
         }
     }
 
@@ -1000,6 +1081,7 @@
         pane.entries = [];
         clearPaneSelection(pane);
         pane.loading = false;
+        clearTransferQueues('Transfers cancelled due to disconnect.');
 
         renderPane(key);
 
@@ -1316,12 +1398,21 @@
             });
         };
 
-        const result = transferDirection
-            ? await enqueueTransferOperation(transferDirection, runCopy)
-            : await runCopy(null);
+        let result = null;
+        try {
+            result = transferDirection
+                ? await enqueueTransferOperation(transferDirection, runCopy)
+                : await runCopy(null);
+        } catch (err) {
+            if (isTransferCancelled(err)) {
+                return false;
+            }
+            setStatus(getTransferErrorMessage(err, 'Copy failed.'), 'error');
+            return false;
+        }
 
         if (!result || result.success === false) {
-            setStatus(result && result.message ? result.message : 'Copy failed.', 'error');
+            setStatus(getTransferErrorMessage(result, 'Copy failed.'), 'error');
             return false;
         }
 
