@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Termix</string>
+    <string name="title_activity_main">Termix</string>
+    <string name="package_name">com.Termix.app</string>
+    <string name="custom_url_scheme">com.Termix.app</string>
+</resources>
