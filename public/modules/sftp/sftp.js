@@ -14,10 +14,18 @@
     const ui = {
         status: document.getElementById('sftp-global-status'),
         transferProgress: {
-            root: document.getElementById('sftp-transfer-progress'),
-            label: document.getElementById('sftp-transfer-progress-label'),
-            text: document.getElementById('sftp-transfer-progress-text'),
-            fill: document.getElementById('sftp-transfer-progress-fill')
+            upload: {
+                root: document.getElementById('sftp-transfer-progress-upload'),
+                label: document.getElementById('sftp-transfer-progress-label-upload'),
+                text: document.getElementById('sftp-transfer-progress-text-upload'),
+                fill: document.getElementById('sftp-transfer-progress-fill-upload')
+            },
+            download: {
+                root: document.getElementById('sftp-transfer-progress-download'),
+                label: document.getElementById('sftp-transfer-progress-label-download'),
+                text: document.getElementById('sftp-transfer-progress-text-download'),
+                fill: document.getElementById('sftp-transfer-progress-fill-download')
+            }
         },
         contextMenu: document.getElementById('sftp-context-menu'),
         renameOverlay: document.getElementById('sftp-rename-overlay'),
@@ -69,8 +77,19 @@
             targetPath: null,
             directoryPath: null
         },
-        transferProgress: {
-            operationId: null
+        transferQueues: {
+            upload: {
+                processing: false,
+                activeOperationId: null,
+                activeProgress: null,
+                pendingJobs: []
+            },
+            download: {
+                processing: false,
+                activeOperationId: null,
+                activeProgress: null,
+                pendingJobs: []
+            }
         },
         renamePrompt: {
             resolver: null,
@@ -155,49 +174,124 @@
         return Math.max(0, Math.min(100, Number(value)));
     }
 
-    function resetTransferProgress() {
-        state.transferProgress.operationId = null;
+    function getTransferQueue(direction) {
+        return state.transferQueues && state.transferQueues[direction]
+            ? state.transferQueues[direction]
+            : null;
+    }
 
-        if (ui.transferProgress.root) {
-            ui.transferProgress.root.hidden = true;
+    function getTransferUi(direction) {
+        return ui.transferProgress && ui.transferProgress[direction]
+            ? ui.transferProgress[direction]
+            : null;
+    }
+
+    function getTransferDirectionLabel(direction) {
+        if (direction === 'upload') return 'Uploading';
+        if (direction === 'download') return 'Downloading';
+        return 'Transferring';
+    }
+
+    function renderTransferQueue(direction) {
+        const queue = getTransferQueue(direction);
+        const transferUi = getTransferUi(direction);
+        if (!queue || !transferUi || !transferUi.root) return;
+
+        const pendingCount = queue.pendingJobs.length;
+        const activeProgress = queue.activeProgress;
+        const hasVisibleState = Boolean(activeProgress) || pendingCount > 0;
+
+        transferUi.root.hidden = !hasVisibleState;
+        if (!hasVisibleState) {
+            if (transferUi.label) {
+                transferUi.label.textContent = `${getTransferDirectionLabel(direction)}...`;
+            }
+            if (transferUi.text) {
+                transferUi.text.textContent = '0%';
+            }
+            if (transferUi.fill) {
+                transferUi.fill.style.width = '0%';
+            }
+            return;
         }
-        if (ui.transferProgress.label) {
-            ui.transferProgress.label.textContent = 'Uploading...';
+
+        const percent = clampPercent(activeProgress && activeProgress.percent);
+        const currentItemName = String(activeProgress && activeProgress.currentItemName ? activeProgress.currentItemName : '').trim();
+        const directionLabel = getTransferDirectionLabel(direction);
+        const queueSuffix = pendingCount > 0 ? ` (${pendingCount} queued)` : '';
+
+        if (transferUi.label) {
+            transferUi.label.textContent = currentItemName
+                ? `${directionLabel}: ${currentItemName}${queueSuffix}`
+                : `${directionLabel}${queueSuffix}`;
         }
-        if (ui.transferProgress.text) {
-            ui.transferProgress.text.textContent = '0%';
+        if (transferUi.text) {
+            transferUi.text.textContent = `${Math.round(percent)}%`;
         }
-        if (ui.transferProgress.fill) {
-            ui.transferProgress.fill.style.width = '0%';
+        if (transferUi.fill) {
+            transferUi.fill.style.width = `${percent}%`;
         }
     }
 
-    function renderTransferProgress(payload = {}) {
-        if (!ui.transferProgress.root) return;
-
-        const percent = clampPercent(payload.percent);
-        const direction = payload.direction === 'download'
-            ? 'Downloading'
-            : (payload.direction === 'upload' ? 'Uploading' : 'Transferring');
-        const currentItemName = String(payload.currentItemName || '').trim();
-
-        ui.transferProgress.root.hidden = false;
-
-        if (ui.transferProgress.label) {
-            ui.transferProgress.label.textContent = currentItemName
-                ? `${direction}: ${currentItemName}`
-                : direction;
-        }
-        if (ui.transferProgress.text) {
-            ui.transferProgress.text.textContent = `${Math.round(percent)}%`;
-        }
-        if (ui.transferProgress.fill) {
-            ui.transferProgress.fill.style.width = `${percent}%`;
-        }
+    function createTransferOperationId(direction) {
+        return `sftp-copy-${direction || 'transfer'}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     }
 
-    function createTransferOperationId() {
-        return `sftp-copy-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    function enqueueTransferOperation(direction, runner) {
+        const queue = getTransferQueue(direction);
+        if (!queue) {
+            return Promise.reject(new Error(`Unknown transfer direction: ${direction}`));
+        }
+
+        const operationId = createTransferOperationId(direction);
+
+        return new Promise((resolve, reject) => {
+            queue.pendingJobs.push({
+                operationId,
+                runner,
+                resolve,
+                reject
+            });
+
+            renderTransferQueue(direction);
+            processTransferQueue(direction).catch((err) => {
+                console.error(`Failed to process ${direction} transfer queue:`, err);
+            });
+        });
+    }
+
+    async function processTransferQueue(direction) {
+        const queue = getTransferQueue(direction);
+        if (!queue || queue.processing) return;
+
+        queue.processing = true;
+
+        try {
+            while (queue.pendingJobs.length) {
+                const job = queue.pendingJobs.shift();
+                queue.activeOperationId = job.operationId;
+                queue.activeProgress = {
+                    direction,
+                    percent: 0,
+                    currentItemName: ''
+                };
+                renderTransferQueue(direction);
+
+                try {
+                    const result = await job.runner(job.operationId);
+                    job.resolve(result);
+                } catch (err) {
+                    job.reject(err);
+                } finally {
+                    queue.activeOperationId = null;
+                    queue.activeProgress = null;
+                    renderTransferQueue(direction);
+                }
+            }
+        } finally {
+            queue.processing = false;
+            renderTransferQueue(direction);
+        }
     }
 
     function getFileExtension(name) {
@@ -1206,23 +1300,12 @@
             sourceSessionId = sourcePane.sessionId;
         }
 
-        const isTransferOperation = (
-            (copyPayload.sourceSide === 'local' && destinationSide === 'remote')
-            || (copyPayload.sourceSide === 'remote' && destinationSide === 'local')
-        );
-        const operationId = isTransferOperation ? createTransferOperationId() : null;
+        const transferDirection = copyPayload.sourceSide === 'local' && destinationSide === 'remote'
+            ? 'upload'
+            : (copyPayload.sourceSide === 'remote' && destinationSide === 'local' ? 'download' : null);
 
-        if (operationId) {
-            state.transferProgress.operationId = operationId;
-            renderTransferProgress({
-                direction: copyPayload.sourceSide === 'local' ? 'upload' : 'download',
-                percent: 0
-            });
-        }
-
-        let result = null;
-        try {
-            result = await sftpApi.copyItems({
+        const runCopy = async (operationId = null) => {
+            return sftpApi.copyItems({
                 sourceSide: copyPayload.sourceSide,
                 destinationSide,
                 sourceSessionId,
@@ -1231,11 +1314,11 @@
                 items: copyPayload.items,
                 operationId
             });
-        } finally {
-            if (operationId && state.transferProgress.operationId === operationId) {
-                resetTransferProgress();
-            }
-        }
+        };
+
+        const result = transferDirection
+            ? await enqueueTransferOperation(transferDirection, runCopy)
+            : await runCopy(null);
 
         if (!result || result.success === false) {
             setStatus(result && result.message ? result.message : 'Copy failed.', 'error');
@@ -2427,9 +2510,13 @@
         }
 
         window.__termixSftpCopyProgressHandler = (payload) => {
-            if (!payload || !payload.operationId) return;
-            if (payload.operationId !== state.transferProgress.operationId) return;
-            renderTransferProgress(payload);
+            if (!payload || !payload.operationId || !payload.direction) return;
+            const queue = getTransferQueue(payload.direction);
+            if (!queue || payload.operationId !== queue.activeOperationId) return;
+            queue.activeProgress = {
+                ...payload
+            };
+            renderTransferQueue(payload.direction);
         };
     }
 
