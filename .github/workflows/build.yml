@@ -5,8 +5,29 @@ on:
 
 permissions:
   contents: write
+  security-events: write
 
 jobs:
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:javascript-typescript"
+
   audit:
     runs-on: ubuntu-latest
     steps:
@@ -30,7 +51,7 @@ jobs:
 
   build:
     runs-on: ${{ matrix.os }}
-    needs: audit
+    needs: [audit, codeql]
 
     strategy:
       fail-fast: true
@@ -83,7 +104,7 @@ jobs:
 
   android:
     runs-on: ubuntu-latest
-    needs: [audit, build]
+    needs: [audit, codeql]
 
     env:
       BUILD_VERSION: 1.0.${{ github.run_number }}
@@ -149,7 +170,7 @@ jobs:
           path: android-out/Termix-*.apk
 
   release:
-    needs: [audit, build, android]
+    needs: [build, android]
     runs-on: ubuntu-latest
 
     env:
