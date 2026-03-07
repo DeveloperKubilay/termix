@@ -44,6 +44,16 @@ dependencies {
     implementation 'com.jcraft:jsch:0.1.55'
 }
 
+// Override compileOptions via postBuildExtras so this survives "capacitor update" regeneration
+ext.postBuildExtras = {
+    android {
+        compileOptions {
+            sourceCompatibility JavaVersion.VERSION_21
+            targetCompatibility JavaVersion.VERSION_21
+        }
+    }
+}
+
 apply from: 'capacitor.build.gradle'
 
 try {
