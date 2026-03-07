@@ -27,6 +27,7 @@
     const updateProgressText = document.getElementById('update-progress-text');
     const btnCheckUpdate = document.getElementById('btn-check-update');
     const btnInstallUpdate = document.getElementById('btn-install-update');
+    const btnOpenSourceCode = document.getElementById('btn-open-source-code');
 
     let activeCloudProvider = null;
     let activeProfileId = null;
@@ -447,6 +448,16 @@
             window.notifyUser('Failed to install update: ' + err.message, 'error');
         }
     });
+
+    if (btnOpenSourceCode) {
+        btnOpenSourceCode.addEventListener('click', async () => {
+            try {
+                await window.electronAPI.settings.openSourceCode();
+            } catch (err) {
+                window.notifyUser('Failed to open source code link: ' + err.message, 'error');
+            }
+        });
+    }
 
     document.getElementById('btn-save-settings').addEventListener('click', async function () {
         const btn = this;

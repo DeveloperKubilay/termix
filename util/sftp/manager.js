@@ -514,6 +514,147 @@ function sftpFastGet(sftp, remotePath, localPath) {
     });
 }
 
+function copyLocalFileToRemoteWithProgress(sftp, sourcePath, destinationPath, onChunk) {
+    return new Promise((resolve, reject) => {
+        const readStream = fs.createReadStream(sourcePath);
+        const writeStream = sftp.createWriteStream(destinationPath, { flags: 'w' });
+        let settled = false;
+
+        const finish = (err) => {
+            if (settled) return;
+            settled = true;
+
+            if (err) {
+                try { readStream.destroy(); } catch (_) {}
+                try { writeStream.destroy(); } catch (_) {}
+                reject(err);
+                return;
+            }
+
+            resolve();
+        };
+
+        readStream.on('data', (chunk) => {
+            if (typeof onChunk === 'function') {
+                onChunk(Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk));
+            }
+        });
+        readStream.on('error', finish);
+        writeStream.on('error', finish);
+        writeStream.on('finish', () => finish());
+        readStream.pipe(writeStream);
+    });
+}
+
+function copyRemoteFileToLocalWithProgress(sftp, sourcePath, destinationPath, onChunk) {
+    return new Promise((resolve, reject) => {
+        const readStream = sftp.createReadStream(sourcePath);
+        const writeStream = fs.createWriteStream(destinationPath);
+        let settled = false;
+
+        const finish = (err) => {
+            if (settled) return;
+            settled = true;
+
+            if (err) {
+                try { readStream.destroy(); } catch (_) {}
+                try { writeStream.destroy(); } catch (_) {}
+                reject(err);
+                return;
+            }
+
+            resolve();
+        };
+
+        readStream.on('data', (chunk) => {
+            if (typeof onChunk === 'function') {
+                onChunk(Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk));
+            }
+        });
+        readStream.on('error', finish);
+        writeStream.on('error', finish);
+        writeStream.on('finish', () => finish());
+        readStream.pipe(writeStream);
+    });
+}
+
+async function getLocalItemSize(targetPath) {
+    const stats = await fs.promises.stat(targetPath);
+    if (!stats.isDirectory()) {
+        return Number(stats.size || 0);
+    }
+
+    let total = 0;
+    const entries = await fs.promises.readdir(targetPath, { withFileTypes: true });
+    for (const entry of entries) {
+        total += await getLocalItemSize(path.join(targetPath, entry.name));
+    }
+    return total;
+}
+
+async function getRemoteItemSize(sftp, targetPath) {
+    const stats = await sftpStat(sftp, targetPath);
+    if (!attrsIsDirectory(stats)) {
+        return Number(stats.size || 0);
+    }
+
+    let total = 0;
+    const entries = await sftpReaddir(sftp, targetPath);
+    for (const entry of entries) {
+        const name = entry && entry.filename ? entry.filename : null;
+        if (!name || name === '.' || name === '..') continue;
+        total += await getRemoteItemSize(sftp, path.posix.join(targetPath, name));
+    }
+    return total;
+}
+
+function createCopyProgressReporter({ operationId, direction, totalBytes, onProgress }) {
+    if (!operationId || (direction !== 'upload' && direction !== 'download') || typeof onProgress !== 'function') {
+        return null;
+    }
+
+    const total = Math.max(0, Number(totalBytes || 0));
+    let transferred = 0;
+    let lastSentAt = 0;
+
+    const emit = (currentItemName, force) => {
+        const now = Date.now();
+        if (!force && now - lastSentAt < 80) {
+            return;
+        }
+
+        lastSentAt = now;
+        onProgress({
+            operationId,
+            direction,
+            totalBytes: total,
+            transferredBytes: transferred,
+            currentItemName,
+            percent: force && total === 0
+                ? 100
+                : (total > 0 ? (transferred / total) * 100 : 0)
+        });
+    };
+
+    emit('', true);
+
+    return {
+        advance(bytes, currentItemName) {
+            transferred += Math.max(0, Number(bytes || 0));
+            if (total > 0 && transferred > total) {
+                transferred = total;
+            }
+            emit(currentItemName, false);
+        },
+        complete(currentItemName) {
+            if (total > 0) {
+                transferred = total;
+            }
+            emit(currentItemName, true);
+        }
+    };
+}
+
 async function remoteExists(sftp, targetPath) {
     try {
         await sftpStat(sftp, targetPath);
@@ -642,7 +783,7 @@ async function copyLocalPath(sourcePath, destinationPath) {
     await fs.promises.copyFile(sourcePath, destinationPath);
 }
 
-async function copyLocalToRemote(sftp, sourcePath, destinationPath) {
+async function copyLocalToRemote(sftp, sourcePath, destinationPath, progressReporter = null) {
     const stats = await fs.promises.stat(sourcePath);
 
     if (stats.isDirectory()) {
@@ -652,17 +793,22 @@ async function copyLocalToRemote(sftp, sourcePath, destinationPath) {
             await copyLocalToRemote(
                 sftp,
                 path.join(sourcePath, child),
-                path.posix.join(destinationPath, child)
+                path.posix.join(destinationPath, child),
+                progressReporter
             );
         }
         return;
     }
 
     await ensureRemoteDir(sftp, path.posix.dirname(destinationPath));
-    await sftpFastPut(sftp, sourcePath, destinationPath);
+    await copyLocalFileToRemoteWithProgress(sftp, sourcePath, destinationPath, (bytes) => {
+        if (progressReporter) {
+            progressReporter.advance(bytes, path.basename(sourcePath));
+        }
+    });
 }
 
-async function copyRemoteToLocal(sftp, sourcePath, destinationPath) {
+async function copyRemoteToLocal(sftp, sourcePath, destinationPath, progressReporter = null) {
     const stats = await sftpStat(sftp, sourcePath);
 
     if (attrsIsDirectory(stats)) {
@@ -674,14 +820,19 @@ async function copyRemoteToLocal(sftp, sourcePath, destinationPath) {
             await copyRemoteToLocal(
                 sftp,
                 path.posix.join(sourcePath, name),
-                path.join(destinationPath, name)
+                path.join(destinationPath, name),
+                progressReporter
             );
         }
         return;
     }
 
     await fs.promises.mkdir(path.dirname(destinationPath), { recursive: true });
-    await sftpFastGet(sftp, sourcePath, destinationPath);
+    await copyRemoteFileToLocalWithProgress(sftp, sourcePath, destinationPath, (bytes) => {
+        if (progressReporter) {
+            progressReporter.advance(bytes, path.posix.basename(sourcePath));
+        }
+    });
 }
 
 function copyRemoteFileViaStream(sftp, sourcePath, destinationPath) {
@@ -1461,7 +1612,7 @@ async function renameItem(payload = {}) {
     }
 }
 
-async function copyItems(payload = {}) {
+async function copyItems(payload = {}, onProgress = null) {
     try {
         const sourceSide = normalizeSide(payload.sourceSide);
         const destinationSide = normalizeSide(payload.destinationSide);
@@ -1548,6 +1699,27 @@ async function copyItems(payload = {}) {
             );
         }
 
+        let progressReporter = null;
+        const progressDirection = sourceSide === 'local' && destinationSide === 'remote'
+            ? 'upload'
+            : (sourceSide === 'remote' && destinationSide === 'local' ? 'download' : null);
+
+        if (progressDirection) {
+            let totalBytes = 0;
+            for (const item of normalizedItems) {
+                totalBytes += sourceSide === 'local'
+                    ? await getLocalItemSize(item.path)
+                    : await getRemoteItemSize(sourceSession.sftp, item.path);
+            }
+
+            progressReporter = createCopyProgressReporter({
+                operationId: payload.operationId,
+                direction: progressDirection,
+                totalBytes,
+                onProgress
+            });
+        }
+
         let copiedCount = 0;
 
         try {
@@ -1581,9 +1753,9 @@ async function copyItems(payload = {}) {
                     }
                     await copyLocalPath(sourcePath, targetPath);
                 } else if (sourceSide === 'local' && destinationSide === 'remote') {
-                    await copyLocalToRemote(destinationSession.sftp, sourcePath, targetPath);
+                    await copyLocalToRemote(destinationSession.sftp, sourcePath, targetPath, progressReporter);
                 } else if (sourceSide === 'remote' && destinationSide === 'local') {
-                    await copyRemoteToLocal(sourceSession.sftp, sourcePath, targetPath);
+                    await copyRemoteToLocal(sourceSession.sftp, sourcePath, targetPath, progressReporter);
                 } else {
                     if (resolvedIsDirectory && isNestedRemotePath(sourcePath, targetPath) && !isCrossSessionRemoteCopy) {
                         throw new Error(`Cannot copy folder into itself: ${sourcePath}`);
@@ -1608,6 +1780,10 @@ async function copyItems(payload = {}) {
             if (crossSessionTempRoot) {
                 await removeLocalPath(crossSessionTempRoot);
             }
+        }
+
+        if (progressReporter) {
+            progressReporter.complete('');
         }
 
         return {
