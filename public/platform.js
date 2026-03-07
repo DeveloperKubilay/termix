@@ -317,6 +317,11 @@
                                         new Error('GitHub API rate limit exceeded. Try again later.')
                                     );
                                 }
+                                if (!r.ok) {
+                                    return Promise.reject(
+                                        new Error('GitHub API error: HTTP ' + r.status)
+                                    );
+                                }
                                 return r.json();
                             })
                             .then(function (release) {
