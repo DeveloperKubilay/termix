@@ -13,6 +13,12 @@
 
     const ui = {
         status: document.getElementById('sftp-global-status'),
+        transferProgress: {
+            root: document.getElementById('sftp-transfer-progress'),
+            label: document.getElementById('sftp-transfer-progress-label'),
+            text: document.getElementById('sftp-transfer-progress-text'),
+            fill: document.getElementById('sftp-transfer-progress-fill')
+        },
         contextMenu: document.getElementById('sftp-context-menu'),
         renameOverlay: document.getElementById('sftp-rename-overlay'),
         renameTitle: document.getElementById('sftp-rename-title'),
@@ -62,6 +68,9 @@
             paneKey: null,
             targetPath: null,
             directoryPath: null
+        },
+        transferProgress: {
+            operationId: null
         },
         renamePrompt: {
             resolver: null,
@@ -139,6 +148,54 @@
         const date = new Date(Number(value));
         if (Number.isNaN(date.getTime())) return '-';
         return date.toLocaleString();
+    }
+
+    function clampPercent(value) {
+        if (!Number.isFinite(Number(value))) return 0;
+        return Math.max(0, Math.min(100, Number(value)));
+    }
+
+    function resetTransferProgress() {
+        state.transferProgress.operationId = null;
+
+        if (ui.transferProgress.root) {
+            ui.transferProgress.root.hidden = true;
+        }
+        if (ui.transferProgress.label) {
+            ui.transferProgress.label.textContent = 'Uploading...';
+        }
+        if (ui.transferProgress.text) {
+            ui.transferProgress.text.textContent = '0%';
+        }
+        if (ui.transferProgress.fill) {
+            ui.transferProgress.fill.style.width = '0%';
+        }
+    }
+
+    function renderTransferProgress(payload = {}) {
+        if (!ui.transferProgress.root) return;
+
+        const percent = clampPercent(payload.percent);
+        const direction = payload.direction === 'download' ? 'Downloading' : 'Uploading';
+        const currentItemName = String(payload.currentItemName || '').trim();
+
+        ui.transferProgress.root.hidden = false;
+
+        if (ui.transferProgress.label) {
+            ui.transferProgress.label.textContent = currentItemName
+                ? `${direction}: ${currentItemName}`
+                : direction;
+        }
+        if (ui.transferProgress.text) {
+            ui.transferProgress.text.textContent = `${Math.round(percent)}%`;
+        }
+        if (ui.transferProgress.fill) {
+            ui.transferProgress.fill.style.width = `${percent}%`;
+        }
+    }
+
+    function createTransferOperationId() {
+        return `sftp-copy-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     }
 
     function getFileExtension(name) {
@@ -1147,14 +1204,36 @@
             sourceSessionId = sourcePane.sessionId;
         }
 
-        const result = await sftpApi.copyItems({
-            sourceSide: copyPayload.sourceSide,
-            destinationSide,
-            sourceSessionId,
-            destinationSessionId: destinationSide === 'remote' ? destinationPane.sessionId : null,
-            destinationPath,
-            items: copyPayload.items
-        });
+        const isTransferOperation = (
+            (copyPayload.sourceSide === 'local' && destinationSide === 'remote')
+            || (copyPayload.sourceSide === 'remote' && destinationSide === 'local')
+        );
+        const operationId = isTransferOperation ? createTransferOperationId() : null;
+
+        if (operationId) {
+            state.transferProgress.operationId = operationId;
+            renderTransferProgress({
+                direction: copyPayload.sourceSide === 'local' ? 'upload' : 'download',
+                percent: 0
+            });
+        }
+
+        let result = null;
+        try {
+            result = await sftpApi.copyItems({
+                sourceSide: copyPayload.sourceSide,
+                destinationSide,
+                sourceSessionId,
+                destinationSessionId: destinationSide === 'remote' ? destinationPane.sessionId : null,
+                destinationPath,
+                items: copyPayload.items,
+                operationId
+            });
+        } finally {
+            if (operationId && state.transferProgress.operationId === operationId) {
+                resetTransferProgress();
+            }
+        }
 
         if (!result || result.success === false) {
             setStatus(result && result.message ? result.message : 'Copy failed.', 'error');
@@ -1941,6 +2020,15 @@
             paneUi.root.addEventListener('mousedown', () => activatePane(key, false));
         }
 
+        if (paneUi.hostOverlay) {
+            paneUi.hostOverlay.addEventListener('click', async (event) => {
+                if (event.target !== paneUi.hostOverlay) return;
+                activatePane(key, false);
+                closeContextMenu();
+                await switchPaneMode(key, 'local');
+            });
+        }
+
         if (paneUi.modeSwitch) {
             paneUi.modeSwitch.addEventListener('click', async (event) => {
                 const button = event.target.closest('button[data-mode]');
@@ -2326,9 +2414,27 @@
         window.addEventListener('blur', blurHandle);
     }
 
+    function setupCopyProgressBridge() {
+        if (!window.__termixSftpCopyProgressBridgeReady) {
+            window.__termixSftpCopyProgressBridgeReady = true;
+            window.electronAPI.on('sftp:copy-progress', (event, payload) => {
+                if (typeof window.__termixSftpCopyProgressHandler === 'function') {
+                    window.__termixSftpCopyProgressHandler(payload);
+                }
+            });
+        }
+
+        window.__termixSftpCopyProgressHandler = (payload) => {
+            if (!payload || !payload.operationId) return;
+            if (payload.operationId !== state.transferProgress.operationId) return;
+            renderTransferProgress(payload);
+        };
+    }
+
     async function init() {
         paneKeys.forEach((key) => bindPaneEvents(key));
         bindContextMenuEvents();
+        setupCopyProgressBridge();
         bindGlobalShortcuts();
 
         activatePane('left', false);
