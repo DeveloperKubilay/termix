@@ -215,8 +215,8 @@
             return;
         }
 
-        const percent = clampPercent(activeProgress && activeProgress.percent);
-        const currentItemName = String(activeProgress && activeProgress.currentItemName ? activeProgress.currentItemName : '').trim();
+        const percent = clampPercent(activeProgress ? activeProgress.percent : 0);
+        const currentItemName = String((activeProgress && activeProgress.currentItemName) || '').trim();
         const directionLabel = getTransferDirectionLabel(direction);
         const queueSuffix = pendingCount > 0 ? ` (${pendingCount} queued)` : '';
 
