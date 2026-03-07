@@ -4,3 +4,8 @@ kubitdb.json
 files
 todo
 /profiles
+
+# Android build outputs (keep source, exclude generated)
+/www
+android/.idea
+android/local.properties
