@@ -13,6 +13,20 @@
 
     const ui = {
         status: document.getElementById('sftp-global-status'),
+        transferProgress: {
+            upload: {
+                root: document.getElementById('sftp-transfer-progress-upload'),
+                label: document.getElementById('sftp-transfer-progress-label-upload'),
+                text: document.getElementById('sftp-transfer-progress-text-upload'),
+                fill: document.getElementById('sftp-transfer-progress-fill-upload')
+            },
+            download: {
+                root: document.getElementById('sftp-transfer-progress-download'),
+                label: document.getElementById('sftp-transfer-progress-label-download'),
+                text: document.getElementById('sftp-transfer-progress-text-download'),
+                fill: document.getElementById('sftp-transfer-progress-fill-download')
+            }
+        },
         contextMenu: document.getElementById('sftp-context-menu'),
         renameOverlay: document.getElementById('sftp-rename-overlay'),
         renameTitle: document.getElementById('sftp-rename-title'),
@@ -62,6 +76,24 @@
             paneKey: null,
             targetPath: null,
             directoryPath: null
+        },
+        transferQueues: {
+            upload: {
+                processing: false,
+                resetToken: 0,
+                activeOperationId: null,
+                activeProgress: null,
+                activeJob: null,
+                pendingJobs: []
+            },
+            download: {
+                processing: false,
+                resetToken: 0,
+                activeOperationId: null,
+                activeProgress: null,
+                activeJob: null,
+                pendingJobs: []
+            }
         },
         renamePrompt: {
             resolver: null,
@@ -139,6 +171,208 @@
         const date = new Date(Number(value));
         if (Number.isNaN(date.getTime())) return '-';
         return date.toLocaleString();
+    }
+
+    function clampPercent(value) {
+        if (!Number.isFinite(Number(value))) return 0;
+        return Math.max(0, Math.min(100, Number(value)));
+    }
+
+    function getTransferQueue(direction) {
+        return state.transferQueues && state.transferQueues[direction]
+            ? state.transferQueues[direction]
+            : null;
+    }
+
+    function getTransferUi(direction) {
+        return ui.transferProgress && ui.transferProgress[direction]
+            ? ui.transferProgress[direction]
+            : null;
+    }
+
+    function getTransferDirectionLabel(direction) {
+        if (direction === 'upload') return 'Uploading';
+        if (direction === 'download') return 'Downloading';
+        return 'Transferring';
+    }
+
+    function renderTransferQueue(direction) {
+        const queue = getTransferQueue(direction);
+        const transferUi = getTransferUi(direction);
+        if (!queue || !transferUi || !transferUi.root) return;
+
+        const pendingCount = queue.pendingJobs.length;
+        const activeProgress = queue.activeProgress;
+        const hasVisibleState = Boolean(activeProgress) || pendingCount > 0;
+
+        transferUi.root.hidden = !hasVisibleState;
+        if (!hasVisibleState) {
+            if (transferUi.label) {
+                transferUi.label.textContent = `${getTransferDirectionLabel(direction)}...`;
+            }
+            if (transferUi.text) {
+                transferUi.text.textContent = '0%';
+            }
+            if (transferUi.fill) {
+                transferUi.fill.style.width = '0%';
+            }
+            return;
+        }
+
+        const percent = clampPercent(activeProgress ? activeProgress.percent : 0);
+        const currentItemName = String((activeProgress && activeProgress.currentItemName) || '').trim();
+        const directionLabel = getTransferDirectionLabel(direction);
+        const queueSuffix = pendingCount > 0 ? ` (${pendingCount} queued)` : '';
+
+        if (transferUi.label) {
+            transferUi.label.textContent = currentItemName
+                ? `${directionLabel}: ${currentItemName}${queueSuffix}`
+                : `${directionLabel}${queueSuffix}`;
+        }
+        if (transferUi.text) {
+            transferUi.text.textContent = `${Math.round(percent)}%`;
+        }
+        if (transferUi.fill) {
+            transferUi.fill.style.width = `${percent}%`;
+        }
+    }
+
+    function createTransferOperationId(direction) {
+        return `sftp-copy-${direction || 'transfer'}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    }
+
+    function buildTransferCancellationError(reason) {
+        const error = new Error(reason || 'Transfer cancelled.');
+        error.cancelled = true;
+        return error;
+    }
+
+    function isTransferCancelled(error) {
+        return Boolean(error && error.cancelled);
+    }
+
+    function getTransferErrorMessage(error, fallback) {
+        if (error instanceof Error && error.message) {
+            return error.message;
+        }
+        if (error && typeof error === 'object' && error.message) {
+            return String(error.message);
+        }
+        if (typeof error === 'string' && error) {
+            return error;
+        }
+        return fallback || 'Copy failed.';
+    }
+
+    function resolveTransferJob(job, result) {
+        if (!job || job.settled) return;
+        job.settled = true;
+        job.resolve(result);
+    }
+
+    function rejectTransferJob(job, error) {
+        if (!job || job.settled) return;
+        job.settled = true;
+        job.reject(error);
+    }
+
+    function clearTransferQueues(reason) {
+        ['upload', 'download'].forEach((direction) => {
+            const queue = getTransferQueue(direction);
+            if (!queue) return;
+            queue.resetToken += 1;
+
+            queue.pendingJobs.forEach((job) => {
+                rejectTransferJob(job, buildTransferCancellationError(reason));
+            });
+            queue.pendingJobs = [];
+
+            if (queue.activeJob) {
+                queue.activeJob.cancelled = true;
+                rejectTransferJob(queue.activeJob, buildTransferCancellationError(reason));
+            }
+
+            queue.processing = false;
+            queue.activeJob = null;
+            queue.activeOperationId = null;
+            queue.activeProgress = null;
+            renderTransferQueue(direction);
+        });
+    }
+
+    function enqueueTransferOperation(direction, runner) {
+        const queue = getTransferQueue(direction);
+        if (!queue) {
+            return Promise.reject(new Error(`Unknown transfer direction: ${direction}`));
+        }
+
+        const operationId = createTransferOperationId(direction);
+
+        return new Promise((resolve, reject) => {
+            queue.pendingJobs.push({
+                operationId,
+                runner,
+                resolve,
+                reject,
+                settled: false,
+                cancelled: false
+            });
+
+            renderTransferQueue(direction);
+            processTransferQueue(direction).catch((err) => {
+                console.error(`Failed to process ${direction} transfer queue:`, err);
+            });
+        });
+    }
+
+    async function processTransferQueue(direction) {
+        const queue = getTransferQueue(direction);
+        if (!queue || queue.processing) return;
+
+        const runToken = queue.resetToken;
+        queue.processing = true;
+
+        try {
+            while (queue.pendingJobs.length && queue.resetToken === runToken) {
+                const job = queue.pendingJobs.shift();
+                queue.activeJob = job;
+                queue.activeOperationId = job.operationId;
+                queue.activeProgress = {
+                    direction,
+                    percent: 0,
+                    currentItemName: ''
+                };
+                renderTransferQueue(direction);
+
+                try {
+                    const result = await job.runner(job.operationId);
+                    if (!job.cancelled) {
+                        resolveTransferJob(job, result);
+                    }
+                } catch (err) {
+                    if (!job.cancelled) {
+                        rejectTransferJob(
+                            job,
+                            err instanceof Error
+                                ? err
+                                : new Error(getTransferErrorMessage(err, 'Copy failed.'))
+                        );
+                    }
+                } finally {
+                    if (queue.resetToken === runToken) {
+                        queue.activeJob = null;
+                        queue.activeOperationId = null;
+                        queue.activeProgress = null;
+                        renderTransferQueue(direction);
+                    }
+                }
+            }
+        } finally {
+            if (queue.resetToken === runToken) {
+                queue.processing = false;
+                renderTransferQueue(direction);
+            }
+        }
     }
 
     function getFileExtension(name) {
@@ -847,6 +1081,7 @@
         pane.entries = [];
         clearPaneSelection(pane);
         pane.loading = false;
+        clearTransferQueues('Transfers cancelled due to disconnect.');
 
         renderPane(key);
 
@@ -1147,17 +1382,37 @@
             sourceSessionId = sourcePane.sessionId;
         }
 
-        const result = await sftpApi.copyItems({
-            sourceSide: copyPayload.sourceSide,
-            destinationSide,
-            sourceSessionId,
-            destinationSessionId: destinationSide === 'remote' ? destinationPane.sessionId : null,
-            destinationPath,
-            items: copyPayload.items
-        });
+        const transferDirection = copyPayload.sourceSide === 'local' && destinationSide === 'remote'
+            ? 'upload'
+            : (copyPayload.sourceSide === 'remote' && destinationSide === 'local' ? 'download' : null);
+
+        const runCopy = async (operationId = null) => {
+            return sftpApi.copyItems({
+                sourceSide: copyPayload.sourceSide,
+                destinationSide,
+                sourceSessionId,
+                destinationSessionId: destinationSide === 'remote' ? destinationPane.sessionId : null,
+                destinationPath,
+                items: copyPayload.items,
+                operationId
+            });
+        };
+
+        let result = null;
+        try {
+            result = transferDirection
+                ? await enqueueTransferOperation(transferDirection, runCopy)
+                : await runCopy(null);
+        } catch (err) {
+            if (isTransferCancelled(err)) {
+                return false;
+            }
+            setStatus(getTransferErrorMessage(err, 'Copy failed.'), 'error');
+            return false;
+        }
 
         if (!result || result.success === false) {
-            setStatus(result && result.message ? result.message : 'Copy failed.', 'error');
+            setStatus(getTransferErrorMessage(result, 'Copy failed.'), 'error');
             return false;
         }
 
@@ -1941,6 +2196,15 @@
             paneUi.root.addEventListener('mousedown', () => activatePane(key, false));
         }
 
+        if (paneUi.hostOverlay) {
+            paneUi.hostOverlay.addEventListener('click', async (event) => {
+                if (event.target !== paneUi.hostOverlay) return;
+                activatePane(key, false);
+                closeContextMenu();
+                await switchPaneMode(key, 'local');
+            });
+        }
+
         if (paneUi.modeSwitch) {
             paneUi.modeSwitch.addEventListener('click', async (event) => {
                 const button = event.target.closest('button[data-mode]');
@@ -2326,9 +2590,31 @@
         window.addEventListener('blur', blurHandle);
     }
 
+    function setupCopyProgressBridge() {
+        if (!window.__termixSftpCopyProgressBridgeReady) {
+            window.__termixSftpCopyProgressBridgeReady = true;
+            window.electronAPI.on('sftp:copy-progress', (event, payload) => {
+                if (typeof window.__termixSftpCopyProgressHandler === 'function') {
+                    window.__termixSftpCopyProgressHandler(payload);
+                }
+            });
+        }
+
+        window.__termixSftpCopyProgressHandler = (payload) => {
+            if (!payload || !payload.operationId || !payload.direction) return;
+            const queue = getTransferQueue(payload.direction);
+            if (!queue || payload.operationId !== queue.activeOperationId) return;
+            queue.activeProgress = {
+                ...payload
+            };
+            renderTransferQueue(payload.direction);
+        };
+    }
+
     async function init() {
         paneKeys.forEach((key) => bindPaneEvents(key));
         bindContextMenuEvents();
+        setupCopyProgressBridge();
         bindGlobalShortcuts();
 
         activatePane('left', false);
