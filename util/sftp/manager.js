@@ -609,7 +609,11 @@ async function getRemoteItemSize(sftp, targetPath) {
 }
 
 function createCopyProgressReporter({ operationId, direction, totalBytes, onProgress }) {
-    if (!operationId || (direction !== 'upload' && direction !== 'download') || typeof onProgress !== 'function') {
+    const hasValidOperationId = Boolean(operationId);
+    const hasValidDirection = direction === 'upload' || direction === 'download';
+    const hasProgressHandler = typeof onProgress === 'function';
+
+    if (!hasValidOperationId || !hasValidDirection || !hasProgressHandler) {
         return null;
     }
 

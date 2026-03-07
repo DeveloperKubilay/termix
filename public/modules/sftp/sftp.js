@@ -176,7 +176,9 @@
         if (!ui.transferProgress.root) return;
 
         const percent = clampPercent(payload.percent);
-        const direction = payload.direction === 'download' ? 'Downloading' : 'Uploading';
+        const direction = payload.direction === 'download'
+            ? 'Downloading'
+            : (payload.direction === 'upload' ? 'Uploading' : 'Transferring');
         const currentItemName = String(payload.currentItemName || '').trim();
 
         ui.transferProgress.root.hidden = false;
