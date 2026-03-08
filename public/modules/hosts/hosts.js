@@ -312,12 +312,16 @@
         tags.forEach(tag => {
             const label = document.createElement('label');
             label.className = 'tag-item';
-            label.innerHTML = `
-                <input type="checkbox" value="${tag}">
-                <span>${tag}</span>
-            `;
-            
-            const checkbox = label.querySelector('input');
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.value = tag;
+
+            const span = document.createElement('span');
+            span.textContent = tag;
+
+            label.appendChild(checkbox);
+            label.appendChild(span);
+
             checkbox.addEventListener('change', (e) => {
                 if (e.target.checked) {
                     selectedTags.add(tag);
@@ -414,6 +418,9 @@
 
             const editButton = document.createElement('button');
             editButton.className = 'btn-icon-only edit-host-btn';
+            editButton.type = 'button';
+            editButton.setAttribute('aria-label', 'Edit host');
+            editButton.title = 'Edit host';
             editButton.style.background = '#313244';
             editButton.style.border = '1px solid #45475a';
             editButton.style.color = '#a6adc8';
