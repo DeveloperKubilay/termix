@@ -654,7 +654,7 @@
                     
                     if (filtered.length === 0 && filter) {
                         const item = document.createElement('div');
-                        item.innerHTML = `Create "${filter}"`;
+                        item.textContent = 'Create "' + filter + '"';
                         item.style.cssText = 'padding: 10px 12px; color: #89b4fa; cursor: pointer; font-size: 14px; display: flex; align-items: center; transition: background 0.2s;';
                         item.addEventListener('click', () => {
                             tagsInput.value = filter;
