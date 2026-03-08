@@ -312,12 +312,16 @@
         tags.forEach(tag => {
             const label = document.createElement('label');
             label.className = 'tag-item';
-            label.innerHTML = `
-                <input type="checkbox" value="${tag}">
-                <span>${tag}</span>
-            `;
-            
-            const checkbox = label.querySelector('input');
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.value = tag;
+
+            const span = document.createElement('span');
+            span.textContent = tag;
+
+            label.appendChild(checkbox);
+            label.appendChild(span);
+
             checkbox.addEventListener('change', (e) => {
                 if (e.target.checked) {
                     selectedTags.add(tag);
@@ -375,20 +379,65 @@
                 detailsText += `, ${host.tags.join(', ')}`;
             }
 
-            card.innerHTML = `
-                <div class="host-icon" style="background-color: ${hostColor}">
-                    <i class="${hostIcon}"></i>
-                </div>
-                <div class="host-info">
-                    <div class="host-name">${host.name}</div>
-                    <div class="host-details">${detailsText}</div>
-                </div>
-                <div class="host-actions" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: none;">
-                    <button class="btn-icon-only edit-host-btn" style="background: #313244; border: 1px solid #45475a; color: #a6adc8; cursor: pointer; padding: 10px; border-radius: 6px; transition: all 0.2s;">
-                        <i class="fa-solid fa-pen"></i>
-                    </button>
-                </div>
-            `;
+            // Build card content using DOM APIs to avoid interpreting user data as HTML
+            const hostIconDiv = document.createElement('div');
+            hostIconDiv.className = 'host-icon';
+            hostIconDiv.style.backgroundColor = hostColor;
+
+            const iconElement = document.createElement('i');
+            if (typeof hostIcon === 'string') {
+                hostIcon.split(/\s+/).forEach(cls => {
+                    if (cls) {
+                        iconElement.classList.add(cls);
+                    }
+                });
+            }
+            hostIconDiv.appendChild(iconElement);
+
+            const hostInfoDiv = document.createElement('div');
+            hostInfoDiv.className = 'host-info';
+
+            const hostNameDiv = document.createElement('div');
+            hostNameDiv.className = 'host-name';
+            hostNameDiv.textContent = host.name;
+
+            const hostDetailsDiv = document.createElement('div');
+            hostDetailsDiv.className = 'host-details';
+            hostDetailsDiv.textContent = detailsText;
+
+            hostInfoDiv.appendChild(hostNameDiv);
+            hostInfoDiv.appendChild(hostDetailsDiv);
+
+            const hostActionsDiv = document.createElement('div');
+            hostActionsDiv.className = 'host-actions';
+            hostActionsDiv.style.position = 'absolute';
+            hostActionsDiv.style.right = '10px';
+            hostActionsDiv.style.top = '50%';
+            hostActionsDiv.style.transform = 'translateY(-50%)';
+            hostActionsDiv.style.display = 'none';
+
+            const editButton = document.createElement('button');
+            editButton.className = 'btn-icon-only edit-host-btn';
+            editButton.type = 'button';
+            editButton.setAttribute('aria-label', 'Edit host');
+            editButton.title = 'Edit host';
+            editButton.style.background = '#313244';
+            editButton.style.border = '1px solid #45475a';
+            editButton.style.color = '#a6adc8';
+            editButton.style.cursor = 'pointer';
+            editButton.style.padding = '10px';
+            editButton.style.borderRadius = '6px';
+            editButton.style.transition = 'all 0.2s';
+
+            const editIcon = document.createElement('i');
+            editIcon.classList.add('fa-solid', 'fa-pen');
+            editButton.appendChild(editIcon);
+
+            hostActionsDiv.appendChild(editButton);
+
+            card.appendChild(hostIconDiv);
+            card.appendChild(hostInfoDiv);
+            card.appendChild(hostActionsDiv);
             
             card.addEventListener('mouseenter', () => {
                 const actions = card.querySelector('.host-actions');
