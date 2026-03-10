@@ -235,7 +235,11 @@ module.exports = (data) => {
                         'aes128-ctr',
                         'aes192-ctr',
                         'aes256-ctr',
-                        'aes128-gcm'
+                        'aes128-gcm',
+                        'aes256-gcm',
+                        'aes128-cbc',
+                        'aes256-cbc',
+                        '3des-cbc'
                     ]
                 }
             };

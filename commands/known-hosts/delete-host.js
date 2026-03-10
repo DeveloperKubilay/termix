@@ -1,6 +1,6 @@
 const db = require('../../util/profile-db');
 
-module.exports = (filesPath, targetHost) => {
+module.exports = (_, targetHost) => {
     try {
         let hosts = db.get("knownHosts");
         if (!Array.isArray(hosts)) return { success: false, message: "No hosts found" };
