@@ -650,8 +650,8 @@ const TabManager = {
 
         const tab = {
             id: id,
-            title: options.title || 'New Tab',
-            icon: options.icon || 'fa-solid fa-terminal',
+            title: String(options.title || 'New Tab'),
+            icon: String(options.icon || 'fa-solid fa-terminal'),
             contentId: options.contentId,
             closable: options.closable !== false
         };
@@ -666,11 +666,30 @@ const TabManager = {
         tabEl.className = 'tab';
         tabEl.dataset.id = id;
         tabEl.draggable = true;
-        tabEl.innerHTML = `
-            <i class="tab-icon ${tab.icon}"></i>
-            <span class="tab-title">${tab.title}</span>
-            ${tab.closable ? '<i class="tab-close fa-solid fa-xmark"></i>' : ''}
-        `;
+
+        const iconEl = document.createElement('i');
+        iconEl.classList.add('tab-icon');
+        tab.icon.split(/\s+/).forEach((className) => {
+            if (/^[a-z0-9_-]+$/i.test(className)) {
+                iconEl.classList.add(className);
+            }
+        });
+        if (iconEl.classList.length === 1) {
+            iconEl.classList.add('fa-solid', 'fa-terminal');
+        }
+
+        const titleEl = document.createElement('span');
+        titleEl.className = 'tab-title';
+        titleEl.textContent = tab.title;
+
+        tabEl.appendChild(iconEl);
+        tabEl.appendChild(titleEl);
+
+        if (tab.closable) {
+            const closeEl = document.createElement('i');
+            closeEl.className = 'tab-close fa-solid fa-xmark';
+            tabEl.appendChild(closeEl);
+        }
 
         // Drag and Drop Events
         tabEl.addEventListener('dragstart', (e) => {
