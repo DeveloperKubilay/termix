@@ -58,6 +58,7 @@
     "ssh2": "^1.15.0",
     "xterm": "^5.3.0",
     "xterm-addon-fit": "^0.8.0",
+    "xterm-addon-unicode11": "^0.6.0",
     "xterm-addon-webgl": "^0.16.0"
   },
   "optionalDependencies": {
