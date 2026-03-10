@@ -722,13 +722,33 @@ const TabManager = {
         if (!this.sidebar) return;
 
         const shouldCollapse = id !== 'dashboard';
+        const isCurrentlyCollapsed = this.sidebar.classList.contains('collapsed');
 
-        if (shouldCollapse) {
-            this.sidebar.classList.add('collapsed');
-            if (this.sidebarToggle) this.sidebarToggle.style.display = 'flex';
+        if (shouldCollapse !== isCurrentlyCollapsed) {
+            if (shouldCollapse) {
+                // Disable transition when collapsing to prevent xterm resize flicker
+                this.sidebar.style.transition = 'none';
+                this.sidebar.classList.add('collapsed');
+                if (this.sidebarToggle) this.sidebarToggle.style.display = 'flex';
+
+                // Force reflow
+                void this.sidebar.offsetWidth;
+
+                // Re-enable transition for manual toggles
+                requestAnimationFrame(() => {
+                    this.sidebar.style.transition = '';
+                });
+            } else {
+                // Allow CSS transition when expanding back to Dashboard
+                this.sidebar.classList.remove('collapsed');
+                if (this.sidebarToggle) this.sidebarToggle.style.display = 'none';
+            }
         } else {
-            this.sidebar.classList.remove('collapsed');
-            if (this.sidebarToggle) this.sidebarToggle.style.display = 'none';
+            if (shouldCollapse) {
+                if (this.sidebarToggle) this.sidebarToggle.style.display = 'flex';
+            } else {
+                if (this.sidebarToggle) this.sidebarToggle.style.display = 'none';
+            }
         }
     },
 
@@ -744,10 +764,11 @@ const TabManager = {
             dashboardContent.classList.remove('dashboard-transition-hidden');
         }
 
-        // Keep sidebar animation, but delay dashboard paint until the layout transition settles.
+        // Delay dashboard reveal until sidebar transition finishes
         const shouldDelayDashboardPaint = id === 'dashboard'
             && this.sidebar
             && this.sidebar.classList.contains('collapsed');
+            
         if (shouldDelayDashboardPaint && dashboardContent) {
             dashboardContent.classList.add('dashboard-transition-hidden');
             this.dashboardRevealTimer = setTimeout(() => {

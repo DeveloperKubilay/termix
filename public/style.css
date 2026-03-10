@@ -311,7 +311,7 @@ body {
 
 .sidebar.collapsed {
     width: 0;
-    padding: 0;
+    padding: 10px 0 0 0;
     border-right: none;
     opacity: 0;
 }
@@ -1228,7 +1228,7 @@ body {
 
 :root[data-theme="modern"] .sidebar.collapsed {
     width: 0;
-    padding: 0;
+    padding: 12px 0 0 0;
     border-right: none;
     box-shadow: none;
     opacity: 0;
