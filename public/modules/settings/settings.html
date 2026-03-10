@@ -81,6 +81,21 @@
                 <p class="card-help">
                     <i class="fa-solid fa-circle-info"></i> Click X to delete tags from all hosts.
                 </p>
+                <div class="settings-inline-pref">
+                    <div class="settings-inline-pref-title">
+                        <i class="fa-solid fa-file-arrow-up"></i> File Transfer
+                    </div>
+                    <label class="settings-toggle-card" for="sftp-overwrite-confirm-toggle">
+                        <span class="switch">
+                            <input type="checkbox" id="sftp-overwrite-confirm-toggle" checked>
+                            <span class="slider"></span>
+                        </span>
+                        <span class="toggle-text">
+                            <span class="toggle-title">Ask before overwrite</span>
+                            <span class="toggle-subtitle">When a same-name file or folder exists, ask before replacing it. The SFTP dialog can turn this off with "Do not ask again".</span>
+                        </span>
+                    </label>
+                </div>
             </div>
 
             <div class="card settings-card">
@@ -331,6 +346,38 @@
         font-size: 0.85em;
         margin: 0;
         text-align: right;
+    }
+
+    .settings-inline-pref {
+        margin-top: 14px;
+        padding-top: 14px;
+        border-top: 1px solid rgba(137, 180, 250, 0.12);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .settings-inline-pref-title {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.88rem;
+        font-weight: 600;
+    }
+
+    .settings-inline-pref-title i {
+        color: var(--accent);
+    }
+
+    .settings-toggle-card {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: rgba(24, 24, 37, 0.45);
+        padding: 12px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        cursor: pointer;
     }
 
     .field-label {

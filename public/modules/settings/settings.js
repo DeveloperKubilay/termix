@@ -16,6 +16,7 @@
     const syncProviderName = document.getElementById('sync-provider-name');
     const syncProviderDescription = document.getElementById('sync-provider-description');
     const tagsList = document.getElementById('tags-list');
+    const sftpOverwriteConfirmToggle = document.getElementById('sftp-overwrite-confirm-toggle');
 
     const autoUpdateToggle = document.getElementById('auto-update-toggle');
     const updateCurrentVersion = document.getElementById('update-current-version');
@@ -300,6 +301,9 @@
             setDeletePanelVisible(false);
 
             renderTags(data.tags);
+            if (sftpOverwriteConfirmToggle) {
+                sftpOverwriteConfirmToggle.checked = !data.sftpSettings || data.sftpSettings.confirmOverwriteOnConflict !== false;
+            }
             await loadUpdateState(data.updateSettings && data.updateSettings.autoUpdateEnabled);
         } catch (err) {
             console.error('Failed to load settings:', err);
@@ -513,6 +517,11 @@
                 url: urlVal,
                 body,
                 headers
+            },
+            sftpSettings: {
+                confirmOverwriteOnConflict: sftpOverwriteConfirmToggle
+                    ? Boolean(sftpOverwriteConfirmToggle.checked)
+                    : true
             },
             uiTheme: selectedUiTheme
         };

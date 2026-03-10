@@ -209,8 +209,12 @@ const AppConfirm = {
     okBtn: null,
     cancelBtn: null,
     iconEl: null,
+    optionWrap: null,
+    optionInput: null,
+    optionTextEl: null,
     resolver: null,
     keyHandler: null,
+    returnDetails: false,
 
     init() {
         this.overlay = document.getElementById('app-confirm-overlay');
@@ -219,6 +223,9 @@ const AppConfirm = {
         this.okBtn = document.getElementById('app-confirm-ok');
         this.cancelBtn = document.getElementById('app-confirm-cancel');
         this.iconEl = document.getElementById('app-confirm-icon');
+        this.optionWrap = document.getElementById('app-confirm-option-wrap');
+        this.optionInput = document.getElementById('app-confirm-option-input');
+        this.optionTextEl = document.getElementById('app-confirm-option-text');
 
         if (!this.overlay || !this.okBtn || !this.cancelBtn) return;
 
@@ -232,6 +239,18 @@ const AppConfirm = {
         });
     },
 
+    resetOption() {
+        if (this.optionWrap) {
+            this.optionWrap.hidden = true;
+        }
+        if (this.optionInput) {
+            this.optionInput.checked = false;
+        }
+        if (this.optionTextEl) {
+            this.optionTextEl.textContent = '';
+        }
+    },
+
     close(value) {
         if (!this.overlay) return;
         this.overlay.classList.remove('show');
@@ -242,8 +261,17 @@ const AppConfirm = {
         }
 
         const pending = this.resolver;
+        const response = this.returnDetails
+            ? {
+                confirmed: Boolean(value),
+                checked: Boolean(this.optionInput && this.optionInput.checked)
+            }
+            : Boolean(value);
+
         this.resolver = null;
-        if (pending) pending(Boolean(value));
+        this.returnDetails = false;
+        this.resetOption();
+        if (pending) pending(response);
     },
 
     confirm(message, options = {}) {
@@ -264,11 +292,22 @@ const AppConfirm = {
         const okText = options.confirmText || 'Confirm';
         const cancelText = options.cancelText || 'Cancel';
         const tone = options.tone === 'danger' ? 'danger' : 'info';
+        const checkboxLabel = typeof options.checkboxLabel === 'string'
+            ? options.checkboxLabel.trim()
+            : '';
 
         this.titleEl.textContent = title;
         this.messageEl.textContent = text;
         this.okBtn.textContent = okText;
         this.cancelBtn.textContent = cancelText;
+        this.returnDetails = Boolean(options.returnDetails || checkboxLabel);
+
+        if (this.optionWrap && this.optionInput && this.optionTextEl) {
+            const showCheckbox = Boolean(checkboxLabel);
+            this.optionWrap.hidden = !showCheckbox;
+            this.optionInput.checked = showCheckbox ? Boolean(options.checkboxChecked) : false;
+            this.optionTextEl.textContent = checkboxLabel;
+        }
 
         this.okBtn.classList.remove('danger');
         if (tone === 'danger') {
@@ -307,6 +346,15 @@ window.confirmAction = (message, options = {}) => {
         return window.AppConfirm.confirm(message, options);
     }
     return Promise.resolve(false);
+};
+window.confirmActionWithOption = (message, options = {}) => {
+    if (window.AppConfirm && typeof window.AppConfirm.confirm === 'function') {
+        return window.AppConfirm.confirm(message, {
+            ...options,
+            returnDetails: true
+        });
+    }
+    return Promise.resolve({ confirmed: false, checked: false });
 };
 
 const ProfileManager = {
