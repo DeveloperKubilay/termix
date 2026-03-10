@@ -579,7 +579,16 @@ const TabManager = {
 
         if (this.sidebarToggle) {
             this.sidebarToggle.addEventListener('click', () => {
-                this.sidebar.classList.toggle('collapsed');
+                if (this.activeTabId !== 'dashboard') {
+                    // Instantly toggle the sidebar when on a terminal to prevent xterm jitter
+                    this.sidebar.style.transition = 'none';
+                    this.sidebar.classList.toggle('collapsed');
+                    // Force a reflow
+                    void this.sidebar.offsetWidth;
+                } else {
+                    this.sidebar.style.transition = '';
+                    this.sidebar.classList.toggle('collapsed');
+                }
             });
         }
         
@@ -740,6 +749,7 @@ const TabManager = {
                 });
             } else {
                 // Allow CSS transition when expanding back to Dashboard
+                this.sidebar.style.transition = '';
                 this.sidebar.classList.remove('collapsed');
                 if (this.sidebarToggle) this.sidebarToggle.style.display = 'none';
             }
