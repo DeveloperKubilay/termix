@@ -560,6 +560,7 @@ const TabManager = {
     sidebar: null,
     sidebarToggle: null,
     dashboardRevealTimer: null,
+    sidebarTransitionMs: 300,
 
     init() {
         this.tabBar = document.getElementById('tab-bar');
@@ -579,16 +580,9 @@ const TabManager = {
 
         if (this.sidebarToggle) {
             this.sidebarToggle.addEventListener('click', () => {
-                if (this.activeTabId !== 'dashboard') {
-                    // Instantly toggle the sidebar when on a terminal to prevent xterm jitter
-                    this.sidebar.style.transition = 'none';
-                    this.sidebar.classList.toggle('collapsed');
-                    // Force a reflow
-                    void this.sidebar.offsetWidth;
-                } else {
-                    this.sidebar.style.transition = '';
-                    this.sidebar.classList.toggle('collapsed');
-                }
+                if (!this.sidebar) return;
+                this.sidebar.style.transition = '';
+                this.sidebar.classList.toggle('collapsed');
             });
         }
         
@@ -784,7 +778,7 @@ const TabManager = {
             this.dashboardRevealTimer = setTimeout(() => {
                 dashboardContent.classList.remove('dashboard-transition-hidden');
                 this.dashboardRevealTimer = null;
-            }, 320);
+            }, this.sidebarTransitionMs);
         }
 
         // Apply sidebar state first.
