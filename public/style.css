@@ -432,7 +432,7 @@ body {
     align-items: center;
     gap: 15px;
     cursor: pointer;
-    transition: transform 0.2s, background 0.2s;
+    transition: transform 0.1s, background 0.1s;
 }
 
 .host-card:hover {
@@ -1417,7 +1417,7 @@ body {
     border: 1px solid var(--border-soft);
     border-radius: 12px;
     box-shadow: var(--shadow-soft);
-    transition: transform 0.2s, background 0.2s, border-color 0.2s;
+    transition: transform 0.1s, background 0.1s, border-color 0.1s;
 }
 
 :root[data-theme="modern"] .host-card:hover {
