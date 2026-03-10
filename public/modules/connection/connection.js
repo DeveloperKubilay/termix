@@ -1,6 +1,7 @@
 window.ConnectionModule = {
     init: async function (containerId, hostInfo) {
         if (!containerId) return;
+        const TERMINAL_FONT_FAMILY = '"JetBrains Mono", "Fira Code", "Cascadia Mono", "Cascadia Code", Consolas, "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "Courier New", monospace';
         const DEFAULT_TAB_FONT_SCALE = 1.1;
         const IDLE_RECONNECT_THRESHOLD_MS = 30000;
         const QUICK_RECONNECT_DELAY_MS = 1500;
@@ -86,8 +87,9 @@ window.ConnectionModule = {
 
         const term = new window.Terminal({
             ...TerminalSettings,
+            allowProposedApi: true,
             allowTransparency: true,
-            fontFamily: '"JetBrains Mono", Consolas, monospace', // Force prefer JetBrains
+            fontFamily: TERMINAL_FONT_FAMILY,
             fontSize: initialFontSize,
             fontWeight: 500
         });
@@ -96,6 +98,16 @@ window.ConnectionModule = {
         term.loadAddon(fitAddon);
 
         term.open(container);
+
+        try {
+            if (window.Unicode11Addon && window.Unicode11Addon.Unicode11Addon) {
+                const unicode11Addon = new window.Unicode11Addon.Unicode11Addon();
+                term.loadAddon(unicode11Addon);
+                term.unicode.activeVersion = '11';
+            }
+        } catch (e) {
+            console.warn('Unicode11 addon could not be loaded', e);
+        }
 
         container.addEventListener('mousedown', () => {
             try { term.focus(); } catch (_) {}
