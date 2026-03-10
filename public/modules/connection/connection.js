@@ -3,6 +3,7 @@ window.ConnectionModule = {
         if (!containerId) return;
         const TERMINAL_FONT_FAMILY = '"JetBrains Mono", "Fira Code", "Cascadia Mono", "Cascadia Code", Consolas, "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "Courier New", monospace';
         const DEFAULT_TAB_FONT_SCALE = 1.1;
+        const CONNECT_MESSAGE_DELAY_MS = 250;
         const IDLE_RECONNECT_THRESHOLD_MS = 30000;
         const QUICK_RECONNECT_DELAY_MS = 1500;
         const RETRY_RECONNECT_DELAY_MS = 5000;
@@ -17,6 +18,10 @@ window.ConnectionModule = {
         let lastActivityAt = Date.now();
         let reconnectTimerId = null;
         let restartHandler = null;
+        let initialResizeTimerId = null;
+        let outputListener = null;
+        let disconnectListener = null;
+        let sshReadyListener = null;
 
         const toText = (value) => String(value == null ? '' : value).trim();
 
@@ -70,6 +75,28 @@ window.ConnectionModule = {
                 restartHandler.dispose();
             } catch (_) {}
             restartHandler = null;
+        };
+
+        const disposeListener = (subscription) => {
+            if (!subscription || typeof subscription.dispose !== 'function') return;
+            try {
+                subscription.dispose();
+            } catch (_) {}
+        };
+
+        const clearInitialResizeTimer = () => {
+            if (!initialResizeTimerId) return;
+            clearTimeout(initialResizeTimerId);
+            initialResizeTimerId = null;
+        };
+
+        const clearEventListeners = () => {
+            disposeListener(outputListener);
+            disposeListener(disconnectListener);
+            disposeListener(sshReadyListener);
+            outputListener = null;
+            disconnectListener = null;
+            sshReadyListener = null;
         };
 
         // Match container color with the value from settings.
@@ -170,9 +197,11 @@ window.ConnectionModule = {
             connectMsg = `Connecting to ${hostInfo.username}@${hostInfo.hostname || hostInfo.address || hostInfo.name}...`;
         }
         term.write('');
+        let didRenderConnectMsg = false;
         const msgTimer = setTimeout(() => {
+            didRenderConnectMsg = true;
             term.writeln(connectMsg);
-        }, 3000);
+        }, CONNECT_MESSAGE_DELAY_MS);
 
         let sessionResult;
         try {
@@ -194,6 +223,11 @@ window.ConnectionModule = {
 
         const currentSessionId = sessionResult.sessionId;
 
+        if (didRenderConnectMsg) {
+            term.clear();
+        }
+        markActivity();
+
         // Backend -> Frontend (Output)
         const outputHandler = (event, msg) => {
             if (msg && msg.sessionId === currentSessionId) {
@@ -201,14 +235,15 @@ window.ConnectionModule = {
                 term.write(msg.data);
             }
         };
-        window.electronAPI.on('term-data', outputHandler);
 
         const triggerReload = async () => {
             if (reconnecting || isUserDisconnected) return;
             reconnecting = true;
             try {
                 clearReconnectTimer();
+                clearInitialResizeTimer();
                 clearRestartHandler();
+                clearEventListeners();
                 emitAiSelectionContext('');
                 try { window.electronAPI.send('term-close', { sessionId: currentSessionId }); } catch (_) {}
                 window.removeEventListener('keydown', handleTerminalZoomKeydown);
@@ -289,7 +324,6 @@ window.ConnectionModule = {
                 }
             }
         };
-        window.electronAPI.on('term-disconnected', disconnectHandler);
 
         // Frontend -> Backend (Input)
         term.onData(data => {
@@ -325,18 +359,26 @@ window.ConnectionModule = {
         resizeObserver.observe(container);
 
         // Trigger on first load and when SSH becomes ready.
-        window.electronAPI.on('ssh-ready', (event, msg) => {
+        const readyHandler = (event, msg) => {
             if (msg && msg.sessionId === currentSessionId) {
                 clearReconnectTimer();
                 markActivity();
-                term.clear(); // Clear connecting messages
                 sendResize();
             }
-        });
+        };
+
+        sshReadyListener = window.electronAPI.on('ssh-ready', readyHandler);
+        outputListener = window.electronAPI.on('term-data', outputHandler);
+        disconnectListener = window.electronAPI.on('term-disconnected', disconnectHandler);
+
+        sendResize();
         // window.addEventListener('resize', sendResize); // ResizeObserver already handles this
 
         // Run once initially (small delay to avoid timing issues).
-        setTimeout(sendResize, 100);
+        initialResizeTimerId = setTimeout(() => {
+            initialResizeTimerId = null;
+            sendResize();
+        }, 100);
 
 
         const isActiveTerminalTab = () => {
@@ -407,7 +449,9 @@ window.ConnectionModule = {
                 isUserDisconnected = true;
                 clearTimeout(msgTimer);
                 clearReconnectTimer();
+                clearInitialResizeTimer();
                 clearRestartHandler();
+                clearEventListeners();
                 emitAiSelectionContext('');
                 // Stop observer
                 if (resizeObserver) resizeObserver.disconnect();
