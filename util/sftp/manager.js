@@ -1,6 +1,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 const { Client } = require('ssh2');
 const db = require('../profile-db');
 const { decrypt } = require('../crypto');
@@ -11,6 +12,13 @@ const SSH_KEEPALIVE_INTERVAL_MS = 10000;
 const SSH_KEEPALIVE_COUNT_MAX = 6;
 const SFTP_IDLE_PING_INTERVAL_MS = 20000;
 const SFTP_IDLE_PING_MIN_IDLE_MS = 15000;
+
+function createSessionId() {
+    if (typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
+    }
+    return crypto.randomBytes(16).toString('hex');
+}
 
 function normalizeId(value) {
     return String(value);
@@ -1010,7 +1018,7 @@ async function connect(hostId) {
         }
 
         const conn = new Client();
-        const sessionId = normalizeId(Date.now() + Math.floor(Math.random() * 1000));
+        const sessionId = normalizeId(createSessionId());
 
         return await new Promise((resolve) => {
             let settled = false;

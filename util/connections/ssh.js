@@ -1,4 +1,5 @@
 const { Client } = require('ssh2');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { EventEmitter } = require('events');
@@ -10,6 +11,13 @@ const SSH_PORT_FALLBACK = 22;
 const SSH_READY_TIMEOUT_MS = 20000;
 const SSH_KEEPALIVE_INTERVAL_MS = 10000;
 const SSH_KEEPALIVE_COUNT_MAX = 6;
+
+function createSessionId() {
+    if (typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
+    }
+    return crypto.randomBytes(16).toString('hex');
+}
 
 function parseSshPort(value, fallback = SSH_PORT_FALLBACK) {
     const candidate = value == null || String(value).trim() === '' ? fallback : value;
@@ -77,7 +85,7 @@ function verifyAndPersistHost(data, port, hashedKey) {
 
 module.exports = (data) => {
     return new Promise((resolve, reject) => {
-        const sessionId = `${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+        const sessionId = createSessionId();
         const conn = new Client();
         const emitter = new EventEmitter();
         let stream = null;
@@ -271,4 +279,3 @@ module.exports = (data) => {
         }
     });
 };
-
