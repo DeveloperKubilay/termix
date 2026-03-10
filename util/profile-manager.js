@@ -3,6 +3,7 @@ const path = require('path');
 const {
     normalizeAiSettings,
     normalizeTerminalSettings,
+    normalizeSftpSettings,
     normalizeUiTheme
 } = require('./profile-defaults');
 const { normalizeCloudConfig } = require('./profile-secrets');
@@ -90,6 +91,7 @@ function normalizeProfileData(data = {}, fallbackName = 'Default') {
     normalized.snippets = Array.isArray(data.snippets) ? data.snippets : [];
     normalized.ai = normalizeAiSettings(data.ai);
     normalized.terminalSettings = normalizeTerminalSettings(data.terminalSettings);
+    normalized.sftpSettings = normalizeSftpSettings(data.sftpSettings);
     normalized.uiTheme = normalizeUiTheme(data.uiTheme);
 
     return normalized;

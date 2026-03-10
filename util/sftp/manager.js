@@ -48,6 +48,14 @@ function normalizeSide(value) {
     return side;
 }
 
+function normalizeConflictPolicy(value) {
+    const policy = String(value || '').toLowerCase();
+    if (policy === 'overwrite' || policy === 'error') {
+        return policy;
+    }
+    return 'rename';
+}
+
 function isNoSuchFileError(err) {
     if (!err) return false;
     if (err.code === 'ENOENT') return true;
@@ -519,6 +527,7 @@ function copyLocalFileToRemoteWithProgress(sftp, sourcePath, destinationPath, on
         const readStream = fs.createReadStream(sourcePath);
         const writeStream = sftp.createWriteStream(destinationPath, { flags: 'w' });
         let settled = false;
+        let finished = false;
 
         const finish = (err) => {
             if (settled) return;
@@ -541,7 +550,15 @@ function copyLocalFileToRemoteWithProgress(sftp, sourcePath, destinationPath, on
         });
         readStream.on('error', finish);
         writeStream.on('error', finish);
-        writeStream.on('finish', () => finish());
+        writeStream.on('finish', () => {
+            finished = true;
+            finish();
+        });
+        writeStream.on('close', () => {
+            if (!finished) {
+                finish();
+            }
+        });
         readStream.pipe(writeStream);
     });
 }
@@ -676,6 +693,29 @@ async function localExists(targetPath) {
     } catch (_) {
         return false;
     }
+}
+
+function localPathsMatch(leftPath, rightPath) {
+    const left = normalizeLocalPath(leftPath);
+    const right = normalizeLocalPath(rightPath);
+    if (process.platform === 'win32') {
+        return left.toLowerCase() === right.toLowerCase();
+    }
+    return left === right;
+}
+
+function remotePathsMatch(leftPath, rightPath) {
+    return normalizeRemotePath(leftPath, '/') === normalizeRemotePath(rightPath, '/');
+}
+
+function buildCopyConflict({ name, sourcePath, targetPath, isDirectory, destinationSide }) {
+    return {
+        name,
+        sourcePath,
+        targetPath,
+        isDirectory: Boolean(isDirectory),
+        destinationSide
+    };
 }
 
 async function ensureRemoteDir(sftp, targetPath) {
@@ -844,6 +884,7 @@ function copyRemoteFileViaStream(sftp, sourcePath, destinationPath) {
         const readStream = sftp.createReadStream(sourcePath);
         const writeStream = sftp.createWriteStream(destinationPath);
         let settled = false;
+        let finished = false;
 
         const finish = (err) => {
             if (settled) return;
@@ -857,7 +898,15 @@ function copyRemoteFileViaStream(sftp, sourcePath, destinationPath) {
 
         readStream.on('error', (err) => finish(err));
         writeStream.on('error', (err) => finish(err));
-        writeStream.on('finish', () => finish());
+        writeStream.on('finish', () => {
+            finished = true;
+            finish();
+        });
+        writeStream.on('close', () => {
+            if (!finished) {
+                finish();
+            }
+        });
         readStream.pipe(writeStream);
     });
 }
@@ -1620,6 +1669,8 @@ async function copyItems(payload = {}, onProgress = null) {
     try {
         const sourceSide = normalizeSide(payload.sourceSide);
         const destinationSide = normalizeSide(payload.destinationSide);
+        const conflictPolicy = normalizeConflictPolicy(payload.conflictPolicy);
+        const dryRun = Boolean(payload.dryRun);
         const rawItems = Array.isArray(payload.items) ? payload.items : [];
         if (!rawItems.length) {
             return { success: false, message: 'No selected item to copy.' };
@@ -1697,16 +1748,18 @@ async function copyItems(payload = {}, onProgress = null) {
             && sourceSession.id !== destinationSession.id;
 
         let crossSessionTempRoot = null;
-        if (isCrossSessionRemoteCopy) {
+        if (!dryRun && isCrossSessionRemoteCopy) {
             crossSessionTempRoot = await fs.promises.mkdtemp(
                 path.join(os.tmpdir(), 'termix-sftp-bridge-')
             );
         }
 
         let progressReporter = null;
-        const progressDirection = sourceSide === 'local' && destinationSide === 'remote'
-            ? 'upload'
-            : (sourceSide === 'remote' && destinationSide === 'local' ? 'download' : null);
+        const progressDirection = dryRun
+            ? null
+            : (sourceSide === 'local' && destinationSide === 'remote'
+                ? 'upload'
+                : (sourceSide === 'remote' && destinationSide === 'local' ? 'download' : null));
 
         if (progressDirection) {
             let totalBytes = 0;
@@ -1725,6 +1778,7 @@ async function copyItems(payload = {}, onProgress = null) {
         }
 
         let copiedCount = 0;
+        const conflicts = [];
 
         try {
             for (const item of normalizedItems) {
@@ -1744,25 +1798,95 @@ async function copyItems(payload = {}, onProgress = null) {
                     resolvedIsDirectory = attrsIsDirectory(sourceStats);
                 }
 
-                let targetPath = null;
-                if (destinationSide === 'local') {
-                    targetPath = await resolveUniqueLocalTarget(destinationPath, name, resolvedIsDirectory);
+                const preferredTargetPath = destinationSide === 'local'
+                    ? path.join(destinationPath, name)
+                    : path.posix.join(destinationPath, name);
+
+                const samePhysicalTarget = sourceSide === destinationSide
+                    && (
+                        destinationSide === 'local'
+                            ? localPathsMatch(sourcePath, preferredTargetPath)
+                            : (!isCrossSessionRemoteCopy && remotePathsMatch(sourcePath, preferredTargetPath))
+                    );
+
+                let targetPath = preferredTargetPath;
+                let targetExists = false;
+
+                if (samePhysicalTarget) {
+                    targetPath = destinationSide === 'local'
+                        ? await resolveUniqueLocalTarget(destinationPath, name, resolvedIsDirectory)
+                        : await resolveUniqueRemoteTarget(destinationSession.sftp, destinationPath, name, resolvedIsDirectory);
                 } else {
-                    targetPath = await resolveUniqueRemoteTarget(destinationSession.sftp, destinationPath, name, resolvedIsDirectory);
+                    targetExists = destinationSide === 'local'
+                        ? await localExists(targetPath)
+                        : await remoteExists(destinationSession.sftp, targetPath);
+
+                    if (targetExists && conflictPolicy === 'rename') {
+                        targetPath = destinationSide === 'local'
+                            ? await resolveUniqueLocalTarget(destinationPath, name, resolvedIsDirectory)
+                            : await resolveUniqueRemoteTarget(destinationSession.sftp, destinationPath, name, resolvedIsDirectory);
+                        targetExists = false;
+                    } else if (targetExists && conflictPolicy === 'error') {
+                        const conflict = buildCopyConflict({
+                            name,
+                            sourcePath,
+                            targetPath,
+                            isDirectory: resolvedIsDirectory,
+                            destinationSide
+                        });
+
+                        if (dryRun) {
+                            conflicts.push(conflict);
+                            continue;
+                        }
+
+                        return {
+                            success: false,
+                            conflict: true,
+                            conflictItem: conflict,
+                            conflictCount: 1,
+                            conflicts: [conflict],
+                            message: `A file or folder named '${name}' already exists at the target.`
+                        };
+                    }
                 }
 
                 if (sourceSide === 'local' && destinationSide === 'local') {
                     if (resolvedIsDirectory && isNestedLocalPath(sourcePath, targetPath)) {
                         throw new Error(`Cannot copy folder into itself: ${sourcePath}`);
                     }
+                    if (dryRun) {
+                        continue;
+                    }
+                    if (targetExists && conflictPolicy === 'overwrite') {
+                        await removeLocalPath(targetPath);
+                    }
                     await copyLocalPath(sourcePath, targetPath);
                 } else if (sourceSide === 'local' && destinationSide === 'remote') {
+                    if (dryRun) {
+                        continue;
+                    }
+                    if (targetExists && conflictPolicy === 'overwrite') {
+                        await removeRemotePath(destinationSession.sftp, targetPath);
+                    }
                     await copyLocalToRemote(destinationSession.sftp, sourcePath, targetPath, progressReporter);
                 } else if (sourceSide === 'remote' && destinationSide === 'local') {
+                    if (dryRun) {
+                        continue;
+                    }
+                    if (targetExists && conflictPolicy === 'overwrite') {
+                        await removeLocalPath(targetPath);
+                    }
                     await copyRemoteToLocal(sourceSession.sftp, sourcePath, targetPath, progressReporter);
                 } else {
                     if (resolvedIsDirectory && isNestedRemotePath(sourcePath, targetPath) && !isCrossSessionRemoteCopy) {
                         throw new Error(`Cannot copy folder into itself: ${sourcePath}`);
+                    }
+                    if (dryRun) {
+                        continue;
+                    }
+                    if (targetExists && conflictPolicy === 'overwrite') {
+                        await removeRemotePath(destinationSession.sftp, targetPath);
                     }
 
                     if (isCrossSessionRemoteCopy) {
@@ -1784,6 +1908,16 @@ async function copyItems(payload = {}, onProgress = null) {
             if (crossSessionTempRoot) {
                 await removeLocalPath(crossSessionTempRoot);
             }
+        }
+
+        if (dryRun) {
+            return {
+                success: true,
+                dryRun: true,
+                hasConflicts: conflicts.length > 0,
+                conflictCount: conflicts.length,
+                conflicts
+            };
         }
 
         if (progressReporter) {

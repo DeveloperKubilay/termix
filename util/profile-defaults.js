@@ -43,6 +43,10 @@ const DEFAULT_UPDATE_SETTINGS = {
     lastCheckedAt: null
 };
 
+const DEFAULT_SFTP_SETTINGS = {
+    confirmOverwriteOnConflict: true
+};
+
 const UI_THEMES = ['classic', 'modern'];
 const DEFAULT_UI_THEME = 'classic';
 const LEGACY_THEME_MAP = {
@@ -115,6 +119,19 @@ function normalizeUpdateSettings(value) {
     return out;
 }
 
+function normalizeSftpSettings(value) {
+    const out = clone(DEFAULT_SFTP_SETTINGS);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return out;
+    }
+
+    if (typeof value.confirmOverwriteOnConflict === 'boolean') {
+        out.confirmOverwriteOnConflict = value.confirmOverwriteOnConflict;
+    }
+
+    return out;
+}
+
 function normalizeUiTheme(value) {
     let normalized = String(value || '').trim().toLowerCase();
     if (LEGACY_THEME_MAP[normalized]) {
@@ -130,10 +147,12 @@ module.exports = {
     DEFAULT_AI_SETTINGS,
     DEFAULT_TERMINAL_SETTINGS,
     DEFAULT_UPDATE_SETTINGS,
+    DEFAULT_SFTP_SETTINGS,
     UI_THEMES,
     DEFAULT_UI_THEME,
     normalizeAiSettings,
     normalizeTerminalSettings,
     normalizeUpdateSettings,
+    normalizeSftpSettings,
     normalizeUiTheme
 };

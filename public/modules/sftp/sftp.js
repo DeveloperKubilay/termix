@@ -1,6 +1,7 @@
 (function () {
     const sftpApi = window.electronAPI && window.electronAPI.sftp;
     const hostsApi = window.electronAPI && window.electronAPI.hosts;
+    const settingsApi = window.electronAPI && window.electronAPI.settings;
 
     if (!sftpApi || !hostsApi) {
         return;
@@ -99,6 +100,9 @@
             resolver: null,
             keyHandler: null
         },
+        preferences: {
+            confirmOverwriteOnConflict: true
+        },
         monacoLoaderPromise: null,
         editorTabs: new Map(),
         panes: {
@@ -194,6 +198,78 @@
         if (direction === 'upload') return 'Uploading';
         if (direction === 'download') return 'Downloading';
         return 'Transferring';
+    }
+
+    function shouldConfirmOverwrite(value) {
+        return value !== false;
+    }
+
+    async function loadTransferPreferences() {
+        if (!settingsApi || !settingsApi.getSettings) {
+            state.preferences.confirmOverwriteOnConflict = true;
+            return state.preferences;
+        }
+
+        try {
+            const payload = await settingsApi.getSettings();
+            const nextValue = payload && payload.sftpSettings
+                ? payload.sftpSettings.confirmOverwriteOnConflict
+                : true;
+            state.preferences.confirmOverwriteOnConflict = shouldConfirmOverwrite(nextValue);
+        } catch (err) {
+            console.warn('Failed to load SFTP transfer settings:', err);
+            state.preferences.confirmOverwriteOnConflict = true;
+        }
+
+        return state.preferences;
+    }
+
+    async function persistOverwritePromptPreference(confirmOverwriteOnConflict) {
+        state.preferences.confirmOverwriteOnConflict = shouldConfirmOverwrite(confirmOverwriteOnConflict);
+        if (!settingsApi || !settingsApi.saveSettings) {
+            return false;
+        }
+
+        await settingsApi.saveSettings({
+            sftpSettings: {
+                confirmOverwriteOnConflict: state.preferences.confirmOverwriteOnConflict
+            }
+        });
+        return true;
+    }
+
+    async function confirmOverwriteConflicts(conflicts = []) {
+        const safeConflicts = Array.isArray(conflicts) ? conflicts : [];
+        if (!safeConflicts.length) {
+            return { confirmed: true, checked: false };
+        }
+
+        const firstConflict = safeConflicts[0] || {};
+        const conflictCount = safeConflicts.length;
+        const itemLabel = String(firstConflict.name || '').trim() || 'This item';
+        const targetLabel = String(firstConflict.targetPath || '').trim();
+
+        const message = conflictCount === 1
+            ? `${itemLabel} already exists at the target.${targetLabel ? `\n${targetLabel}` : ''}\nOverwrite it?`
+            : `${conflictCount} item(s) already exist at the target folder. Overwrite them?`;
+
+        if (typeof window.confirmActionWithOption === 'function') {
+            return window.confirmActionWithOption(message, {
+                title: conflictCount === 1 ? 'Overwrite Existing Item' : 'Overwrite Existing Items',
+                confirmText: conflictCount === 1 ? 'Overwrite' : 'Overwrite All',
+                cancelText: 'Cancel',
+                tone: 'danger',
+                checkboxLabel: 'Do not ask again'
+            });
+        }
+
+        const confirmed = await window.confirmAction(message, {
+            title: conflictCount === 1 ? 'Overwrite Existing Item' : 'Overwrite Existing Items',
+            confirmText: conflictCount === 1 ? 'Overwrite' : 'Overwrite All',
+            cancelText: 'Cancel',
+            tone: 'danger'
+        });
+        return { confirmed, checked: false };
     }
 
     function renderTransferQueue(direction) {
@@ -1386,6 +1462,56 @@
             ? 'upload'
             : (copyPayload.sourceSide === 'remote' && destinationSide === 'local' ? 'download' : null);
 
+        if (state.preferences.confirmOverwriteOnConflict) {
+            let previewResult = null;
+            try {
+                previewResult = await sftpApi.copyItems({
+                    sourceSide: copyPayload.sourceSide,
+                    destinationSide,
+                    sourceSessionId,
+                    destinationSessionId: destinationSide === 'remote' ? destinationPane.sessionId : null,
+                    destinationPath,
+                    items: copyPayload.items,
+                    dryRun: true,
+                    conflictPolicy: 'error'
+                });
+            } catch (err) {
+                setStatus(getTransferErrorMessage(err, 'Copy failed.'), 'error');
+                return false;
+            }
+
+            if (!previewResult || previewResult.success === false) {
+                setStatus(getTransferErrorMessage(previewResult, 'Copy failed.'), 'error');
+                return false;
+            }
+
+            if (previewResult.hasConflicts) {
+                let decision = null;
+                try {
+                    decision = await confirmOverwriteConflicts(previewResult.conflicts);
+                } catch (err) {
+                    setStatus(getTransferErrorMessage(err, 'Copy cancelled.'), 'error');
+                    return false;
+                }
+
+                if (!decision || !decision.confirmed) {
+                    setStatus('Copy cancelled.', 'info');
+                    return false;
+                }
+
+                if (decision.checked) {
+                    try {
+                        await persistOverwritePromptPreference(false);
+                    } catch (err) {
+                        console.warn('Failed to persist overwrite prompt setting:', err);
+                        if (window.notifyUser) {
+                            window.notifyUser('Overwrite preference could not be saved.', 'warning');
+                        }
+                    }
+                }
+            }
+        }
+
         const runCopy = async (operationId = null) => {
             return sftpApi.copyItems({
                 sourceSide: copyPayload.sourceSide,
@@ -1394,7 +1520,8 @@
                 destinationSessionId: destinationSide === 'remote' ? destinationPane.sessionId : null,
                 destinationPath,
                 items: copyPayload.items,
-                operationId
+                operationId,
+                conflictPolicy: 'overwrite'
             });
         };
 
@@ -2620,6 +2747,7 @@
         activatePane('left', false);
         renderAllPanes();
 
+        await loadTransferPreferences();
         await loadHosts();
         await refreshPane('left', '');
 

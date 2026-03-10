@@ -1127,6 +1127,29 @@ body {
     line-height: 1.35;
     margin-bottom: 14px;
     word-break: break-word;
+    white-space: pre-line;
+}
+
+.app-confirm-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    color: var(--text-main);
+    font-size: 0.86rem;
+    cursor: pointer;
+}
+
+.app-confirm-option[hidden] {
+    display: none !important;
+}
+
+.app-confirm-option input {
+    width: 15px;
+    height: 15px;
+    margin: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
 }
 
 .app-confirm-actions {
@@ -1579,6 +1602,10 @@ body {
     background: linear-gradient(180deg, rgba(23, 30, 44, 0.98), rgba(17, 23, 34, 0.98));
     border: 1px solid var(--border-soft);
     box-shadow: var(--shadow-card);
+}
+
+:root[data-theme="modern"] .app-confirm-option {
+    color: var(--text-main);
 }
 
 :root[data-theme="modern"] .app-confirm-btn {

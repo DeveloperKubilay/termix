@@ -1,5 +1,9 @@
 const db = require('../../util/profile-db');
-const { normalizeUpdateSettings, normalizeUiTheme } = require('../../util/profile-defaults');
+const {
+    normalizeSftpSettings,
+    normalizeUpdateSettings,
+    normalizeUiTheme
+} = require('../../util/profile-defaults');
 const updater = require('../../util/updater');
 
 module.exports = async function (filesPath, settings) {
@@ -11,6 +15,10 @@ module.exports = async function (filesPath, settings) {
         const normalized = normalizeUpdateSettings(settings.updateSettings);
         db.set('updateSettings', normalized);
         updater.setAutoUpdateEnabled(normalized.autoUpdateEnabled);
+    }
+
+    if (settings.sftpSettings) {
+        db.set('sftpSettings', normalizeSftpSettings(settings.sftpSettings));
     }
 
     if (typeof settings.uiTheme !== 'undefined') {
