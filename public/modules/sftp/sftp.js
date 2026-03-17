@@ -2,7 +2,6 @@
     const sftpApi = window.electronAPI && window.electronAPI.sftp;
     const hostsApi = window.electronAPI && window.electronAPI.hosts;
     const settingsApi = window.electronAPI && window.electronAPI.settings;
-    const keychainApi = window.electronAPI && window.electronAPI.keychain;
 
     if (!sftpApi || !hostsApi) {
         return;
@@ -2352,9 +2351,9 @@
             paneUi.openFolderBtn.addEventListener('click', async () => {
                 activatePane(key, false);
                 closeContextMenu();
-                if (keychainApi && pane.path) {
+                if (pane.path) {
                     try {
-                        await keychainApi.openFilesFolder(pane.path);
+                        await sftpApi.openLocalFolder(pane.path);
                     } catch (err) {
                         setStatus('Failed to open folder: ' + (err && err.message ? err.message : err), 'error');
                     }
