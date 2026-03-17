@@ -40,6 +40,7 @@
                 root: document.getElementById('sftp-pane-left'),
                 modeSwitch: document.getElementById('sftp-mode-left'),
                 connText: document.getElementById('sftp-conn-left'),
+                openFolderBtn: document.getElementById('sftp-open-folder-left'),
                 disconnectBtn: document.getElementById('sftp-disconnect-left'),
                 breadcrumbs: document.getElementById('sftp-breadcrumbs-left'),
                 pathInput: document.getElementById('sftp-path-left'),
@@ -54,6 +55,7 @@
                 root: document.getElementById('sftp-pane-right'),
                 modeSwitch: document.getElementById('sftp-mode-right'),
                 connText: document.getElementById('sftp-conn-right'),
+                openFolderBtn: document.getElementById('sftp-open-folder-right'),
                 disconnectBtn: document.getElementById('sftp-disconnect-right'),
                 breadcrumbs: document.getElementById('sftp-breadcrumbs-right'),
                 pathInput: document.getElementById('sftp-path-right'),
@@ -997,6 +999,7 @@
 
         if (paneUi.root) {
             paneUi.root.classList.toggle('connected', isConnected);
+            paneUi.root.classList.toggle('local-mode', pane.mode === 'local');
         }
 
         if (paneUi.modeSwitch) {
@@ -1214,7 +1217,7 @@
 
             pane.sessionId = result.sessionId;
             pane.connectedHostId = pane.selectedHostId;
-            pane.path = result.homePath || '/';
+            pane.path = result.initialPath || result.homePath || '/';
             pane.parentPath = null;
             pane.entries = [];
             clearPaneSelection(pane);
@@ -2341,6 +2344,20 @@
                 activatePane(key, false);
                 closeContextMenu();
                 await switchPaneMode(key, mode);
+            });
+        }
+
+        if (paneUi.openFolderBtn) {
+            paneUi.openFolderBtn.addEventListener('click', async () => {
+                activatePane(key, false);
+                closeContextMenu();
+                if (pane.path) {
+                    try {
+                        await sftpApi.openLocalFolder(pane.path);
+                    } catch (err) {
+                        setStatus('Failed to open folder: ' + (err && err.message ? err.message : err), 'error');
+                    }
+                }
             });
         }
 

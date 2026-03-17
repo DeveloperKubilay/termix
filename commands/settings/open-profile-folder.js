@@ -9,7 +9,24 @@ module.exports = async function () {
          fs.mkdirSync(profilesDir, { recursive: true });
     }
 
-    exec(`explorer "${profilesDir}"`);
-    
+    const platform = process.platform;
+    let command;
+
+    if (platform === 'win32') {
+        command = `explorer "${profilesDir}"`;
+    } else if (platform === 'darwin') {
+        command = `open "${profilesDir}"`;
+    } else {
+        command = `xdg-open "${profilesDir}"`;
+    }
+
+    exec(command, (error) => {
+        if (error) {
+            // explorer on Windows exits with code 1 even on success; ignore that
+            if (platform === 'win32' && error.code === 1) return;
+            console.error('Failed to open folder:', error);
+        }
+    });
+
     return { success: true };
 };

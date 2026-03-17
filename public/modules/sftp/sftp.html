@@ -34,7 +34,10 @@
                     <button type="button" data-pane="left" data-mode="vds">VDS</button>
                 </div>
                 <div class="sftp-conn-text" id="sftp-conn-left">Local</div>
-                <button type="button" class="btn btn-primary sftp-disconnect-btn" id="sftp-disconnect-left">Disconnect</button>
+                <div class="sftp-toolbar-actions">
+                    <button type="button" class="btn btn-primary sftp-open-folder-btn" id="sftp-open-folder-left">Open Folder</button>
+                    <button type="button" class="btn btn-primary sftp-disconnect-btn" id="sftp-disconnect-left">Disconnect</button>
+                </div>
             </div>
 
             <div class="sftp-path-stack">
@@ -74,7 +77,10 @@
                     <button type="button" data-pane="right" data-mode="vds" class="active">VDS</button>
                 </div>
                 <div class="sftp-conn-text" id="sftp-conn-right">Not connected</div>
-                <button type="button" class="btn btn-primary sftp-disconnect-btn" id="sftp-disconnect-right">Disconnect</button>
+                <div class="sftp-toolbar-actions">
+                    <button type="button" class="btn btn-primary sftp-open-folder-btn" id="sftp-open-folder-right">Open Folder</button>
+                    <button type="button" class="btn btn-primary sftp-disconnect-btn" id="sftp-disconnect-right">Disconnect</button>
+                </div>
             </div>
 
             <div class="sftp-path-stack">
@@ -328,6 +334,21 @@
 
     .sftp-pane.connected .sftp-disconnect-btn {
         display: inline-flex;
+    }
+
+    .sftp-open-folder-btn {
+        display: none;
+        white-space: nowrap;
+    }
+
+    .sftp-pane.local-mode .sftp-open-folder-btn {
+        display: inline-flex;
+    }
+
+    .sftp-toolbar-actions {
+        display: flex;
+        gap: 6px;
+        align-items: center;
     }
 
     .sftp-path-stack {
