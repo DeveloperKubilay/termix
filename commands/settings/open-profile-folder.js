@@ -21,7 +21,9 @@ module.exports = async function () {
     }
 
     exec(command, (error) => {
-        if (error && error.code !== 1) { // exit code 1 from explorer is normal on Windows
+        if (error) {
+            // explorer on Windows exits with code 1 even on success; ignore that
+            if (platform === 'win32' && error.code === 1) return;
             console.error('Failed to open folder:', error);
         }
     });
