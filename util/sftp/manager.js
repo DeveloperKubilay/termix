@@ -115,18 +115,39 @@ function trimTrailingSeparator(value, separator) {
 }
 
 function getDefaultLocalRoot() {
-    const desktopPath = path.join(os.homedir(), 'Desktop');
-    if (fs.existsSync(desktopPath)) {
-        return desktopPath;
+    const home = os.homedir();
+    const candidates = [
+        path.join(home, 'OneDrive', 'Desktop'),
+        path.join(home, 'OneDrive', 'Masaüstü'),
+        path.join(home, 'Desktop'),
+        path.join(home, 'Masaüstü'),
+    ];
+    for (const candidate of candidates) {
+        if (fs.existsSync(candidate)) {
+            return candidate;
+        }
     }
-    
-    // Turkish localization fallback in case of older OS issues
-    const trDesktop = path.join(os.homedir(), 'Masaüstü');
-    if (fs.existsSync(trDesktop)) {
-        return trDesktop;
-    }
+    return home;
+}
 
-    return os.homedir();
+async function findRemoteDesktopPath(sftp, homePath) {
+    const candidates = [
+        path.posix.join(homePath, 'OneDrive', 'Desktop'),
+        path.posix.join(homePath, 'OneDrive', 'Masaüstü'),
+        path.posix.join(homePath, 'Desktop'),
+        path.posix.join(homePath, 'Masaüstü'),
+    ];
+    for (const candidate of candidates) {
+        try {
+            const stats = await sftpStat(sftp, candidate);
+            if (attrsIsDirectory(stats)) {
+                return candidate;
+            }
+        } catch (_) {
+            // not found, try next
+        }
+    }
+    return null;
 }
 
 function normalizeLocalPath(inputPath) {
@@ -1044,6 +1065,8 @@ async function connect(hostId) {
 
                     const homePathRaw = await sftpRealpath(sftp, '.');
                     const homePath = normalizeRemotePath(homePathRaw, '/');
+                    const desktopPath = await findRemoteDesktopPath(sftp, homePath);
+                    const initialPath = desktopPath || homePath;
 
                     const session = {
                         id: sessionId,
@@ -1071,6 +1094,7 @@ async function connect(hostId) {
                         success: true,
                         sessionId,
                         homePath,
+                        initialPath,
                         host: mapHost(host)
                     });
                 });
