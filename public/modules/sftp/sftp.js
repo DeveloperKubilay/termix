@@ -70,7 +70,7 @@
         }
     };
 
-    const state = {
+    const createInitialState = () => ({
         hosts: [],
         activePaneKey: 'left',
         clipboard: null,
@@ -145,7 +145,31 @@
                 requestId: 0
             }
         }
-    };
+    });
+
+    const state = window.__termixSftpState && window.__termixSftpState.panes
+        ? window.__termixSftpState
+        : createInitialState();
+    window.__termixSftpState = state;
+
+    if (!(state.editorTabs instanceof Map)) {
+        state.editorTabs = new Map();
+    }
+    if (!state.typeAhead) {
+        state.typeAhead = { char: '', lastTime: 0, matchIndex: 0 };
+    }
+
+    paneKeys.forEach((key) => {
+        const pane = state.panes && state.panes[key];
+        if (!pane) return;
+        if (!(pane.selected instanceof Set)) {
+            pane.selected = new Set(Array.isArray(pane.selected) ? pane.selected : []);
+        }
+        if (!Array.isArray(pane.entries)) {
+            pane.entries = [];
+        }
+        pane.connectPromise = null;
+    });
 
     function escapeHtml(value) {
         return String(value || '')
@@ -2706,22 +2730,42 @@
                 const char = event.key.toLowerCase();
                 const now = Date.now();
 
-                const matches = pane.entries.filter(
-                    (entry) => entry && entry.name && entry.name.charAt(0).toLowerCase() === char
-                );
-                if (!matches.length) return;
-
                 event.preventDefault();
 
-                let matchIndex = 0;
+                let targetMatchOffset = 0;
                 if (state.typeAhead.char === char && now - state.typeAhead.lastTime < TYPE_AHEAD_RESET_MS) {
-                    matchIndex = (state.typeAhead.matchIndex + 1) % matches.length;
+                    targetMatchOffset = state.typeAhead.matchIndex + 1;
                 }
+
+                let firstMatch = null;
+                let target = null;
+                let matchCount = 0;
+
+                for (let i = 0; i < pane.entries.length; i++) {
+                    const entry = pane.entries[i];
+                    if (!entry || !entry.name || entry.name.charAt(0).toLowerCase() !== char) continue;
+                    if (!firstMatch) {
+                        firstMatch = entry;
+                    }
+                    if (matchCount === targetMatchOffset) {
+                        target = entry;
+                        break;
+                    }
+                    matchCount += 1;
+                }
+
+                if (!firstMatch) return;
+
+                let matchIndex = targetMatchOffset;
+                if (!target) {
+                    target = firstMatch;
+                    matchIndex = 0;
+                }
+
                 state.typeAhead.char = char;
                 state.typeAhead.lastTime = now;
                 state.typeAhead.matchIndex = matchIndex;
 
-                const target = matches[matchIndex];
                 selectOnly(key, target.path);
 
                 const paneUi = getPaneUi(key);
@@ -2813,7 +2857,32 @@
 
         await loadTransferPreferences();
         await loadHosts();
-        await refreshPane('left', '');
+        for (const key of paneKeys) {
+            const pane = getPaneState(key);
+            if (!pane) continue;
+
+            if (pane.mode === 'vds') {
+                if (!pane.sessionId) {
+                    renderPane(key);
+                    continue;
+                }
+
+                const refreshed = await refreshPane(key, pane.path || '/');
+                if (!refreshed) {
+                    pane.sessionId = null;
+                    pane.connectedHostId = null;
+                    pane.path = '';
+                    pane.parentPath = null;
+                    pane.entries = [];
+                    clearPaneSelection(pane);
+                    pane.loading = false;
+                    renderPane(key);
+                }
+                continue;
+            }
+
+            await refreshPane(key, pane.path || '');
+        }
 
         setStatus('Ready', 'info');
     }
