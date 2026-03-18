@@ -249,15 +249,12 @@ window.ConnectionModule = {
             });
 
             if (!document.getElementById(containerId)) {
-                return {
-                    dispose: () => {
-                        clearReconnectTimer();
-                        clearConnectRetryTimer();
-                        clearTimeout(msgTimer);
-                        try { term.dispose(); } catch (_) {}
-                        if (resizeObserver) resizeObserver.disconnect();
-                    }
-                };
+                clearReconnectTimer();
+                clearConnectRetryTimer();
+                clearTimeout(msgTimer);
+                try { term.dispose(); } catch (_) {}
+                if (resizeObserver) resizeObserver.disconnect();
+                return null;
             }
 
             connectRetryAttempt += 1;
