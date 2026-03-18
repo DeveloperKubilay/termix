@@ -11,6 +11,7 @@
     const MAX_EDITABLE_FILE_BYTES = 2 * 1024 * 1024;
     const EDITOR_STYLE_ID = 'sftp-editor-style';
     const MONACO_LOADER_URL = 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.min.js';
+    const TYPE_AHEAD_RESET_MS = 800;
 
     const ui = {
         status: document.getElementById('sftp-global-status'),
@@ -69,7 +70,7 @@
         }
     };
 
-    const state = {
+    const createInitialState = () => ({
         hosts: [],
         activePaneKey: 'left',
         clipboard: null,
@@ -107,6 +108,11 @@
         },
         monacoLoaderPromise: null,
         editorTabs: new Map(),
+        typeAhead: {
+            char: '',
+            lastTime: 0,
+            matchIndex: 0
+        },
         panes: {
             left: {
                 key: 'left',
@@ -139,7 +145,31 @@
                 requestId: 0
             }
         }
-    };
+    });
+
+    const state = window.__termixSftpState && window.__termixSftpState.panes
+        ? window.__termixSftpState
+        : createInitialState();
+    window.__termixSftpState = state;
+
+    if (!(state.editorTabs instanceof Map)) {
+        state.editorTabs = new Map();
+    }
+    if (!state.typeAhead) {
+        state.typeAhead = { char: '', lastTime: 0, matchIndex: 0 };
+    }
+
+    paneKeys.forEach((key) => {
+        const pane = state.panes && state.panes[key];
+        if (!pane) return;
+        if (!(pane.selected instanceof Set)) {
+            pane.selected = new Set(Array.isArray(pane.selected) ? pane.selected : []);
+        }
+        if (!Array.isArray(pane.entries)) {
+            pane.entries = [];
+        }
+        pane.connectPromise = null;
+    });
 
     function escapeHtml(value) {
         return String(value || '')
@@ -2687,6 +2717,67 @@
             if (event.key === 'Delete') {
                 event.preventDefault();
                 await deleteSelected(key);
+                return;
+            }
+
+            if (
+                !event.ctrlKey && !event.metaKey && !event.altKey &&
+                event.key.length === 1
+            ) {
+                const pane = getPaneState(key);
+                if (!pane || !pane.entries || !pane.entries.length) return;
+
+                const char = event.key.toLowerCase();
+                const now = Date.now();
+
+                event.preventDefault();
+
+                let targetMatchOffset = 0;
+                if (state.typeAhead.char === char && now - state.typeAhead.lastTime < TYPE_AHEAD_RESET_MS) {
+                    targetMatchOffset = state.typeAhead.matchIndex + 1;
+                }
+
+                let firstMatch = null;
+                let target = null;
+                let matchCount = 0;
+
+                for (let i = 0; i < pane.entries.length; i++) {
+                    const entry = pane.entries[i];
+                    if (!entry || !entry.name || entry.name.charAt(0).toLowerCase() !== char) continue;
+                    if (!firstMatch) {
+                        firstMatch = entry;
+                    }
+                    if (matchCount === targetMatchOffset) {
+                        target = entry;
+                        break;
+                    }
+                    matchCount += 1;
+                }
+
+                if (!firstMatch) return;
+
+                let matchIndex = targetMatchOffset;
+                if (!target) {
+                    target = firstMatch;
+                    matchIndex = 0;
+                }
+
+                state.typeAhead.char = char;
+                state.typeAhead.lastTime = now;
+                state.typeAhead.matchIndex = matchIndex;
+
+                selectOnly(key, target.path);
+
+                const paneUi = getPaneUi(key);
+                if (paneUi && paneUi.list) {
+                    const rows = paneUi.list.querySelectorAll('.sftp-file-row');
+                    for (const row of rows) {
+                        if (decodePathValue(row.dataset.path || '') === target.path) {
+                            row.scrollIntoView({ block: 'nearest' });
+                            break;
+                        }
+                    }
+                }
             }
         };
 
@@ -2766,7 +2857,32 @@
 
         await loadTransferPreferences();
         await loadHosts();
-        await refreshPane('left', '');
+        for (const key of paneKeys) {
+            const pane = getPaneState(key);
+            if (!pane) continue;
+
+            if (pane.mode === 'vds') {
+                if (!pane.sessionId) {
+                    renderPane(key);
+                    continue;
+                }
+
+                const refreshed = await refreshPane(key, pane.path || '/');
+                if (!refreshed) {
+                    pane.sessionId = null;
+                    pane.connectedHostId = null;
+                    pane.path = '';
+                    pane.parentPath = null;
+                    pane.entries = [];
+                    clearPaneSelection(pane);
+                    pane.loading = false;
+                    renderPane(key);
+                }
+                continue;
+            }
+
+            await refreshPane(key, pane.path || '');
+        }
 
         setStatus('Ready', 'info');
     }
