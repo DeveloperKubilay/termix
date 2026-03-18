@@ -7,6 +7,7 @@ window.ConnectionModule = {
         const IDLE_RECONNECT_THRESHOLD_MS = 30000;
         const QUICK_RECONNECT_DELAY_MS = 1500;
         const RETRY_RECONNECT_DELAY_MS = 5000;
+        const CONNECT_RETRY_DELAYS_MS = [1000, 3000, 10000, 20000];
         let isUserDisconnected = false;
         let reconnecting = false;
         const container = document.getElementById(containerId);
@@ -17,6 +18,7 @@ window.ConnectionModule = {
         let lastSelectionForAi = null;
         let lastActivityAt = Date.now();
         let reconnectTimerId = null;
+        let connectRetryTimerId = null;
         let restartHandler = null;
         let initialResizeTimerId = null;
         let outputListener = null;
@@ -66,6 +68,13 @@ window.ConnectionModule = {
             if (reconnectTimerId) {
                 clearTimeout(reconnectTimerId);
                 reconnectTimerId = null;
+            }
+        };
+
+        const clearConnectRetryTimer = () => {
+            if (connectRetryTimerId) {
+                clearTimeout(connectRetryTimerId);
+                connectRetryTimerId = null;
             }
         };
 
@@ -203,22 +212,52 @@ window.ConnectionModule = {
             term.writeln(connectMsg);
         }, CONNECT_MESSAGE_DELAY_MS);
 
-        let sessionResult;
-        try {
-            sessionResult = await window.electronAPI.connection.connect(hostInfo);
-        } catch (err) {
-            sessionResult = { status: 'error', message: err.message };
-        }
-        clearTimeout(msgTimer);
+        const getConnectRetryDelay = (attemptIndex) => {
+            if (attemptIndex < 0) return CONNECT_RETRY_DELAYS_MS[0];
+            if (attemptIndex >= CONNECT_RETRY_DELAYS_MS.length) return CONNECT_RETRY_DELAYS_MS[CONNECT_RETRY_DELAYS_MS.length - 1];
+            return CONNECT_RETRY_DELAYS_MS[attemptIndex];
+        };
 
-        if (sessionResult.status === 'error') {
-            term.writeln(`\x1b[31mConnection Error: ${sessionResult.message}\x1b[0m`);
-            return {
-                dispose: () => {
-                    term.dispose();
-                    if (resizeObserver) resizeObserver.disconnect();
-                }
-            };
+        let sessionResult;
+        let connectRetryAttempt = 0;
+
+        while (true) {
+            try {
+                sessionResult = await window.electronAPI.connection.connect(hostInfo);
+            } catch (err) {
+                sessionResult = { status: 'error', message: err && err.message ? err.message : 'Connection failed.' };
+            }
+
+            clearTimeout(msgTimer);
+
+            if (sessionResult && sessionResult.status !== 'error') {
+                break;
+            }
+
+            const errorMessage = sessionResult && sessionResult.message ? sessionResult.message : 'Unknown connection error.';
+            term.writeln(`\x1b[31mConnection Error: ${errorMessage}\x1b[0m`);
+
+            const retryDelay = getConnectRetryDelay(connectRetryAttempt);
+            const retryDelaySeconds = Math.round(retryDelay / 1000);
+            term.writeln(`\x1b[33mRetrying in ${retryDelaySeconds} second${retryDelaySeconds === 1 ? '' : 's'}...\x1b[0m`);
+
+            await new Promise((resolve) => {
+                connectRetryTimerId = setTimeout(() => {
+                    connectRetryTimerId = null;
+                    resolve();
+                }, retryDelay);
+            });
+
+            if (!document.getElementById(containerId)) {
+                clearReconnectTimer();
+                clearConnectRetryTimer();
+                clearTimeout(msgTimer);
+                try { term.dispose(); } catch (_) {}
+                if (resizeObserver) resizeObserver.disconnect();
+                return null;
+            }
+
+            connectRetryAttempt += 1;
         }
 
         const currentSessionId = sessionResult.sessionId;
@@ -449,6 +488,7 @@ window.ConnectionModule = {
                 isUserDisconnected = true;
                 clearTimeout(msgTimer);
                 clearReconnectTimer();
+                clearConnectRetryTimer();
                 clearInitialResizeTimer();
                 clearRestartHandler();
                 clearEventListeners();
