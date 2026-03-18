@@ -11,6 +11,7 @@
     const MAX_EDITABLE_FILE_BYTES = 2 * 1024 * 1024;
     const EDITOR_STYLE_ID = 'sftp-editor-style';
     const MONACO_LOADER_URL = 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.min.js';
+    const TYPE_AHEAD_RESET_MS = 800;
 
     const ui = {
         status: document.getElementById('sftp-global-status'),
@@ -107,6 +108,11 @@
         },
         monacoLoaderPromise: null,
         editorTabs: new Map(),
+        typeAhead: {
+            char: '',
+            lastTime: 0,
+            matchIndex: 0
+        },
         panes: {
             left: {
                 key: 'left',
@@ -2687,6 +2693,47 @@
             if (event.key === 'Delete') {
                 event.preventDefault();
                 await deleteSelected(key);
+                return;
+            }
+
+            if (
+                !event.ctrlKey && !event.metaKey && !event.altKey &&
+                event.key.length === 1
+            ) {
+                const pane = getPaneState(key);
+                if (!pane || !pane.entries || !pane.entries.length) return;
+
+                const char = event.key.toLowerCase();
+                const now = Date.now();
+
+                const matches = pane.entries.filter(
+                    (entry) => entry && entry.name && entry.name.charAt(0).toLowerCase() === char
+                );
+                if (!matches.length) return;
+
+                event.preventDefault();
+
+                let matchIndex = 0;
+                if (state.typeAhead.char === char && now - state.typeAhead.lastTime < TYPE_AHEAD_RESET_MS) {
+                    matchIndex = (state.typeAhead.matchIndex + 1) % matches.length;
+                }
+                state.typeAhead.char = char;
+                state.typeAhead.lastTime = now;
+                state.typeAhead.matchIndex = matchIndex;
+
+                const target = matches[matchIndex];
+                selectOnly(key, target.path);
+
+                const paneUi = getPaneUi(key);
+                if (paneUi && paneUi.list) {
+                    const rows = paneUi.list.querySelectorAll('.sftp-file-row');
+                    for (const row of rows) {
+                        if (decodePathValue(row.dataset.path || '') === target.path) {
+                            row.scrollIntoView({ block: 'nearest' });
+                            break;
+                        }
+                    }
+                }
             }
         };
 
