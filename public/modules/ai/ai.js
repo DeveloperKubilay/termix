@@ -15,6 +15,7 @@ const AiManager = {
 
         this.aiView = document.getElementById('sidebar-ai');
         this.navView = document.getElementById('sidebar-nav');
+        this.sidebar = document.querySelector('.sidebar');
         this.aiMenuItem = document.getElementById('ai-menu-item');
         this.aiBackBtn = document.getElementById('ai-back-btn');
         this.aiNewChatBtn = document.getElementById('ai-new-chat-btn');
@@ -29,6 +30,7 @@ const AiManager = {
 
         this.setupEventListeners();
         this.resetChat();
+        this.adjustInputHeight();
         this.initialized = true;
     },
 
@@ -58,8 +60,12 @@ const AiManager = {
         }
 
         if (this.aiInput) {
+            this.aiInput.addEventListener('input', () => {
+                this.adjustInputHeight();
+            });
+
             this.aiInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
+                if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
                     e.preventDefault();
                     this.sendMessage();
                 }
@@ -79,14 +85,25 @@ const AiManager = {
     },
 
     openAiView() {
+        if (this.sidebar) this.sidebar.classList.add('ai-mode');
         if (this.navView) this.navView.style.display = 'none';
         if (this.aiView) this.aiView.style.display = 'flex';
         if (this.aiInput) this.aiInput.focus();
     },
 
     closeAiView() {
+        if (this.sidebar) this.sidebar.classList.remove('ai-mode');
         if (this.aiView) this.aiView.style.display = 'none';
         if (this.navView) this.navView.style.display = 'flex';
+    },
+
+    adjustInputHeight() {
+        if (!this.aiInput) return;
+
+        this.aiInput.style.height = 'auto';
+        const nextHeight = Math.max(44, Math.min(this.aiInput.scrollHeight, 180));
+        this.aiInput.style.height = `${nextHeight}px`;
+        this.aiInput.style.overflowY = this.aiInput.scrollHeight > 180 ? 'auto' : 'hidden';
     },
 
     scrollToBottom() {
@@ -180,16 +197,14 @@ const AiManager = {
 
         try {
             if (window.clipboard && typeof window.clipboard.writeText === 'function') {
-                window.clipboard.writeText(value);
+                await window.clipboard.writeText(value);
             } else if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
                 await navigator.clipboard.writeText(value);
             } else {
                 throw new Error('Clipboard API is unavailable.');
             }
-
-            window.notifyUser('Kod panoya kopyalandi.', 'success');
         } catch (err) {
-            window.notifyUser(`Kopyalama basarisiz: ${err.message}`, 'error');
+            console.warn('Failed to copy AI message content.', err);
         }
     },
 
@@ -199,7 +214,6 @@ const AiManager = {
             if (window.TabManager && typeof window.TabManager.activateTab === 'function') {
                 window.TabManager.activateTab('dashboard');
             }
-            window.notifyUser('Aktif terminal sekmesi yok. Dashboard acildi.', 'warning');
             return;
         }
 
@@ -207,12 +221,105 @@ const AiManager = {
             sessionId: session.sessionId,
             data: this.normalizeCommandForRun(code)
         });
-        window.notifyUser('Komut aktif terminale gonderildi.', 'success');
     },
 
     isShellCodeLanguage(language) {
         const normalized = String(language || '').trim().toLowerCase();
         return ['bash', 'sh', 'shell', 'zsh', 'fish', 'console', 'powershell', 'pwsh', 'ps1', 'cmd', 'bat'].includes(normalized);
+    },
+
+    escapeHtml(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    },
+
+    getMarkdownRenderer() {
+        if (this.markdownRenderer) {
+            return this.markdownRenderer;
+        }
+
+        if (typeof window.markdownit !== 'function') {
+            return null;
+        }
+
+        const renderer = window.markdownit({
+            html: false,
+            linkify: true,
+            breaks: true
+        });
+
+        const defaultLinkOpen = renderer.renderer.rules.link_open
+            || function linkOpen(tokens, idx, options, env, self) {
+                return self.renderToken(tokens, idx, options);
+            };
+
+        renderer.renderer.rules.link_open = function linkOpen(tokens, idx, options, env, self) {
+            tokens[idx].attrSet('target', '_blank');
+            tokens[idx].attrSet('rel', 'noreferrer');
+            return defaultLinkOpen(tokens, idx, options, env, self);
+        };
+
+        this.markdownRenderer = renderer;
+        return renderer;
+    },
+
+    renderMarkdownHtml(value) {
+        const source = String(value == null ? '' : value);
+        if (!source.trim()) {
+            return '';
+        }
+
+        const renderer = this.getMarkdownRenderer();
+        if (!renderer) {
+            return `<p>${this.escapeHtml(source)}</p>`;
+        }
+
+        return renderer.render(source);
+    },
+
+    normalizeCodeBlockValue(value, language) {
+        const lines = String(value == null ? '' : value)
+            .replace(/\r\n/g, '\n')
+            .split('\n');
+
+        while (lines.length && !lines[0].trim()) {
+            lines.shift();
+        }
+
+        while (lines.length && !lines[lines.length - 1].trim()) {
+            lines.pop();
+        }
+
+        if (!lines.length) {
+            return '';
+        }
+
+        const nonEmptyIndentLengths = lines
+            .filter((line) => line.trim())
+            .map((line) => {
+                const indent = line.match(/^[ \t]*/);
+                return indent ? indent[0].length : 0;
+            });
+
+        const minIndent = nonEmptyIndentLengths.length
+            ? Math.min(...nonEmptyIndentLengths)
+            : 0;
+
+        const normalizedLines = minIndent > 0
+            ? lines.map((line) => (line.trim() ? line.slice(minIndent) : ''))
+            : lines;
+
+        if (!this.isShellCodeLanguage(language)) {
+            return normalizedLines.join('\n');
+        }
+
+        return normalizedLines
+            .map((line) => line.replace(/[ \t]+$/g, ''))
+            .join('\n');
     },
 
     parseAssistantSegments(text) {
@@ -257,25 +364,54 @@ const AiManager = {
         return button;
     },
 
+    createMessageCopyButton(text) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'ai-msg-copy-btn';
+        button.title = 'Mesaji kopyala';
+        button.setAttribute('aria-label', 'Mesaji kopyala');
+        button.innerHTML = '<i class="fa-solid fa-copy"></i> Kopyala';
+        button.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            this.copyCodeBlock(text);
+        });
+        return button;
+    },
+
     renderAssistantMessage(messageRef, text) {
         if (!messageRef || !messageRef.bubble) return;
 
         const bubble = messageRef.bubble;
         bubble.textContent = '';
+        bubble.classList.add('has-ai-toolbar');
+
+        const toolbar = document.createElement('div');
+        toolbar.className = 'ai-msg-toolbar';
+        toolbar.appendChild(this.createMessageCopyButton(text));
+        bubble.appendChild(toolbar);
+
+        const content = document.createElement('div');
+        content.className = 'ai-msg-content';
+        bubble.appendChild(content);
+
         const segments = this.parseAssistantSegments(text);
 
         segments.forEach((segment) => {
             if (segment.type === 'text') {
                 if (!segment.value) return;
+                const renderedHtml = this.renderMarkdownHtml(segment.value);
+                if (!renderedHtml.trim()) return;
                 const textBlock = document.createElement('div');
                 textBlock.className = 'ai-rich-text';
-                textBlock.textContent = segment.value;
-                bubble.appendChild(textBlock);
+                textBlock.innerHTML = renderedHtml;
+                content.appendChild(textBlock);
                 return;
             }
 
             const codeWrap = document.createElement('div');
             codeWrap.className = 'ai-code-block';
+            const normalizedCode = this.normalizeCodeBlockValue(segment.value, segment.language);
 
             const header = document.createElement('div');
             header.className = 'ai-code-header';
@@ -290,14 +426,14 @@ const AiManager = {
             actions.appendChild(this.createCodeActionButton(
                 'fa-solid fa-copy',
                 'Kopyala',
-                () => { this.copyCodeBlock(segment.value); }
+                () => { this.copyCodeBlock(normalizedCode); }
             ));
 
             if (this.isShellCodeLanguage(segment.language)) {
                 actions.appendChild(this.createCodeActionButton(
                     'fa-solid fa-terminal',
                     'Terminale Yapistir',
-                    () => { this.sendCodeToTerminal(segment.value); }
+                    () => { this.sendCodeToTerminal(normalizedCode); }
                 ));
             }
 
@@ -309,13 +445,20 @@ const AiManager = {
 
             const code = document.createElement('code');
             code.className = 'ai-code-text';
-            code.textContent = segment.value;
+            code.textContent = normalizedCode;
 
             pre.appendChild(code);
             codeWrap.appendChild(header);
             codeWrap.appendChild(pre);
-            bubble.appendChild(codeWrap);
+            content.appendChild(codeWrap);
         });
+
+        if (!content.childNodes.length) {
+            const textBlock = document.createElement('div');
+            textBlock.className = 'ai-rich-text';
+            textBlock.textContent = String(text || '');
+            content.appendChild(textBlock);
+        }
     },
 
     generateRequestId() {
@@ -365,7 +508,9 @@ const AiManager = {
             this.hasStreamActivity = true;
             this.activeStreamText = nextText;
             this.setMessageState(messageRef, 'normal');
-            messageRef.bubble.textContent = nextText || messageRef.bubble.textContent;
+            if (nextText) {
+                this.renderAssistantMessage(messageRef, nextText);
+            }
             this.scrollToBottom();
             return;
         }
@@ -375,7 +520,7 @@ const AiManager = {
             this.activeStreamText = nextText;
             this.setMessageState(messageRef, 'normal');
             if (nextText) {
-                messageRef.bubble.textContent = nextText;
+                this.renderAssistantMessage(messageRef, nextText);
             }
             this.scrollToBottom();
             return;
@@ -499,6 +644,7 @@ const AiManager = {
         this.renderSelectionContextChip();
         if (this.aiInput) {
             this.aiInput.value = '';
+            this.adjustInputHeight();
             this.aiInput.focus();
         }
     },
@@ -514,6 +660,7 @@ const AiManager = {
         this.addMessage(userText, 'user');
 
         this.aiInput.value = '';
+        this.adjustInputHeight();
         this.setBusyState(true);
 
         const requestId = this.generateRequestId();
