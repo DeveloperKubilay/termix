@@ -868,11 +868,46 @@ window.TabManager = TabManager;
 const ModuleLoader = {
     currentModule: null,
     container: null,
+    allowedModules: new Set([
+        'hosts',
+        'keychain',
+        'port-forwarding',
+        'snippets',
+        'known-hosts',
+        'sftp',
+        'settings'
+    ]),
+    specialModules: new Set(['ai']),
     
     init() {
         this.container = document.getElementById('module-container');
         this.setupSidebarNavigation();
         this.loadModule('hosts');
+    },
+
+    normalizeModuleName(moduleName) {
+        return String(moduleName || '').trim().toLowerCase();
+    },
+
+    isAllowedModule(moduleName) {
+        return this.allowedModules.has(moduleName);
+    },
+
+    isSpecialModule(moduleName) {
+        return this.specialModules.has(moduleName);
+    },
+
+    showModuleError(message) {
+        if (!this.container) return;
+
+        this.container.textContent = '';
+
+        const errorNode = document.createElement('div');
+        errorNode.style.padding = '20px';
+        errorNode.style.color = '#f38ba8';
+        errorNode.textContent = String(message || 'Module not found.');
+
+        this.container.appendChild(errorNode);
     },
     
     setupSidebarNavigation() {
@@ -885,10 +920,16 @@ const ModuleLoader = {
 
         menuItems.forEach(item => {
             item.addEventListener('click', () => {
-                const moduleName = item.getAttribute('data-module');
+                const moduleName = this.normalizeModuleName(item.getAttribute('data-module'));
                 
                 // If it is AI, do nothing here (handled by AiManager)
-                if (moduleName === 'ai') return;
+                if (this.isSpecialModule(moduleName)) return;
+
+                if (!this.isAllowedModule(moduleName)) {
+                    console.error('Blocked invalid module request from sidebar.', { moduleName });
+                    this.showModuleError('Module not found.');
+                    return;
+                }
                 
                 menuItems.forEach(i => i.classList.remove('active'));
                 item.classList.add('active');
@@ -904,10 +945,21 @@ const ModuleLoader = {
     },
     
     async loadModule(moduleName) {
-        if (this.currentModule === moduleName) return;
+        const safeModuleName = this.normalizeModuleName(moduleName);
+        if (!this.isAllowedModule(safeModuleName)) {
+            console.error('Blocked invalid module load request.', { moduleName });
+            this.showModuleError('Module not found.');
+            return;
+        }
+
+        if (this.currentModule === safeModuleName) return;
         
         try {
-            const response = await fetch(`public/modules/${moduleName}/${moduleName}.html`);
+            const response = await fetch(`public/modules/${safeModuleName}/${safeModuleName}.html`);
+            if (!response.ok) {
+                throw new Error(`Module HTML request failed with status ${response.status}`);
+            }
+
             const html = await response.text();
             this.container.innerHTML = html;
             
@@ -916,13 +968,13 @@ const ModuleLoader = {
             }
             
             this.moduleScript = document.createElement('script');
-            this.moduleScript.src = `public/modules/${moduleName}/${moduleName}.js`;
+            this.moduleScript.src = `public/modules/${safeModuleName}/${safeModuleName}.js`;
             document.body.appendChild(this.moduleScript);
             
-            this.currentModule = moduleName;
+            this.currentModule = safeModuleName;
         } catch (error) {
-            console.error(`Error loading module ${moduleName}:`, error);
-            this.container.innerHTML = `<div style="padding: 20px; color: #f38ba8;">Module not found: ${moduleName}</div>`;
+            console.error(`Error loading module ${safeModuleName}:`, error);
+            this.showModuleError('Module not found.');
         }
     }
 };
