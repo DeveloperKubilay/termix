@@ -123,7 +123,11 @@ const AiManager = {
 
         const bubble = document.createElement('div');
         bubble.className = 'ai-msg-bubble';
-        bubble.textContent = text;
+        if (role === 'ai' && state === 'normal') {
+            this.renderAssistantMessage({ bubble }, text);
+        } else {
+            bubble.textContent = text;
+        }
 
         row.appendChild(bubble);
         this.aiMessages.appendChild(row);
@@ -146,6 +150,172 @@ const AiManager = {
         } else if (state === 'error') {
             messageRef.row.classList.add('error');
         }
+    },
+
+    normalizeCommandForRun(command) {
+        const value = String(command || '');
+        if (!value) return '\r';
+        if (value.endsWith('\r') || value.endsWith('\n')) {
+            return value;
+        }
+        return `${value}\r`;
+    },
+
+    getActiveTerminalSession() {
+        if (!window.TabManager || !Array.isArray(window.TabManager.tabs)) {
+            return null;
+        }
+
+        const activeTab = window.TabManager.tabs.find((item) => item.id === window.TabManager.activeTabId);
+        if (!activeTab || !activeTab.sessionObj || !activeTab.sessionObj.sessionId) {
+            return null;
+        }
+
+        return activeTab.sessionObj;
+    },
+
+    async copyCodeBlock(code) {
+        const value = String(code || '');
+        if (!value) return;
+
+        try {
+            if (window.clipboard && typeof window.clipboard.writeText === 'function') {
+                window.clipboard.writeText(value);
+            } else if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+                await navigator.clipboard.writeText(value);
+            } else {
+                throw new Error('Clipboard API is unavailable.');
+            }
+
+            window.notifyUser('Kod panoya kopyalandi.', 'success');
+        } catch (err) {
+            window.notifyUser(`Kopyalama basarisiz: ${err.message}`, 'error');
+        }
+    },
+
+    sendCodeToTerminal(code) {
+        const session = this.getActiveTerminalSession();
+        if (!session || !window.electronAPI || typeof window.electronAPI.send !== 'function') {
+            if (window.TabManager && typeof window.TabManager.activateTab === 'function') {
+                window.TabManager.activateTab('dashboard');
+            }
+            window.notifyUser('Aktif terminal sekmesi yok. Dashboard acildi.', 'warning');
+            return;
+        }
+
+        window.electronAPI.send('term-input', {
+            sessionId: session.sessionId,
+            data: this.normalizeCommandForRun(code)
+        });
+        window.notifyUser('Komut aktif terminale gonderildi.', 'success');
+    },
+
+    isShellCodeLanguage(language) {
+        const normalized = String(language || '').trim().toLowerCase();
+        return ['bash', 'sh', 'shell', 'zsh', 'fish', 'console', 'powershell', 'pwsh', 'ps1', 'cmd', 'bat'].includes(normalized);
+    },
+
+    parseAssistantSegments(text) {
+        const value = String(text == null ? '' : text);
+        const segments = [];
+        const pattern = /```([a-zA-Z0-9_+#.-]*)[ \t]*\r?\n([\s\S]*?)```/g;
+        let lastIndex = 0;
+        let match;
+
+        while ((match = pattern.exec(value)) !== null) {
+            if (match.index > lastIndex) {
+                segments.push({
+                    type: 'text',
+                    value: value.slice(lastIndex, match.index)
+                });
+            }
+
+            segments.push({
+                type: 'code',
+                language: String(match[1] || '').trim().toLowerCase(),
+                value: String(match[2] || '').replace(/\r?\n$/, '')
+            });
+            lastIndex = pattern.lastIndex;
+        }
+
+        if (lastIndex < value.length) {
+            segments.push({
+                type: 'text',
+                value: value.slice(lastIndex)
+            });
+        }
+
+        return segments.length ? segments : [{ type: 'text', value }];
+    },
+
+    createCodeActionButton(iconClass, label, onClick) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'ai-code-action-btn';
+        button.innerHTML = `<i class="${iconClass}"></i> ${label}`;
+        button.addEventListener('click', onClick);
+        return button;
+    },
+
+    renderAssistantMessage(messageRef, text) {
+        if (!messageRef || !messageRef.bubble) return;
+
+        const bubble = messageRef.bubble;
+        bubble.textContent = '';
+        const segments = this.parseAssistantSegments(text);
+
+        segments.forEach((segment) => {
+            if (segment.type === 'text') {
+                if (!segment.value) return;
+                const textBlock = document.createElement('div');
+                textBlock.className = 'ai-rich-text';
+                textBlock.textContent = segment.value;
+                bubble.appendChild(textBlock);
+                return;
+            }
+
+            const codeWrap = document.createElement('div');
+            codeWrap.className = 'ai-code-block';
+
+            const header = document.createElement('div');
+            header.className = 'ai-code-header';
+
+            const label = document.createElement('span');
+            label.className = 'ai-code-language';
+            label.textContent = segment.language || 'code';
+
+            const actions = document.createElement('div');
+            actions.className = 'ai-code-actions';
+
+            actions.appendChild(this.createCodeActionButton(
+                'fa-solid fa-copy',
+                'Kopyala',
+                () => { this.copyCodeBlock(segment.value); }
+            ));
+
+            if (this.isShellCodeLanguage(segment.language)) {
+                actions.appendChild(this.createCodeActionButton(
+                    'fa-solid fa-terminal',
+                    'Terminale Yapistir',
+                    () => { this.sendCodeToTerminal(segment.value); }
+                ));
+            }
+
+            header.appendChild(label);
+            header.appendChild(actions);
+
+            const pre = document.createElement('pre');
+            pre.className = 'ai-code-pre';
+
+            const code = document.createElement('code');
+            code.className = 'ai-code-text';
+            code.textContent = segment.value;
+
+            pre.appendChild(code);
+            codeWrap.appendChild(header);
+            codeWrap.appendChild(pre);
+            bubble.appendChild(codeWrap);
+        });
     },
 
     generateRequestId() {
@@ -375,7 +545,7 @@ const AiManager = {
 
             const assistantReply = result.reply || this.activeStreamText || '(Empty response)';
             this.setMessageState(pending, 'normal');
-            pending.bubble.textContent = assistantReply;
+            this.renderAssistantMessage(pending, assistantReply);
             this.chatHistory.push({ role: 'assistant', content: assistantReply });
         } catch (err) {
             this.setMessageState(pending, 'error');
