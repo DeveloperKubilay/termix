@@ -12,6 +12,7 @@
     "start": "electron .",
     "build": "electron-builder",
     "site:preview": "node website/server.js",
+    "test": "node --test tests/ai-provider.test.js",
     "giiiiiit": "git reset --hard HEAD && git clean -fd"
   },
   "build": {

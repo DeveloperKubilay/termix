@@ -4,6 +4,11 @@ const AiManager = {
     chatHistory: [],
     selectionContext: null,
     selectionContextListener: null,
+    streamSubscription: null,
+    activeStreamRequestId: '',
+    activeStreamMessage: null,
+    activeStreamText: '',
+    hasStreamActivity: false,
 
     init() {
         if (this.initialized) return;
@@ -65,6 +70,12 @@ const AiManager = {
             this.selectionContextListener = (event) => this.handleSelectionContextEvent(event);
             window.addEventListener('termix:ai-context-selection', this.selectionContextListener);
         }
+
+        if (!this.streamSubscription && window.electronAPI && typeof window.electronAPI.on === 'function') {
+            this.streamSubscription = window.electronAPI.on('ai:stream', (event, payload) => {
+                this.handleAiStreamEvent(payload);
+            });
+        }
     },
 
     openAiView() {
@@ -125,6 +136,86 @@ const AiManager = {
         this.isSending = Boolean(isBusy);
         if (!this.aiSendBtn) return;
         this.aiSendBtn.disabled = this.isSending;
+    },
+
+    setMessageState(messageRef, state = 'normal') {
+        if (!messageRef || !messageRef.row) return;
+        messageRef.row.classList.remove('status', 'error');
+        if (state === 'status') {
+            messageRef.row.classList.add('status');
+        } else if (state === 'error') {
+            messageRef.row.classList.add('error');
+        }
+    },
+
+    generateRequestId() {
+        if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+            return window.crypto.randomUUID();
+        }
+        return `req-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    },
+
+    trackPendingStream(requestId, messageRef) {
+        this.activeStreamRequestId = String(requestId || '');
+        this.activeStreamMessage = messageRef || null;
+        this.activeStreamText = '';
+        this.hasStreamActivity = false;
+    },
+
+    clearPendingStream() {
+        this.activeStreamRequestId = '';
+        this.activeStreamMessage = null;
+        this.activeStreamText = '';
+        this.hasStreamActivity = false;
+    },
+
+    handleAiStreamEvent(payload) {
+        if (!payload || String(payload.requestId || '') !== this.activeStreamRequestId) {
+            return;
+        }
+
+        const messageRef = this.activeStreamMessage;
+        if (!messageRef || !messageRef.bubble) {
+            return;
+        }
+
+        const phase = String(payload.phase || '').trim().toLowerCase();
+        const nextText = typeof payload.text === 'string' ? payload.text : '';
+        const errorText = payload && payload.error ? String(payload.error) : 'AI request failed.';
+
+        if (phase === 'start') {
+            this.setMessageState(messageRef, 'status');
+            if (!messageRef.bubble.textContent) {
+                messageRef.bubble.textContent = 'Thinking...';
+            }
+            return;
+        }
+
+        if (phase === 'delta') {
+            this.hasStreamActivity = true;
+            this.activeStreamText = nextText;
+            this.setMessageState(messageRef, 'normal');
+            messageRef.bubble.textContent = nextText || messageRef.bubble.textContent;
+            this.scrollToBottom();
+            return;
+        }
+
+        if (phase === 'complete') {
+            this.hasStreamActivity = true;
+            this.activeStreamText = nextText;
+            this.setMessageState(messageRef, 'normal');
+            if (nextText) {
+                messageRef.bubble.textContent = nextText;
+            }
+            this.scrollToBottom();
+            return;
+        }
+
+        if (phase === 'error') {
+            this.setMessageState(messageRef, 'error');
+            messageRef.bubble.textContent = `Error: ${errorText}`;
+            this.scrollToBottom();
+        }
     },
 
     normalizeInlineText(value) {
@@ -233,6 +324,7 @@ const AiManager = {
 
     resetChat() {
         this.chatHistory = [];
+        this.clearPendingStream();
         this.renderEmptyState();
         this.renderSelectionContextChip();
         if (this.aiInput) {
@@ -254,17 +346,19 @@ const AiManager = {
         this.aiInput.value = '';
         this.setBusyState(true);
 
+        const requestId = this.generateRequestId();
         const pending = this.addMessage('Thinking...', 'ai', 'status');
+        this.trackPendingStream(requestId, pending);
 
         try {
             if (!window.electronAPI || !window.electronAPI.ai || typeof window.electronAPI.ai.ask !== 'function') {
-                pending.row.classList.remove('status');
-                pending.row.classList.add('error');
+                this.setMessageState(pending, 'error');
                 pending.bubble.textContent = 'Error: AI IPC channel is unavailable. Restart the app.';
                 return;
             }
 
             const result = await window.electronAPI.ai.ask({
+                requestId,
                 prompt: aiPrompt,
                 messages: this.chatHistory
             });
@@ -274,21 +368,20 @@ const AiManager = {
                     ? result.message
                     : 'AI request failed.';
 
-                pending.row.classList.remove('status');
-                pending.row.classList.add('error');
+                this.setMessageState(pending, 'error');
                 pending.bubble.textContent = `Error: ${message}`;
                 return;
             }
 
-            const assistantReply = result.reply || '(Empty response)';
-            pending.row.classList.remove('status');
+            const assistantReply = result.reply || this.activeStreamText || '(Empty response)';
+            this.setMessageState(pending, 'normal');
             pending.bubble.textContent = assistantReply;
             this.chatHistory.push({ role: 'assistant', content: assistantReply });
         } catch (err) {
-            pending.row.classList.remove('status');
-            pending.row.classList.add('error');
+            this.setMessageState(pending, 'error');
             pending.bubble.textContent = `Error: ${err && err.message ? err.message : String(err)}`;
         } finally {
+            this.clearPendingStream();
             this.setBusyState(false);
             this.scrollToBottom();
         }
