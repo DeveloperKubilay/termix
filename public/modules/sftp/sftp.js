@@ -1386,6 +1386,7 @@
         return {
             sourcePaneKey,
             sourceSide,
+            sourceDir: pane.path,
             sourceSessionId: sourceSide === 'remote' ? pane.sessionId : null,
             items: validEntries.map((entry) => ({
                 path: entry.path,
@@ -1628,6 +1629,16 @@
 
         const clipboardSnapshot = state.clipboard;
         const isCut = clipboardSnapshot.isCut === true;
+
+        if (isCut) {
+            const destPath = destinationPane.path;
+            const srcDir = clipboardSnapshot.sourceDir;
+            if (clipboardSnapshot.sourcePaneKey === key && srcDir && destPath === srcDir) {
+                setStatus('Cannot move files to the same directory.', 'error');
+                return;
+            }
+        }
+
         const success = await executeCopyToPane(clipboardSnapshot, key, null, `${clipboardSnapshot.items.length} item(s) pasted.`);
 
         if (success && isCut) {
