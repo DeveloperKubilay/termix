@@ -553,11 +553,19 @@ function sftpFastGet(sftp, remotePath, localPath) {
 
 function copyLocalFileToRemoteWithProgress(sftp, sourcePath, destinationPath, onChunk) {
     return new Promise((resolve, reject) => {
+        let lastTransferred = 0;
         const options = {
             concurrency: 64,
             chunkSize: 32768 * 16,
             step: typeof onChunk === 'function'
-                ? (_totalTransferred, nb) => { onChunk(nb); }
+                ? (totalTransferred) => {
+                    const total = Number(totalTransferred);
+                    if (Number.isFinite(total)) {
+                        const delta = Math.max(0, total - lastTransferred);
+                        lastTransferred = total;
+                        if (delta > 0) onChunk(delta);
+                    }
+                }
                 : undefined
         };
         sftp.fastPut(sourcePath, destinationPath, options, (err) => {
@@ -572,11 +580,19 @@ function copyLocalFileToRemoteWithProgress(sftp, sourcePath, destinationPath, on
 
 function copyRemoteFileToLocalWithProgress(sftp, sourcePath, destinationPath, onChunk) {
     return new Promise((resolve, reject) => {
+        let lastTransferred = 0;
         const options = {
             concurrency: 64,
             chunkSize: 32768 * 16,
             step: typeof onChunk === 'function'
-                ? (_totalTransferred, nb) => { onChunk(nb); }
+                ? (totalTransferred) => {
+                    const total = Number(totalTransferred);
+                    if (Number.isFinite(total)) {
+                        const delta = Math.max(0, total - lastTransferred);
+                        lastTransferred = total;
+                        if (delta > 0) onChunk(delta);
+                    }
+                }
                 : undefined
         };
         sftp.fastGet(sourcePath, destinationPath, options, (err) => {
