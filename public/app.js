@@ -724,6 +724,20 @@ const TabManager = {
             }
         });
 
+        tabEl.addEventListener('mousedown', (e) => {
+            if (e.button === 1) {
+                e.preventDefault();
+            }
+        });
+
+        tabEl.addEventListener('auxclick', (e) => {
+            if (e.button === 1 && tab.closable) {
+                e.preventDefault();
+                e.stopPropagation();
+                this.closeTab(id);
+            }
+        });
+
         this.tabBar.appendChild(tabEl);
         this.tabs.push(tab);
 
