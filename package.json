@@ -66,7 +66,8 @@
     "dmg-license": "^1.0.11"
   },
   "overrides": {
-    "tar": "^7.5.11"
+    "tar": "^7.5.11",
+    "@xmldom/xmldom": ">=0.8.12"
   },
   "devDependencies": {
     "electron": "^41.1.0",
