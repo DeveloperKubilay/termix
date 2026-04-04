@@ -553,74 +553,39 @@ function sftpFastGet(sftp, remotePath, localPath) {
 
 function copyLocalFileToRemoteWithProgress(sftp, sourcePath, destinationPath, onChunk) {
     return new Promise((resolve, reject) => {
-        const readStream = fs.createReadStream(sourcePath);
-        const writeStream = sftp.createWriteStream(destinationPath, { flags: 'w' });
-        let settled = false;
-        let finished = false;
-
-        const finish = (err) => {
-            if (settled) return;
-            settled = true;
-
+        const options = {
+            concurrency: 64,
+            chunkSize: 32768 * 16,
+            step: typeof onChunk === 'function'
+                ? (_totalTransferred, nb) => { onChunk(nb); }
+                : undefined
+        };
+        sftp.fastPut(sourcePath, destinationPath, options, (err) => {
             if (err) {
-                try { readStream.destroy(); } catch (_) {}
-                try { writeStream.destroy(); } catch (_) {}
                 reject(err);
                 return;
             }
-
             resolve();
-        };
-
-        readStream.on('data', (chunk) => {
-            if (typeof onChunk === 'function') {
-                onChunk(Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk));
-            }
         });
-        readStream.on('error', finish);
-        writeStream.on('error', finish);
-        writeStream.on('finish', () => {
-            finished = true;
-            finish();
-        });
-        writeStream.on('close', () => {
-            if (!finished) {
-                finish();
-            }
-        });
-        readStream.pipe(writeStream);
     });
 }
 
 function copyRemoteFileToLocalWithProgress(sftp, sourcePath, destinationPath, onChunk) {
     return new Promise((resolve, reject) => {
-        const readStream = sftp.createReadStream(sourcePath);
-        const writeStream = fs.createWriteStream(destinationPath);
-        let settled = false;
-
-        const finish = (err) => {
-            if (settled) return;
-            settled = true;
-
+        const options = {
+            concurrency: 64,
+            chunkSize: 32768 * 16,
+            step: typeof onChunk === 'function'
+                ? (_totalTransferred, nb) => { onChunk(nb); }
+                : undefined
+        };
+        sftp.fastGet(sourcePath, destinationPath, options, (err) => {
             if (err) {
-                try { readStream.destroy(); } catch (_) {}
-                try { writeStream.destroy(); } catch (_) {}
                 reject(err);
                 return;
             }
-
             resolve();
-        };
-
-        readStream.on('data', (chunk) => {
-            if (typeof onChunk === 'function') {
-                onChunk(Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk));
-            }
         });
-        readStream.on('error', finish);
-        writeStream.on('error', finish);
-        writeStream.on('finish', () => finish());
-        readStream.pipe(writeStream);
     });
 }
 

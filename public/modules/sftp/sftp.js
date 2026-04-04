@@ -730,7 +730,7 @@
     function closeContextMenu() {
         if (ui.contextMenu) {
             ui.contextMenu.classList.remove('show');
-            const itemActions = ui.contextMenu.querySelectorAll('button[data-action="rename"], button[data-action="delete"]');
+            const itemActions = ui.contextMenu.querySelectorAll('button[data-action="rename"], button[data-action="delete"], button[data-action="copy"], button[data-action="cut"], button[data-action="paste"]');
             itemActions.forEach((action) => {
                 action.disabled = false;
                 action.style.opacity = '1';
@@ -754,6 +754,23 @@
             action.style.opacity = targetPath ? '1' : '0.45';
             action.style.pointerEvents = targetPath ? 'auto' : 'none';
         });
+
+        const pane = getPaneState(paneKey);
+        const hasSelection = pane && pane.selected && pane.selected.size > 0;
+        const copyActions = ui.contextMenu.querySelectorAll('button[data-action="copy"], button[data-action="cut"]');
+        copyActions.forEach((action) => {
+            action.disabled = !hasSelection;
+            action.style.opacity = hasSelection ? '1' : '0.45';
+            action.style.pointerEvents = hasSelection ? 'auto' : 'none';
+        });
+
+        const hasClipboard = state.clipboard && Array.isArray(state.clipboard.items) && state.clipboard.items.length > 0;
+        const pasteAction = ui.contextMenu.querySelector('button[data-action="paste"]');
+        if (pasteAction) {
+            pasteAction.disabled = !hasClipboard;
+            pasteAction.style.opacity = hasClipboard ? '1' : '0.45';
+            pasteAction.style.pointerEvents = hasClipboard ? 'auto' : 'none';
+        }
 
         ui.contextMenu.style.left = `${Math.max(6, Number(clientX) || 0)}px`;
         ui.contextMenu.style.top = `${Math.max(6, Number(clientY) || 0)}px`;
@@ -1464,6 +1481,25 @@
         setStatus(`${selected.length} item(s) copied.`, 'success');
     }
 
+    function cutSelected(key) {
+        const pane = getPaneState(key);
+        if (!pane) return;
+
+        const selected = getSelectedEntries(key);
+        if (!selected.length) {
+            setStatus('No selected item to cut.', 'error');
+            return;
+        }
+
+        const payload = buildCopyPayload(key, selected);
+        if (!payload) return;
+
+        payload.isCut = true;
+        state.clipboard = payload;
+
+        setStatus(`${selected.length} item(s) cut.`, 'success');
+    }
+
     async function executeCopyToPane(copyPayload, destinationPaneKey, destinationPathOverride, successMessage) {
         const destinationPane = getPaneState(destinationPaneKey);
         if (!destinationPane) return false;
@@ -1590,7 +1626,32 @@
             return;
         }
 
-        await executeCopyToPane(state.clipboard, key, null, `${state.clipboard.items.length} item(s) pasted.`);
+        const clipboardSnapshot = state.clipboard;
+        const isCut = clipboardSnapshot.isCut === true;
+        const success = await executeCopyToPane(clipboardSnapshot, key, null, `${clipboardSnapshot.items.length} item(s) pasted.`);
+
+        if (success && isCut) {
+            state.clipboard = null;
+            const sourcePaneKey = clipboardSnapshot.sourcePaneKey;
+            const sourcePane = getPaneState(sourcePaneKey);
+            const sourceSide = clipboardSnapshot.sourceSide;
+            const sessionId = sourceSide === 'remote'
+                ? (sourcePane && sourcePane.sessionId ? sourcePane.sessionId : clipboardSnapshot.sourceSessionId)
+                : null;
+            try {
+                const deleteResult = await sftpApi.deleteItems({
+                    side: sourceSide,
+                    sessionId,
+                    items: clipboardSnapshot.items.map((item) => ({ path: item.path }))
+                });
+                if (!deleteResult || deleteResult.success === false) {
+                    setStatus(deleteResult && deleteResult.message ? deleteResult.message : 'Move failed: could not delete source items.', 'error');
+                }
+            } catch (err) {
+                setStatus(err && err.message ? err.message : 'Move failed: could not delete source items.', 'error');
+            }
+            await refreshPane(sourcePaneKey);
+        }
     }
 
     async function deleteSelected(key) {
@@ -2304,6 +2365,20 @@
                 closeContextMenu();
 
                 if (!paneKey) return;
+
+                if (action === 'copy') {
+                    copySelected(paneKey);
+                    return;
+                }
+                if (action === 'cut') {
+                    cutSelected(paneKey);
+                    return;
+                }
+                if (action === 'paste') {
+                    await pasteToPane(paneKey);
+                    return;
+                }
+
                 if (action === 'create-directory') {
                     await createDirectoryInPane(paneKey, directoryPath);
                     return;
@@ -2613,6 +2688,12 @@
                 clearDropIndicators();
                 state.dragPayload = null;
 
+                // Block dropping to the same source directory
+                if (payload.sourcePaneKey === key && destinationPath === null) {
+                    setStatus('Cannot drag files to the current directory.', 'error');
+                    return;
+                }
+
                 await executeCopyToPane(payload, key, destinationPath, 'Copy completed.');
             });
 
@@ -2705,6 +2786,12 @@
             if ((event.ctrlKey || event.metaKey) && (event.key === 'c' || event.key === 'C')) {
                 event.preventDefault();
                 copySelected(key);
+                return;
+            }
+
+            if ((event.ctrlKey || event.metaKey) && (event.key === 'x' || event.key === 'X')) {
+                event.preventDefault();
+                cutSelected(key);
                 return;
             }
 
