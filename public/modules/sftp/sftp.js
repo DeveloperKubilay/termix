@@ -529,7 +529,15 @@
             env: { iconClass: 'fa-solid fa-sliders', color: '#6a737d' },
             ini: { iconClass: 'fa-solid fa-file-lines', color: '#6a737d' },
             toml: { iconClass: 'fa-solid fa-file-lines', color: '#6a737d' },
-            txt: { iconClass: 'fa-regular fa-file-lines', color: '#9ca3af' }
+            txt: { iconClass: 'fa-regular fa-file-lines', color: '#9ca3af' },
+            zip: { iconClass: 'fa-solid fa-file-zipper', color: '#f9a825' },
+            tar: { iconClass: 'fa-solid fa-file-zipper', color: '#f9a825' },
+            gz: { iconClass: 'fa-solid fa-file-zipper', color: '#f9a825' },
+            tgz: { iconClass: 'fa-solid fa-file-zipper', color: '#f9a825' },
+            bz2: { iconClass: 'fa-solid fa-file-zipper', color: '#f9a825' },
+            xz: { iconClass: 'fa-solid fa-file-zipper', color: '#f9a825' },
+            rar: { iconClass: 'fa-solid fa-file-zipper', color: '#a259ff' },
+            '7z': { iconClass: 'fa-solid fa-file-zipper', color: '#f9a825' }
         };
 
         const found = map[ext] || null;
