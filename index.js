@@ -1,5 +1,5 @@
 const fs = require('fs');
-const { app, BrowserWindow, nativeImage, screen } = require('electron');
+const { app, BrowserWindow, nativeImage, screen, ipcMain } = require('electron');
 const path = require('path');
 
 const { loadIPC } = require('./util/ipc-loader');
@@ -9,7 +9,6 @@ const sftpManager = require('./util/sftp/manager');
 const { enqueueProfileSync } = require('./util/cloud-sync');
 const updater = require('./util/updater');
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
-const { ipcMain } = require('electron');
 
 if (!gotSingleInstanceLock) {
   app.quit();
@@ -49,7 +48,10 @@ if (!gotSingleInstanceLock) {
   });
 
   app.on('second-instance', () => {
-    if (!mainWindow) return;
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      createMainWindow(db);
+      return;
+    }
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.show();
     mainWindow.focus();
@@ -122,6 +124,9 @@ if (!gotSingleInstanceLock) {
 
     mainWindow.on('close', () => {
       store.set('windowBounds', mainWindow.getBounds());
+    });
+    mainWindow.on('closed', () => {
+      mainWindow = null;
     });
 
     mainWindow.setMenuBarVisibility(false);
