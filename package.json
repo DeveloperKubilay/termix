@@ -49,10 +49,13 @@
     }
   },
   "dependencies": {
+    "@fontsource/jetbrains-mono": "^5.2.8",
+    "@fortawesome/fontawesome-free": "^7.2.0",
     "electron-updater": "^6.8.3",
     "firebase": "^12.11.0",
     "kubitdb": "^1.5.5",
     "markdown-it": "^14.1.1",
+    "monaco-editor": "^0.55.1",
     "node-machine-id": "^1.1.12",
     "node-pty": "^1.1.0",
     "serialport": "^13.0.0",

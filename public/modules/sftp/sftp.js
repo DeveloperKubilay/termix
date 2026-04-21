@@ -10,7 +10,7 @@
     const paneKeys = ['left', 'right'];
     const MAX_EDITABLE_FILE_BYTES = 2 * 1024 * 1024;
     const EDITOR_STYLE_ID = 'sftp-editor-style';
-    const MONACO_LOADER_URL = 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.min.js';
+    const MONACO_LOADER_URL = 'node_modules/monaco-editor/min/vs/loader.js';
     const TYPE_AHEAD_RESET_MS = 800;
 
     const ui = {
@@ -671,7 +671,7 @@
                 try {
                     window.require.config({
                         paths: {
-                            vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs'
+                            vs: 'node_modules/monaco-editor/min/vs'
                         }
                     });
 
