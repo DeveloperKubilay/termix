@@ -12,7 +12,6 @@ const { DATA_ROOT, PROFILES_DIR, ASAR_ROOT } = require('./paths');
 const REGISTRY_FILE = path.join(PROFILES_DIR, 'registry.json');
 const LEGACY_ACTIVE_DB_FILE = path.join(DATA_ROOT, 'kubitdb.json');
 const LEGACY_PROFILES_DIR = path.join(ASAR_ROOT, 'commands', 'profiles', 'profiles');
-const LEGACY_USER_DATA_DIR_NAMES = ['termix-ssh'];
 
 let isInitialized = false;
 
@@ -121,108 +120,6 @@ function generateProfileId(registry, name) {
     return next;
 }
 
-function resolveLegacyDataRoots() {
-    const roots = new Set();
-    const dataRootParent = path.dirname(DATA_ROOT);
-
-    for (const dirName of LEGACY_USER_DATA_DIR_NAMES) {
-        roots.add(path.join(dataRootParent, dirName));
-    }
-
-    try {
-        const electron = require('electron');
-        const app = electron && electron.app;
-        if (app && typeof app.getPath === 'function') {
-            const appDataDir = app.getPath('appData');
-            for (const dirName of LEGACY_USER_DATA_DIR_NAMES) {
-                roots.add(path.join(appDataDir, dirName));
-            }
-        }
-    } catch (_) {}
-
-    return Array.from(roots).filter((root) => root !== DATA_ROOT && fs.existsSync(root));
-}
-
-function findLegacyRootDataFromLegacyUserDirs() {
-    const legacyRoots = resolveLegacyDataRoots();
-
-    for (const legacyRoot of legacyRoots) {
-        const legacyDbFile = path.join(legacyRoot, 'kubitdb.json');
-        const legacyData = readJson(legacyDbFile, {});
-        if (Object.keys(legacyData).length > 0) {
-            return legacyData;
-        }
-    }
-
-    return {};
-}
-
-function loadLegacyRootData() {
-    const primaryData = readJson(LEGACY_ACTIVE_DB_FILE, {});
-    if (Object.keys(primaryData).length > 0) {
-        return primaryData;
-    }
-    return findLegacyRootDataFromLegacyUserDirs();
-}
-
-function migrateLegacyProfilesFromUserDataRoots(registry) {
-    const legacyRoots = resolveLegacyDataRoots();
-    let migrated = false;
-
-    for (const legacyRoot of legacyRoots) {
-        const legacyProfilesDir = path.join(legacyRoot, 'profiles');
-        const legacyRegistryFile = path.join(legacyProfilesDir, 'registry.json');
-        if (!fs.existsSync(legacyRegistryFile)) continue;
-
-        const legacyRegistry = readJson(legacyRegistryFile, {});
-        const legacyProfiles = Array.isArray(legacyRegistry.profiles) ? legacyRegistry.profiles : [];
-        if (legacyProfiles.length === 0) continue;
-        const migratedIdMap = new Map();
-
-        for (const legacyProfile of legacyProfiles) {
-            if (!legacyProfile || typeof legacyProfile !== 'object') continue;
-
-            const sourceId = String(legacyProfile.id || '').trim();
-            if (!sourceId) continue;
-
-            const sourcePath = path.join(legacyProfilesDir, `${sourceId}.json`);
-            if (!fs.existsSync(sourcePath)) continue;
-
-            const legacyData = readJson(sourcePath, {});
-            const fallbackName = legacyProfile.name || sourceId;
-            const normalized = normalizeProfileData(legacyData, fallbackName);
-
-            let profileId = sourceId;
-            if (registry.profiles.some((item) => item.id === profileId)) {
-                profileId = generateProfileId(registry, normalized.name || fallbackName);
-            }
-            migratedIdMap.set(sourceId, profileId);
-
-            writeJson(profileFilePath(profileId), normalized);
-
-            registry.profiles.push({
-                id: profileId,
-                name: normalized.name,
-                type: normalized.type,
-                createdAt: legacyProfile.createdAt || new Date().toISOString(),
-                updatedAt: legacyProfile.updatedAt || new Date().toISOString(),
-                usedAt: legacyProfile.usedAt || null
-            });
-            migrated = true;
-        }
-
-        if (migrated && legacyRegistry.activeProfileId) {
-            const activeCandidate = String(legacyRegistry.activeProfileId).trim();
-            const mappedActiveId = migratedIdMap.get(activeCandidate) || activeCandidate;
-            if (registry.profiles.find((item) => item.id === mappedActiveId)) {
-                registry.activeProfileId = mappedActiveId;
-            }
-        }
-    }
-
-    return migrated;
-}
-
 function migrateLegacyProfiles(registry) {
     if (!fs.existsSync(LEGACY_PROFILES_DIR)) return false;
 
@@ -284,13 +181,9 @@ function ensureBaseRegistry() {
     ensureDir(PROFILES_DIR);
 
     let registry = readRegistry();
-    const legacyRootData = loadLegacyRootData();
+    const legacyRootData = readJson(LEGACY_ACTIVE_DB_FILE, {});
     const hasLegacyRootData = Object.keys(legacyRootData).length > 0;
     let changed = false;
-
-    if (registry.profiles.length === 0 && migrateLegacyProfilesFromUserDataRoots(registry)) {
-        changed = true;
-    }
 
     if (registry.profiles.length === 0) {
         const now = new Date().toISOString();
