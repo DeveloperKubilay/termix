@@ -8,6 +8,9 @@ const portForwardManager = require('./util/port-forwarding/manager');
 const sftpManager = require('./util/sftp/manager');
 const { enqueueProfileSync } = require('./util/cloud-sync');
 const updater = require('./util/updater');
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!gotSingleInstanceLock) app.quit();
 
 function getAppIcon() {
   const iconPath = path.join(__dirname, 'public/icons/favicon.ico');
@@ -16,90 +19,103 @@ function getAppIcon() {
   return icon.isEmpty() ? undefined : icon;
 }
 
-app.whenReady().then(async () => {
-  const appIcon = getAppIcon();
-
-  if (process.platform === 'darwin' && app.dock && appIcon) {
-    app.dock.setIcon(appIcon);
-  }
-
-  try {
-    await enqueueProfileSync('pull', {
-      source: 'app-startup',
-      timeoutMs: 15000
-    });
-  } catch (err) {
-    console.error('Failed to pull cloud data on startup:', err);
-  }
-
-  main();
-  updater.init();
-  const channels = loadIPC();
-  console.log('Loaded IPC channels:', channels.length);
-});
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
-
-profileManager.ensureInitialized();
-const db = require("./util/startDb")();
-profileManager.persistActiveProfileData();
+let mainWindow = null;
+const db = gotSingleInstanceLock ? require("./util/startDb")() : null;
+if (gotSingleInstanceLock) {
+  profileManager.ensureInitialized();
+  profileManager.persistActiveProfileData();
+}
 global.Terminals = {}
 
-let isQuitInProgress = false;
+if (gotSingleInstanceLock) {
+  app.whenReady().then(async () => {
+    const appIcon = getAppIcon();
 
-app.on('before-quit', (event) => {
-  if (updater.isInstallingUpdate()) {
-    isQuitInProgress = true;
-    return;
-  }
-
-  if (isQuitInProgress) {
-    return;
-  }
-
-  event.preventDefault();
-  isQuitInProgress = true;
-
-  (async () => {
-    try {
-      profileManager.persistActiveProfileData();
-    } catch (err) {
-      console.error('Failed to persist active profile:', err);
+    if (process.platform === 'darwin' && app.dock && appIcon) {
+      app.dock.setIcon(appIcon);
     }
 
     try {
-      await enqueueProfileSync('push', {
-        source: 'app-shutdown',
+      await enqueueProfileSync('pull', {
+        source: 'app-startup',
         timeoutMs: 15000
       });
     } catch (err) {
-      console.error('Failed to push cloud data on shutdown:', err);
+      console.error('Failed to pull cloud data on startup:', err);
     }
 
-    try {
-      await portForwardManager.stopAllForwards();
-    } catch (err) {
-      console.error('Failed to stop active port forwards:', err);
+    main();
+    updater.init();
+    const channels = loadIPC();
+    console.log('Loaded IPC channels:', channels.length);
+  });
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit();
+  });
+
+  app.on('second-instance', () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  });
+}
+
+  let isQuitInProgress = false;
+
+  app.on('before-quit', (event) => {
+    if (updater.isInstallingUpdate()) {
+      isQuitInProgress = true;
+      return;
     }
 
-    try {
-      await sftpManager.disconnectAll();
-    } catch (err) {
-      console.error('Failed to close active SFTP sessions:', err);
+    if (isQuitInProgress) {
+      return;
     }
 
-    app.quit();
-  })();
-});
+    event.preventDefault();
+    isQuitInProgress = true;
+
+    (async () => {
+      try {
+        profileManager.persistActiveProfileData();
+      } catch (err) {
+        console.error('Failed to persist active profile:', err);
+      }
+
+      try {
+        await enqueueProfileSync('push', {
+          source: 'app-shutdown',
+          timeoutMs: 15000
+        });
+      } catch (err) {
+        console.error('Failed to push cloud data on shutdown:', err);
+      }
+
+      try {
+        await portForwardManager.stopAllForwards();
+      } catch (err) {
+        console.error('Failed to stop active port forwards:', err);
+      }
+
+      try {
+        await sftpManager.disconnectAll();
+      } catch (err) {
+        console.error('Failed to close active SFTP sessions:', err);
+      }
+
+      app.quit();
+    })();
+  });
+}
 
 function main() {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
   const savedBounds = db.get('windowBounds') || {};
   const appIcon = getAppIcon();
 
-  let mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: savedBounds.width || Math.round(width * 0.75),
     height: savedBounds.height || Math.round(height * 0.75),
     x: savedBounds.x,
