@@ -52,9 +52,14 @@ if (!gotSingleInstanceLock) {
       createMainWindow(db);
       return;
     }
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.show();
-    mainWindow.focus();
+    try {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    } catch (err) {
+      console.error('Failed to focus existing window on second-instance event:', err);
+      createMainWindow(db);
+    }
   });
 
   app.on('before-quit', (event) => {
