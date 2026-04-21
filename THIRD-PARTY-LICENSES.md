@@ -1,10 +1,16 @@
 # Third-Party Licenses
 
-Termix uses the following open-source packages. Each package's license is listed below.
+This document lists the direct runtime dependencies that Termix declares and tracks manually for license-reference purposes. It is not, by itself, a guaranteed complete inventory of every transitive package present in the full dependency tree.
+
+For a complete notice set, review the resolved dependency tree from `package-lock.json` / `node_modules` and generate a full license report during release or compliance review. A repeatable process is:
+
+1. Run `npm ls --all` to inspect the complete installed dependency tree.
+2. Run `npx license-checker --production --json` (or an equivalent license-reporting tool already approved by the project) to generate a complete production dependency license inventory.
+3. Update or supplement this document with any bundled or otherwise distributed transitive runtime dependencies that require notice inclusion.
 
 ---
 
-## Runtime Dependencies
+## Direct Runtime Dependencies
 
 ### @fontsource/jetbrains-mono
 - **Version:** 5.2.8
@@ -137,7 +143,9 @@ Termix uses the following open-source packages. Each package's license is listed
 
 ---
 
-## License Texts
+## License References
+
+The excerpts and key terms below are provided for quick reference only. Where a full verbatim text is not reproduced here, the canonical text is available at the linked URL. Full license texts for all installed packages can be found inside each package's directory under `node_modules`.
 
 ### MIT License (applies to: electron-updater, kubitdb, markdown-it, monaco-editor, node-machine-id, node-pty, serialport, ssh2, xterm, xterm-addon-fit, xterm-addon-unicode11, xterm-addon-webgl, electron, electron-builder)
 
