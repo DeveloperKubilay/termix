@@ -9,25 +9,19 @@ const sftpManager = require('./util/sftp/manager');
 const { enqueueProfileSync } = require('./util/cloud-sync');
 const updater = require('./util/updater');
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
+const { ipcMain } = require('electron');
 
-if (!gotSingleInstanceLock) app.quit();
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  let mainWindow = null;
+  let isQuitInProgress = false;
+  global.Terminals = {};
 
-function getAppIcon() {
-  const iconPath = path.join(__dirname, 'public/icons/favicon.ico');
-  if (!fs.existsSync(iconPath)) return undefined;
-  const icon = nativeImage.createFromPath(iconPath);
-  return icon.isEmpty() ? undefined : icon;
-}
-
-let mainWindow = null;
-const db = gotSingleInstanceLock ? require("./util/startDb")() : null;
-if (gotSingleInstanceLock) {
   profileManager.ensureInitialized();
+  const db = require("./util/startDb")();
   profileManager.persistActiveProfileData();
-}
-global.Terminals = {}
 
-if (gotSingleInstanceLock) {
   app.whenReady().then(async () => {
     const appIcon = getAppIcon();
 
@@ -44,7 +38,7 @@ if (gotSingleInstanceLock) {
       console.error('Failed to pull cloud data on startup:', err);
     }
 
-    main();
+    createMainWindow(db);
     updater.init();
     const channels = loadIPC();
     console.log('Loaded IPC channels:', channels.length);
@@ -60,9 +54,6 @@ if (gotSingleInstanceLock) {
     mainWindow.show();
     mainWindow.focus();
   });
-}
-
-  let isQuitInProgress = false;
 
   app.on('before-quit', (event) => {
     if (updater.isInstallingUpdate()) {
@@ -108,67 +99,71 @@ if (gotSingleInstanceLock) {
       app.quit();
     })();
   });
-}
 
-function main() {
-  const { width, height } = screen.getPrimaryDisplay().workAreaSize;
-  const savedBounds = db.get('windowBounds') || {};
-  const appIcon = getAppIcon();
+  function createMainWindow(store) {
+    const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+    const savedBounds = store.get('windowBounds') || {};
+    const appIcon = getAppIcon();
 
-  mainWindow = new BrowserWindow({
-    width: savedBounds.width || Math.round(width * 0.75),
-    height: savedBounds.height || Math.round(height * 0.75),
-    x: savedBounds.x,
-    y: savedBounds.y,
-    autoHideMenuBar: true,
-    icon: appIcon,
-    webPreferences: {
-      preload: path.join(__dirname, 'util/ipc-preloader.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false
+    mainWindow = new BrowserWindow({
+      width: savedBounds.width || Math.round(width * 0.75),
+      height: savedBounds.height || Math.round(height * 0.75),
+      x: savedBounds.x,
+      y: savedBounds.y,
+      autoHideMenuBar: true,
+      icon: appIcon,
+      webPreferences: {
+        preload: path.join(__dirname, 'util/ipc-preloader.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false
+      }
+    });
+
+    mainWindow.on('close', () => {
+      store.set('windowBounds', mainWindow.getBounds());
+    });
+
+    mainWindow.setMenuBarVisibility(false);
+    mainWindow.loadFile(path.join(__dirname, 'index.html'));
+  }
+
+  // Frontend -> Backend (Input)
+  ipcMain.on('term-input', (event, payload) => {
+    const { sessionId, data } = payload;
+    const session = global.Terminals[sessionId];
+    if (session) {
+      session.write({ type: 'input', message: data });
     }
   });
 
-  mainWindow.on('close', () => {
-    db.set('windowBounds', mainWindow.getBounds());
+  // Frontend -> Backend (Resize)
+  ipcMain.on('term-resize', (event, payload) => {
+    const { sessionId, cols, rows } = payload;
+    const session = global.Terminals[sessionId];
+    if (session) {
+      session.write({ type: 'resize', cols, rows });
+    }
   });
 
-  mainWindow.setMenuBarVisibility(false);
-  mainWindow.loadFile(path.join(__dirname, 'index.html'));
+  // Frontend -> Backend (Close/Disconnect)
+  ipcMain.on('term-close', (event, payload) => {
+    const { sessionId } = payload;
+    const session = global.Terminals[sessionId];
+    if (session) {
+      try {
+        session.end(); // SSH bağlantısını kapat
+        delete global.Terminals[sessionId]; // Listeden sil
+      } catch (e) {
+        console.error("Error closing session:", e);
+      }
+    }
+  });
 }
 
-// Global Terminal Input Handler
-const { ipcMain } = require('electron');
-
-// Frontend -> Backend (Input)
-ipcMain.on('term-input', (event, payload) => {
-  const { sessionId, data } = payload;
-  const session = global.Terminals[sessionId];
-  if (session) {
-    session.write({ type: 'input', message: data });
-  }
-});
-
-// Frontend -> Backend (Resize)
-ipcMain.on('term-resize', (event, payload) => {
-  const { sessionId, cols, rows } = payload;
-  const session = global.Terminals[sessionId];
-  if (session) {
-    session.write({ type: 'resize', cols, rows });
-  }
-});
-
-// Frontend -> Backend (Close/Disconnect)
-ipcMain.on('term-close', (event, payload) => {
-  const { sessionId } = payload;
-  const session = global.Terminals[sessionId];
-  if (session) {
-    try {
-      session.end(); // SSH bağlantısını kapat
-      delete global.Terminals[sessionId]; // Listeden sil
-    } catch (e) {
-      console.error("Error closing session:", e);
-    }
-  }
-});
+function getAppIcon() {
+  const iconPath = path.join(__dirname, 'public/icons/favicon.ico');
+  if (!fs.existsSync(iconPath)) return undefined;
+  const icon = nativeImage.createFromPath(iconPath);
+  return icon.isEmpty() ? undefined : icon;
+}

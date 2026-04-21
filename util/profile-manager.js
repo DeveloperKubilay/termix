@@ -157,6 +157,14 @@ function findLegacyRootDataFromLegacyUserDirs() {
     return {};
 }
 
+function loadLegacyRootData() {
+    const primaryData = readJson(LEGACY_ACTIVE_DB_FILE, {});
+    if (Object.keys(primaryData).length > 0) {
+        return primaryData;
+    }
+    return findLegacyRootDataFromLegacyUserDirs();
+}
+
 function migrateLegacyProfilesFromUserDataRoots(registry) {
     const legacyRoots = resolveLegacyDataRoots();
     let migrated = false;
@@ -169,6 +177,7 @@ function migrateLegacyProfilesFromUserDataRoots(registry) {
         const legacyRegistry = readJson(legacyRegistryFile, {});
         const legacyProfiles = Array.isArray(legacyRegistry.profiles) ? legacyRegistry.profiles : [];
         if (legacyProfiles.length === 0) continue;
+        const migratedIdMap = new Map();
 
         for (const legacyProfile of legacyProfiles) {
             if (!legacyProfile || typeof legacyProfile !== 'object') continue;
@@ -187,6 +196,7 @@ function migrateLegacyProfilesFromUserDataRoots(registry) {
             if (registry.profiles.some((item) => item.id === profileId)) {
                 profileId = generateProfileId(registry, normalized.name || fallbackName);
             }
+            migratedIdMap.set(sourceId, profileId);
 
             writeJson(profileFilePath(profileId), normalized);
 
@@ -203,8 +213,9 @@ function migrateLegacyProfilesFromUserDataRoots(registry) {
 
         if (migrated && legacyRegistry.activeProfileId) {
             const activeCandidate = String(legacyRegistry.activeProfileId).trim();
-            if (registry.profiles.find((item) => item.id === activeCandidate)) {
-                registry.activeProfileId = activeCandidate;
+            const mappedActiveId = migratedIdMap.get(activeCandidate) || activeCandidate;
+            if (registry.profiles.find((item) => item.id === mappedActiveId)) {
+                registry.activeProfileId = mappedActiveId;
             }
         }
     }
@@ -273,7 +284,7 @@ function ensureBaseRegistry() {
     ensureDir(PROFILES_DIR);
 
     let registry = readRegistry();
-    const legacyRootData = readJson(LEGACY_ACTIVE_DB_FILE, findLegacyRootDataFromLegacyUserDirs());
+    const legacyRootData = loadLegacyRootData();
     const hasLegacyRootData = Object.keys(legacyRootData).length > 0;
     let changed = false;
 
