@@ -50,7 +50,7 @@
   },
   "dependencies": {
     "@fontsource/jetbrains-mono": "^5.2.8",
-    "@fortawesome/fontawesome-free": "^7.2.0",
+    "@fortawesome/fontawesome-free": "^6.7.2",
     "electron-updater": "^6.8.3",
     "firebase": "^12.11.0",
     "kubitdb": "^1.5.5",
