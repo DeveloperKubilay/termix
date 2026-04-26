@@ -36,8 +36,8 @@
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
-/* Normalize Font Awesome icon vertical alignment across FA versions */
-.fa-solid, .fa-regular, .fa-brands {
+/* Normalize Font Awesome icon vertical alignment across FA versions and legacy aliases */
+.fa, .fas, .far, .fab, .fa-solid, .fa-regular, .fa-brands {
     vertical-align: -0.125em;
     line-height: 1;
 }

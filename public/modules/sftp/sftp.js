@@ -1425,6 +1425,7 @@
     function pushBackStack(pane, path) {
         if (!pane || !Array.isArray(pane.backStack)) return;
         if (path == null || path === '') return;
+        if (pane.backStack[pane.backStack.length - 1] === path) return;
         pane.backStack.push(path);
         if (pane.backStack.length > BACK_STACK_LIMIT) {
             pane.backStack.shift();
@@ -1500,8 +1501,11 @@
                 const connected = await ensurePaneConnected(key);
                 if (!connected) return;
             }
-            pushBackStack(pane, pane.path);
-            await refreshPane(key, entry.path);
+            const currentPath = pane.path;
+            const refreshed = await refreshPane(key, entry.path);
+            if (refreshed) {
+                pushBackStack(pane, currentPath);
+            }
         } else {
             await openFileInEditor(key, entry.path);
         }
@@ -1516,15 +1520,18 @@
             if (!connected) return;
         }
 
-        pushBackStack(pane, pane.path);
-        await refreshPane(key, pane.parentPath);
+        const currentPath = pane.path;
+        const refreshed = await refreshPane(key, pane.parentPath);
+        if (refreshed) {
+            pushBackStack(pane, currentPath);
+        }
     }
 
     async function navigateBack(key) {
         const pane = getPaneState(key);
         if (!pane || !pane.backStack || !pane.backStack.length) return;
 
-        const prevPath = pane.backStack.pop();
+        const prevPath = pane.backStack[pane.backStack.length - 1];
         if (!prevPath) return;
 
         if (getPaneSide(pane) === 'remote') {
@@ -1532,7 +1539,10 @@
             if (!connected) return;
         }
 
-        await refreshPane(key, prevPath);
+        const refreshed = await refreshPane(key, prevPath);
+        if (refreshed) {
+            pane.backStack.pop();
+        }
     }
 
     function toggleSelection(key, targetPath) {
@@ -2698,8 +2708,11 @@
                 const withRange = event.shiftKey;
 
                 if (isParentRow) {
-                    pushBackStack(pane, pane.path);
-                    await refreshPane(key, targetPath);
+                    const currentPath = pane.path;
+                    const refreshed = await refreshPane(key, targetPath);
+                    if (refreshed) {
+                        pushBackStack(pane, currentPath);
+                    }
                     return;
                 }
 
@@ -2725,8 +2738,11 @@
                 const isDirectory = row.dataset.directory === '1';
 
                 if (isParentRow || isDirectory) {
-                    pushBackStack(pane, pane.path);
-                    await refreshPane(key, targetPath);
+                    const currentPath = pane.path;
+                    const refreshed = await refreshPane(key, targetPath);
+                    if (refreshed) {
+                        pushBackStack(pane, currentPath);
+                    }
                     return;
                 }
 
