@@ -127,7 +127,8 @@
                 selected: new Set(),
                 selectionAnchorPath: null,
                 loading: false,
-                requestId: 0
+                requestId: 0,
+                backStack: []
             },
             right: {
                 key: 'right',
@@ -142,7 +143,8 @@
                 selected: new Set(),
                 selectionAnchorPath: null,
                 loading: false,
-                requestId: 0
+                requestId: 0,
+                backStack: []
             }
         }
     });
@@ -167,6 +169,9 @@
         }
         if (!Array.isArray(pane.entries)) {
             pane.entries = [];
+        }
+        if (!Array.isArray(pane.backStack)) {
+            pane.backStack = [];
         }
         pane.connectPromise = null;
     });
@@ -1215,6 +1220,7 @@
         pane.entries = [];
         clearPaneSelection(pane);
         pane.loading = false;
+        pane.backStack = [];
         clearTransferQueues('Transfers cancelled due to disconnect.');
 
         renderPane(key);
@@ -1321,6 +1327,7 @@
             pane.path = '';
             pane.parentPath = null;
             pane.entries = [];
+            pane.backStack = [];
             clearPaneSelection(pane);
             renderPane(key);
             await refreshPane(key, '');
@@ -1332,6 +1339,7 @@
         pane.path = '';
         pane.parentPath = null;
         pane.entries = [];
+        pane.backStack = [];
         clearPaneSelection(pane);
         renderPane(key);
         setStatus(`Select a VDS for the ${key === 'left' ? 'left' : 'right'} pane.`, 'info');
@@ -1410,6 +1418,131 @@
         pane.selected.add(targetPath);
         pane.selectionAnchorPath = targetPath;
         updateSelectionClasses(key);
+    }
+
+    const BACK_STACK_LIMIT = 50;
+
+    function pushBackStack(pane, path) {
+        if (!pane || !Array.isArray(pane.backStack)) return;
+        if (path == null || path === '') return;
+        if (pane.backStack[pane.backStack.length - 1] === path) return;
+        pane.backStack.push(path);
+        if (pane.backStack.length > BACK_STACK_LIMIT) {
+            pane.backStack.shift();
+        }
+    }
+
+    function scrollRowIntoView(key, targetPath) {
+        const paneUi = getPaneUi(key);
+        if (!paneUi || !paneUi.list) return;
+        const encodedPath = encodePathValue(targetPath);
+        const row = paneUi.list.querySelector(`.sftp-file-row:not([data-parent="1"])[data-path="${encodedPath}"]`);
+        if (row) row.scrollIntoView({ block: 'nearest' });
+    }
+
+    function navigateListDown(key) {
+        const pane = getPaneState(key);
+        if (!pane || !pane.entries || !pane.entries.length) return;
+
+        const anchorPath = pane.selectionAnchorPath;
+        let nextIndex = 0;
+
+        if (anchorPath) {
+            const currentIndex = findEntryIndexByPath(pane, anchorPath);
+            if (currentIndex >= 0 && currentIndex < pane.entries.length - 1) {
+                nextIndex = currentIndex + 1;
+            } else if (currentIndex >= 0) {
+                nextIndex = currentIndex;
+            }
+        }
+
+        const nextEntry = pane.entries[nextIndex];
+        if (!nextEntry) return;
+
+        selectOnly(key, nextEntry.path);
+        scrollRowIntoView(key, nextEntry.path);
+    }
+
+    function navigateListUp(key) {
+        const pane = getPaneState(key);
+        if (!pane || !pane.entries || !pane.entries.length) return;
+
+        const anchorPath = pane.selectionAnchorPath;
+        let prevIndex = 0;
+
+        if (anchorPath) {
+            const currentIndex = findEntryIndexByPath(pane, anchorPath);
+            if (currentIndex > 0) {
+                prevIndex = currentIndex - 1;
+            } else {
+                prevIndex = 0;
+            }
+        }
+
+        const prevEntry = pane.entries[prevIndex];
+        if (!prevEntry) return;
+
+        selectOnly(key, prevEntry.path);
+        scrollRowIntoView(key, prevEntry.path);
+    }
+
+    async function activateSelectedItem(key) {
+        const pane = getPaneState(key);
+        if (!pane) return;
+
+        const anchorPath = pane.selectionAnchorPath;
+        if (!anchorPath) return;
+
+        const entry = (pane.entries || []).find((e) => e && e.path === anchorPath);
+        if (!entry) return;
+
+        if (entry.isDirectory) {
+            if (getPaneSide(pane) === 'remote') {
+                const connected = await ensurePaneConnected(key);
+                if (!connected) return;
+            }
+            const currentPath = pane.path;
+            const refreshed = await refreshPane(key, entry.path);
+            if (refreshed) {
+                pushBackStack(pane, currentPath);
+            }
+        } else {
+            await openFileInEditor(key, entry.path);
+        }
+    }
+
+    async function navigateToParent(key) {
+        const pane = getPaneState(key);
+        if (!pane || !pane.parentPath) return;
+
+        if (getPaneSide(pane) === 'remote') {
+            const connected = await ensurePaneConnected(key);
+            if (!connected) return;
+        }
+
+        const currentPath = pane.path;
+        const refreshed = await refreshPane(key, pane.parentPath);
+        if (refreshed) {
+            pushBackStack(pane, currentPath);
+        }
+    }
+
+    async function navigateBack(key) {
+        const pane = getPaneState(key);
+        if (!pane || !pane.backStack || !pane.backStack.length) return;
+
+        const prevPath = pane.backStack[pane.backStack.length - 1];
+        if (!prevPath) return;
+
+        if (getPaneSide(pane) === 'remote') {
+            const connected = await ensurePaneConnected(key);
+            if (!connected) return;
+        }
+
+        const refreshed = await refreshPane(key, prevPath);
+        if (refreshed) {
+            pane.backStack.pop();
+        }
     }
 
     function toggleSelection(key, targetPath) {
@@ -2575,7 +2708,11 @@
                 const withRange = event.shiftKey;
 
                 if (isParentRow) {
-                    await refreshPane(key, targetPath);
+                    const currentPath = pane.path;
+                    const refreshed = await refreshPane(key, targetPath);
+                    if (refreshed) {
+                        pushBackStack(pane, currentPath);
+                    }
                     return;
                 }
 
@@ -2601,7 +2738,11 @@
                 const isDirectory = row.dataset.directory === '1';
 
                 if (isParentRow || isDirectory) {
-                    await refreshPane(key, targetPath);
+                    const currentPath = pane.path;
+                    const refreshed = await refreshPane(key, targetPath);
+                    if (refreshed) {
+                        pushBackStack(pane, currentPath);
+                    }
                     return;
                 }
 
@@ -2823,6 +2964,36 @@
             if (event.key === 'Delete') {
                 event.preventDefault();
                 await deleteSelected(key);
+                return;
+            }
+
+            if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key === 'ArrowDown') {
+                event.preventDefault();
+                navigateListDown(key);
+                return;
+            }
+
+            if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key === 'ArrowUp') {
+                event.preventDefault();
+                navigateListUp(key);
+                return;
+            }
+
+            if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key === 'Enter') {
+                event.preventDefault();
+                await activateSelectedItem(key);
+                return;
+            }
+
+            if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key === 'ArrowLeft') {
+                event.preventDefault();
+                await navigateToParent(key);
+                return;
+            }
+
+            if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key === 'ArrowRight') {
+                event.preventDefault();
+                await navigateBack(key);
                 return;
             }
 
