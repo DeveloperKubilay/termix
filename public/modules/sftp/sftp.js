@@ -1479,7 +1479,6 @@
                 const connected = await ensurePaneConnected(key);
                 if (!connected) return;
             }
-
             await refreshPane(key, entry.path);
             return;
         }
