@@ -121,6 +121,16 @@ window.ConnectionModule = {
             ? hostFontSize
             : defaultTabFontSize;
 
+        // Ensure JetBrains Mono is fully loaded before creating the terminal so that
+        // xterm.js measures character dimensions with the correct font and avoids
+        // rendering inconsistencies caused by a fallback font being used at init time.
+        try {
+            await document.fonts.load(`${initialFontSize}px "JetBrains Mono"`);
+            await document.fonts.load(`500 ${initialFontSize}px "JetBrains Mono"`);
+        } catch (_) {
+            // Non-fatal: proceed even if the font-load promise rejects
+        }
+
         const term = new window.Terminal({
             ...TerminalSettings,
             allowProposedApi: true,
