@@ -135,6 +135,35 @@ window.ConnectionModule = {
 
         term.open(container);
 
+        function isActiveTerminalTab() {
+            if (!window.TabManager || !window.TabManager.activeTabId) return true;
+            return window.TabManager.activeTabId === tabId;
+        }
+
+        function focusTerminal() {
+            if (!document.getElementById(containerId)) return;
+            try { term.focus(); } catch (_) {}
+
+            const helperTextarea = container.querySelector('.xterm-helper-textarea');
+            if (helperTextarea && document.activeElement !== helperTextarea) {
+                try {
+                    helperTextarea.focus({ preventScroll: true });
+                } catch (_) {
+                    try { helperTextarea.focus(); } catch (_) {}
+                }
+            }
+        }
+
+        function scheduleTerminalFocus() {
+            setTimeout(() => {
+                if (isUserDisconnected || !isActiveTerminalTab()) return;
+                requestAnimationFrame(() => {
+                    if (isUserDisconnected || !isActiveTerminalTab()) return;
+                    focusTerminal();
+                });
+            }, 0);
+        }
+
         try {
             if (window.Unicode11Addon && window.Unicode11Addon.Unicode11Addon) {
                 const unicode11Addon = new window.Unicode11Addon.Unicode11Addon();
@@ -146,8 +175,10 @@ window.ConnectionModule = {
         }
 
         container.addEventListener('mousedown', () => {
-            try { term.focus(); } catch (_) {}
+            focusTerminal();
         });
+
+        scheduleTerminalFocus();
 
         // Loading the WebGL addon after terminal init improves performance and reduces stutter.
         try {
@@ -286,6 +317,7 @@ window.ConnectionModule = {
                 emitAiSelectionContext('');
                 try { window.electronAPI.send('term-close', { sessionId: currentSessionId }); } catch (_) {}
                 window.removeEventListener('keydown', handleTerminalZoomKeydown);
+                window.removeEventListener('keydown', handleTerminalAutoFocusKeydown, true);
                 if (resizeObserver) resizeObserver.disconnect();
                 try { term.dispose(); } catch (_) {}
                 try { container.innerHTML = ''; } catch (_) {}
@@ -334,7 +366,7 @@ window.ConnectionModule = {
                     term.writeln('');
                     term.writeln('\x1b[33mSession ended.\x1b[0m');
                     term.writeln('Press Enter to restart...');
-                    try { term.focus(); } catch (_) {}
+                    focusTerminal();
                     
                     restartHandler = term.onData(data => {
                         if (isUserDisconnected) {
@@ -371,6 +403,50 @@ window.ConnectionModule = {
             window.electronAPI.send('term-input', { sessionId: currentSessionId, data });
         });
 
+        const isEditableElement = (element) => {
+            if (!element) return false;
+            const tagName = element.tagName ? element.tagName.toLowerCase() : '';
+            return tagName === 'input' || tagName === 'textarea' || element.isContentEditable;
+        };
+
+        const getKeyboardInputData = (event) => {
+            if (event.ctrlKey || event.metaKey || event.altKey) return null;
+            if (event.key === 'Enter') return '\r';
+            if (event.key === 'Backspace') return '\u007f';
+            if (event.key === 'Tab') return '\t';
+            if (event.key === 'Escape') return '\u001b';
+            if (event.key === 'ArrowUp') return '\u001b[A';
+            if (event.key === 'ArrowDown') return '\u001b[B';
+            if (event.key === 'ArrowRight') return '\u001b[C';
+            if (event.key === 'ArrowLeft') return '\u001b[D';
+            if (event.key.length === 1) return event.key;
+            return null;
+        };
+
+        const handleTerminalAutoFocusKeydown = (event) => {
+            if (isUserDisconnected || !isActiveTerminalTab()) return;
+            if (isEditableElement(document.activeElement)) return;
+            if (container.contains(document.activeElement)) return;
+
+            const data = getKeyboardInputData(event);
+            if (!data) return;
+
+            event.preventDefault();
+            focusTerminal();
+
+            if (restartHandler && data === '\r') {
+                clearRestartHandler();
+                term.writeln('Restarting...');
+                triggerReload().catch(e => {
+                    if (!isUserDisconnected) term.writeln(`\x1b[31mRestart failed: ${e && e.message ? e.message : e}\x1b[0m`);
+                });
+                return;
+            }
+
+            markActivity();
+            window.electronAPI.send('term-input', { sessionId: currentSessionId, data });
+        };
+
         function sendResize() {
             // Skip resize if container is hidden or has zero dimensions.
             if (!container.clientWidth || !container.clientHeight) return;
@@ -403,6 +479,7 @@ window.ConnectionModule = {
                 clearReconnectTimer();
                 markActivity();
                 sendResize();
+                scheduleTerminalFocus();
             }
         };
 
@@ -417,13 +494,8 @@ window.ConnectionModule = {
         initialResizeTimerId = setTimeout(() => {
             initialResizeTimerId = null;
             sendResize();
+            scheduleTerminalFocus();
         }, 100);
-
-
-        const isActiveTerminalTab = () => {
-            if (!window.TabManager || !window.TabManager.activeTabId) return true;
-            return window.TabManager.activeTabId === tabId;
-        };
 
         const persistHostFontSize = async (fontSize) => {
             if (!hostInfo || hostInfo.id == null) return;
@@ -458,6 +530,7 @@ window.ConnectionModule = {
         };
 
         window.addEventListener('keydown', handleTerminalZoomKeydown);
+        window.addEventListener('keydown', handleTerminalAutoFocusKeydown, true);
 
         term.onSelectionChange(() => {
             const selection = term.getSelection();
@@ -484,6 +557,7 @@ window.ConnectionModule = {
             sessionId: currentSessionId,
             term: term,
             fitAddon: fitAddon,
+            focus: focusTerminal,
             dispose: () => {
                 isUserDisconnected = true;
                 clearTimeout(msgTimer);
@@ -496,6 +570,7 @@ window.ConnectionModule = {
                 // Stop observer
                 if (resizeObserver) resizeObserver.disconnect();
                 window.removeEventListener('keydown', handleTerminalZoomKeydown);
+                window.removeEventListener('keydown', handleTerminalAutoFocusKeydown, true);
                 // Dispose terminal
                 try { term.dispose(); } catch (_) {}
                 // Send close request to backend (optional)

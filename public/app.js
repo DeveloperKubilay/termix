@@ -835,6 +835,18 @@ const TabManager = {
         }
 
         this.activeTabId = id;
+
+        if (tabData && tabData.sessionObj && typeof tabData.sessionObj.focus === 'function') {
+            requestAnimationFrame(() => {
+                const activeTab = this.tabs.find(t => t.id === id);
+                if (!activeTab || activeTab.sessionObj !== tabData.sessionObj) return;
+                try {
+                    activeTab.sessionObj.focus();
+                } catch (err) {
+                    console.warn('Error focusing terminal tab:', err);
+                }
+            });
+        }
     },
 
     closeTab(id) {
