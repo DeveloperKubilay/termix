@@ -127,9 +127,16 @@ window.ConnectionModule = {
         try {
             await document.fonts.load(`${initialFontSize}px "JetBrains Mono"`);
             await document.fonts.load(`500 ${initialFontSize}px "JetBrains Mono"`);
+            // document.fonts.ready resolves once the browser has processed all loaded
+            // fonts, giving a stronger guarantee than load() alone.
+            await document.fonts.ready;
         } catch (_) {
             // Non-fatal: proceed even if the font-load promise rejects
         }
+
+        // Wait one animation frame so the browser applies the loaded font metrics
+        // before xterm.js measures character cell dimensions.
+        await new Promise(resolve => requestAnimationFrame(resolve));
 
         const term = new window.Terminal({
             ...TerminalSettings,
@@ -195,6 +202,9 @@ window.ConnectionModule = {
             const webglAddon = new window.WebglAddon.WebglAddon();
             webglAddon.onContextLoss(e => {
                 webglAddon.dispose();
+                // Force xterm to re-render via its DOM fallback renderer so that
+                // the screen does not go blank after a GPU context loss.
+                try { term.refresh(0, term.rows - 1); } catch (_) {}
             });
             term.loadAddon(webglAddon);
         } catch (e) {
@@ -261,6 +271,12 @@ window.ConnectionModule = {
 
         let sessionResult;
         let connectRetryAttempt = 0;
+
+        // Fit the terminal to the container before connecting so that the backend
+        // opens the shell with the actual initial dimensions rather than 80x24.
+        try { fitAddon.fit(); } catch (_) {}
+        hostInfo.initialCols = term.cols || 80;
+        hostInfo.initialRows = term.rows || 24;
 
         while (true) {
             try {
