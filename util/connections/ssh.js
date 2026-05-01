@@ -28,6 +28,11 @@ function parseSshPort(value, fallback = SSH_PORT_FALLBACK) {
     return parsed;
 }
 
+function parseTerminalDimension(value, fallback) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function loadPrivateKey(certPath) {
     const normalizedPath = String(certPath || '').trim();
     if (!normalizedPath) return null;
@@ -148,8 +153,11 @@ module.exports = (data) => {
 
             sendToFrontend({ type: "connected" });
 
-            // Default SSH shell options
-            conn.shell({ term: 'xterm-256color', rows: 24, cols: 80 }, (err, shellStream) => {
+            // Open the shell with the actual terminal dimensions supplied by the
+            // frontend so that the server formats its initial output correctly.
+            const initialCols = parseTerminalDimension(data.initialCols, 80);
+            const initialRows = parseTerminalDimension(data.initialRows, 24);
+            conn.shell({ term: 'xterm-256color', rows: initialRows, cols: initialCols }, (err, shellStream) => {
                 if (err) {
                     sendToFrontend({ type: "error", message: err.message });
                     try {
