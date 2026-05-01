@@ -12,6 +12,7 @@ const SSH_KEEPALIVE_INTERVAL_MS = 10000;
 const SSH_KEEPALIVE_COUNT_MAX = 6;
 const SFTP_IDLE_PING_INTERVAL_MS = 20000;
 const SFTP_IDLE_PING_MIN_IDLE_MS = 15000;
+const SFTP_TRANSFER_STALL_TIMEOUT_MS = 30000;
 
 function createSessionId() {
     if (typeof crypto.randomUUID === 'function') {
@@ -554,26 +555,44 @@ function sftpFastGet(sftp, remotePath, localPath) {
 function copyLocalFileToRemoteWithProgress(sftp, sourcePath, destinationPath, onChunk) {
     return new Promise((resolve, reject) => {
         let lastTransferred = 0;
+        let settled = false;
+        let stallTimer = null;
+
+        const settle = (err) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(stallTimer);
+            if (err) reject(err);
+            else resolve();
+        };
+
+        const resetStallTimer = () => {
+            clearTimeout(stallTimer);
+            stallTimer = setTimeout(() => {
+                const err = new Error('Upload stalled: no progress for 30 seconds.');
+                err.code = 'STALL_TIMEOUT';
+                settle(err);
+            }, SFTP_TRANSFER_STALL_TIMEOUT_MS);
+        };
+
+        resetStallTimer();
+
         const options = {
             concurrency: 64,
             chunkSize: 32768 * 16,
-            step: typeof onChunk === 'function'
-                ? (totalTransferred) => {
-                    const total = Number(totalTransferred);
-                    if (Number.isFinite(total)) {
-                        const delta = Math.max(0, total - lastTransferred);
-                        lastTransferred = total;
-                        if (delta > 0) onChunk(delta);
-                    }
+            step: (totalTransferred) => {
+                resetStallTimer();
+                const total = Number(totalTransferred);
+                if (Number.isFinite(total)) {
+                    const delta = Math.max(0, total - lastTransferred);
+                    lastTransferred = total;
+                    if (delta > 0 && typeof onChunk === 'function') onChunk(delta);
                 }
-                : undefined
-        };
-        sftp.fastPut(sourcePath, destinationPath, options, (err) => {
-            if (err) {
-                reject(err);
-                return;
             }
-            resolve();
+        };
+
+        sftp.fastPut(sourcePath, destinationPath, options, (err) => {
+            settle(err || null);
         });
     });
 }
@@ -581,26 +600,44 @@ function copyLocalFileToRemoteWithProgress(sftp, sourcePath, destinationPath, on
 function copyRemoteFileToLocalWithProgress(sftp, sourcePath, destinationPath, onChunk) {
     return new Promise((resolve, reject) => {
         let lastTransferred = 0;
+        let settled = false;
+        let stallTimer = null;
+
+        const settle = (err) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(stallTimer);
+            if (err) reject(err);
+            else resolve();
+        };
+
+        const resetStallTimer = () => {
+            clearTimeout(stallTimer);
+            stallTimer = setTimeout(() => {
+                const err = new Error('Download stalled: no progress for 30 seconds.');
+                err.code = 'STALL_TIMEOUT';
+                settle(err);
+            }, SFTP_TRANSFER_STALL_TIMEOUT_MS);
+        };
+
+        resetStallTimer();
+
         const options = {
             concurrency: 64,
             chunkSize: 32768 * 16,
-            step: typeof onChunk === 'function'
-                ? (totalTransferred) => {
-                    const total = Number(totalTransferred);
-                    if (Number.isFinite(total)) {
-                        const delta = Math.max(0, total - lastTransferred);
-                        lastTransferred = total;
-                        if (delta > 0) onChunk(delta);
-                    }
+            step: (totalTransferred) => {
+                resetStallTimer();
+                const total = Number(totalTransferred);
+                if (Number.isFinite(total)) {
+                    const delta = Math.max(0, total - lastTransferred);
+                    lastTransferred = total;
+                    if (delta > 0 && typeof onChunk === 'function') onChunk(delta);
                 }
-                : undefined
-        };
-        sftp.fastGet(sourcePath, destinationPath, options, (err) => {
-            if (err) {
-                reject(err);
-                return;
             }
-            resolve();
+        };
+
+        sftp.fastGet(sourcePath, destinationPath, options, (err) => {
+            settle(err || null);
         });
     });
 }
