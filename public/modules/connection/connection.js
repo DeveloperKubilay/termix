@@ -1,7 +1,7 @@
 window.ConnectionModule = {
     init: async function (containerId, hostInfo) {
         if (!containerId) return;
-        const TERMINAL_FONT_FAMILY = '"JetBrains Mono", "Fira Code", "Cascadia Mono", "Cascadia Code", Consolas, "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "Courier New", monospace';
+        const TERMINAL_FONT_FAMILY = '"JetBrains Mono", monospace';
         const DEFAULT_TAB_FONT_SCALE = 1.1;
         const CONNECT_MESSAGE_DELAY_MS = 250;
         const IDLE_RECONNECT_THRESHOLD_MS = 30000;
@@ -124,12 +124,15 @@ window.ConnectionModule = {
         // Ensure JetBrains Mono is fully loaded before creating the terminal so that
         // xterm.js measures character dimensions with the correct font and avoids
         // rendering inconsistencies caused by a fallback font being used at init time.
+        // document.fonts.ready is awaited first so that all @font-face declarations
+        // from the @fontsource stylesheets are registered before we request the font.
+        // Without this, document.fonts.load() may return an empty result on the very
+        // first connection (before the CSS has been fully processed) and the terminal
+        // falls back to a different font until the next reconnect.
         try {
+            await document.fonts.ready;
             await document.fonts.load(`${initialFontSize}px "JetBrains Mono"`);
             await document.fonts.load(`500 ${initialFontSize}px "JetBrains Mono"`);
-            // document.fonts.ready resolves once the browser has processed all loaded
-            // fonts, giving a stronger guarantee than load() alone.
-            await document.fonts.ready;
         } catch (_) {
             // Non-fatal: proceed even if the font-load promise rejects
         }

@@ -7,7 +7,7 @@ const DEFAULT_AI_SETTINGS = {
 
 const DEFAULT_TERMINAL_SETTINGS = {
     cursorBlink: true,
-    fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Mono", "Cascadia Code", Consolas, "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "Courier New", monospace',
+    fontFamily: '"JetBrains Mono", monospace',
     rightClickCopyPaste: true,
     fontSize: 14,
     fontWeight: 500,
