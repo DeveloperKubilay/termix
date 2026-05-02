@@ -130,9 +130,13 @@ window.ConnectionModule = {
         // first connection (before the CSS has been fully processed) and the terminal
         // falls back to a different font until the next reconnect.
         try {
-            await document.fonts.ready;
-            await document.fonts.load(`${initialFontSize}px "JetBrains Mono"`);
-            await document.fonts.load(`500 ${initialFontSize}px "JetBrains Mono"`);
+            if (window.TermixFontLoader && typeof window.TermixFontLoader.ensureLoaded === 'function') {
+                await window.TermixFontLoader.ensureLoaded(initialFontSize);
+            } else {
+                await document.fonts.ready;
+                await document.fonts.load(`${initialFontSize}px "JetBrains Mono"`);
+                await document.fonts.load(`500 ${initialFontSize}px "JetBrains Mono"`);
+            }
         } catch (_) {
             // Non-fatal: proceed even if the font-load promise rejects
         }
@@ -154,6 +158,11 @@ window.ConnectionModule = {
         term.loadAddon(fitAddon);
 
         term.open(container);
+        try {
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            fitAddon.fit();
+            term.refresh(0, Math.max(0, term.rows - 1));
+        } catch (_) {}
 
         function isActiveTerminalTab() {
             if (!window.TabManager || !window.TabManager.activeTabId) return true;

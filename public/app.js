@@ -357,6 +357,67 @@ window.confirmActionWithOption = (message, options = {}) => {
     return Promise.resolve({ confirmed: false, checked: false });
 };
 
+const TermixFontLoader = {
+    family: '"JetBrains Mono"',
+    weights: ['400', '500', '600'],
+    readyPromise: null,
+
+    waitForAnimationFrame() {
+        return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+    },
+
+    withTimeout(promise, timeoutMs = 2500) {
+        return Promise.race([
+            promise,
+            new Promise((resolve) => setTimeout(resolve, timeoutMs))
+        ]);
+    },
+
+    async ensureLoaded(fontSize = 14) {
+        if (!document.fonts || typeof document.fonts.load !== 'function') {
+            return;
+        }
+
+        if (!this.readyPromise) {
+            this.readyPromise = (async () => {
+                const probe = document.createElement('span');
+                probe.textContent = 'Termix Font Probe 0123456789';
+                probe.setAttribute('aria-hidden', 'true');
+                probe.style.cssText = [
+                    'position: fixed',
+                    'left: -9999px',
+                    'top: -9999px',
+                    'visibility: hidden',
+                    `font-family: ${this.family}, monospace`,
+                    `font-size: ${fontSize}px`,
+                    'font-weight: 500',
+                    'white-space: nowrap',
+                    'pointer-events: none'
+                ].join(';');
+
+                document.body.appendChild(probe);
+
+                try {
+                    await this.withTimeout(document.fonts.ready);
+                    await Promise.all(this.weights.map((weight) => (
+                        this.withTimeout(document.fonts.load(`${weight} ${fontSize}px ${this.family}`))
+                    )));
+                    await this.waitForAnimationFrame();
+                    await this.waitForAnimationFrame();
+                } finally {
+                    probe.remove();
+                }
+            })().catch((err) => {
+                console.warn('Failed to preload terminal font:', err);
+            });
+        }
+
+        await this.readyPromise;
+    }
+};
+
+window.TermixFontLoader = TermixFontLoader;
+
 const ProfileManager = {
     profiles: [],
     activeProfileId: null,
@@ -1011,6 +1072,9 @@ document.addEventListener('DOMContentLoaded', () => {
     Drawer.init();
     AppNotify.init();
     AppConfirm.init();
+    if (window.TermixFontLoader) {
+        window.TermixFontLoader.ensureLoaded().catch(() => {});
+    }
     TabManager.init();
     ModuleLoader.init();
     if (window.AiManager) window.AiManager.init();
