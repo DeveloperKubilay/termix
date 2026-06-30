@@ -52,9 +52,9 @@
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@fortawesome/fontawesome-free": "^6.7.2",
     "electron-updater": "^6.8.3",
-    "firebase": "^12.11.0",
+    "firebase": "^12.14.0",
     "kubitdb": "^1.5.5",
-    "markdown-it": "^14.1.1",
+    "markdown-it": "^14.2.0",
     "monaco-editor": "^0.55.1",
     "node-machine-id": "^1.1.12",
     "node-pty": "^1.1.0",
@@ -70,10 +70,10 @@
   },
   "overrides": {
     "tar": "^7.5.11",
-    "@xmldom/xmldom": "^0.8.12"
+    "@xmldom/xmldom": "^0.8.13"
   },
   "devDependencies": {
-    "electron": "^41.1.0",
+    "electron": "^42.3.0",
     "electron-builder": "^26.8.1"
   }
 }
