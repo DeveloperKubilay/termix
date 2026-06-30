@@ -48,7 +48,7 @@ const DEFAULT_SFTP_SETTINGS = {
 };
 
 const UI_THEMES = ['classic', 'modern'];
-const DEFAULT_UI_THEME = 'classic';
+const DEFAULT_UI_THEME = 'modern';
 const LEGACY_THEME_MAP = {
     ocean: 'modern',
     graphite: 'modern',

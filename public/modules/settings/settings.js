@@ -50,7 +50,7 @@
 
     let selectedUiTheme = normalizeUiTheme(
         document.documentElement.getAttribute('data-theme')
-        || (window.ThemeManager ? window.ThemeManager.getCurrentTheme() : 'classic')
+        || (window.ThemeManager ? window.ThemeManager.getCurrentTheme() : 'modern')
     );
 
     function renderThemeButton() {

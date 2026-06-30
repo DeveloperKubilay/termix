@@ -53,9 +53,9 @@ window.Drawer = Drawer;
 
 const ThemeManager = {
     themes: ['classic', 'modern'],
-    defaultTheme: 'classic',
+    defaultTheme: 'modern',
     storageKey: 'termix-ui-theme',
-    currentTheme: 'classic',
+    currentTheme: 'modern',
     legacyThemeMap: {
         ocean: 'modern',
         graphite: 'modern',
