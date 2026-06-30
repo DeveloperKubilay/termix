@@ -71,7 +71,8 @@
   "overrides": {
     "tar": "^7.5.11",
     "@xmldom/xmldom": "^0.8.13",
-    "node-abi": "^4.31.0"
+    "node-abi": "^4.31.0",
+    "node-gyp": "^13.0.0"
   },
   "devDependencies": {
     "electron": "^42.3.0",
