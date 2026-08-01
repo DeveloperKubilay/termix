@@ -54,7 +54,7 @@
     "electron-updater": "^6.8.3",
     "firebase": "^12.14.0",
     "kubitdb": "^1.5.5",
-    "markdown-it": "^14.2.0",
+    "markdown-it": "^14.3.0",
     "monaco-editor": "^0.55.1",
     "node-machine-id": "^1.1.12",
     "node-pty": "^1.1.0",
