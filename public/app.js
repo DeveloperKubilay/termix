@@ -659,7 +659,17 @@ const TabManager = {
             this.sidebarToggle.addEventListener('click', () => {
                 if (!this.sidebar) return;
                 this.sidebar.style.transition = '';
-                this.sidebar.classList.toggle('collapsed');
+                const willExpand = this.sidebar.classList.contains('collapsed');
+                if (willExpand) {
+                    const currentW = parseFloat(this.sidebar.style.width) || 0;
+                    const minW = this.sidebar.classList.contains('ai-mode') ? 320 : 250;
+                    if (currentW < minW) {
+                        this.sidebar.style.width = '';
+                    }
+                    this.sidebar.classList.remove('collapsed');
+                } else {
+                    this.sidebar.classList.add('collapsed');
+                }
             });
         }
 
@@ -690,6 +700,7 @@ const TabManager = {
             };
 
             sidebarResizer.addEventListener('mousedown', (e) => {
+                if (this.sidebar.classList.contains('collapsed')) return;
                 e.preventDefault();
                 isResizing = true;
                 startX = e.clientX;
