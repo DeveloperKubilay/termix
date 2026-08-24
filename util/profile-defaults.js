@@ -44,7 +44,40 @@ const DEFAULT_UPDATE_SETTINGS = {
 };
 
 const DEFAULT_SFTP_SETTINGS = {
-    confirmOverwriteOnConflict: true
+    confirmOverwriteOnConflict: true,
+    // Folders like node_modules are rarely worth sending over the wire, but
+    // silently dropping files is worse, so this stays off until asked for.
+    skipPatternsEnabled: false,
+    skipPatterns: [
+        'node_modules',
+        '.git',
+        '.cache',
+        '.next',
+        '.nuxt',
+        'dist',
+        'build',
+        'vendor',
+        '__pycache__',
+        '.venv',
+        '.DS_Store',
+        'coverage',
+        '*.log'
+    ]
+};
+
+const MCP_PORT_MIN = 1024;
+const MCP_PORT_MAX = 65535;
+
+const DEFAULT_MCP_SETTINGS = {
+    enabled: false,
+    port: 8790,
+    token: '',
+    // Commands matching the block list are refused before they reach a host.
+    blockDestructiveCommands: true,
+    // Extra user supplied patterns, matched case-insensitively as substrings.
+    blockedPatterns: [],
+    // Lets an assistant type into terminals the user already has open.
+    allowExistingSessions: true
 };
 
 const UI_THEMES = ['classic', 'modern'];
@@ -129,6 +162,48 @@ function normalizeSftpSettings(value) {
         out.confirmOverwriteOnConflict = value.confirmOverwriteOnConflict;
     }
 
+    if (typeof value.skipPatternsEnabled === 'boolean') {
+        out.skipPatternsEnabled = value.skipPatternsEnabled;
+    }
+
+    if (Array.isArray(value.skipPatterns)) {
+        out.skipPatterns = value.skipPatterns
+            .map((pattern) => String(pattern || '').trim())
+            .filter(Boolean)
+            .slice(0, 200);
+    }
+
+    return out;
+}
+
+function normalizeMcpSettings(value) {
+    const out = clone(DEFAULT_MCP_SETTINGS);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return out;
+    }
+
+    if (typeof value.enabled === 'boolean') out.enabled = value.enabled;
+    if (typeof value.blockDestructiveCommands === 'boolean') {
+        out.blockDestructiveCommands = value.blockDestructiveCommands;
+    }
+    if (typeof value.allowExistingSessions === 'boolean') {
+        out.allowExistingSessions = value.allowExistingSessions;
+    }
+
+    const port = Number(value.port);
+    if (Number.isInteger(port) && port >= MCP_PORT_MIN && port <= MCP_PORT_MAX) {
+        out.port = port;
+    }
+
+    if (typeof value.token === 'string') out.token = value.token.trim();
+
+    if (Array.isArray(value.blockedPatterns)) {
+        out.blockedPatterns = value.blockedPatterns
+            .map((pattern) => String(pattern || '').trim())
+            .filter(Boolean)
+            .slice(0, 200);
+    }
+
     return out;
 }
 
@@ -148,11 +223,15 @@ module.exports = {
     DEFAULT_TERMINAL_SETTINGS,
     DEFAULT_UPDATE_SETTINGS,
     DEFAULT_SFTP_SETTINGS,
+    DEFAULT_MCP_SETTINGS,
+    MCP_PORT_MIN,
+    MCP_PORT_MAX,
     UI_THEMES,
     DEFAULT_UI_THEME,
     normalizeAiSettings,
     normalizeTerminalSettings,
     normalizeUpdateSettings,
     normalizeSftpSettings,
+    normalizeMcpSettings,
     normalizeUiTheme
 };

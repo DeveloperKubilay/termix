@@ -17,6 +17,8 @@
     const syncProviderDescription = document.getElementById('sync-provider-description');
     const tagsList = document.getElementById('tags-list');
     const sftpOverwriteConfirmToggle = document.getElementById('sftp-overwrite-confirm-toggle');
+    const sftpSkipPatternsToggle = document.getElementById('sftp-skip-patterns-toggle');
+    const sftpSkipPatterns = document.getElementById('sftp-skip-patterns');
 
     const autoUpdateToggle = document.getElementById('auto-update-toggle');
     const updateCurrentVersion = document.getElementById('update-current-version');
@@ -30,6 +32,21 @@
     const btnInstallUpdate = document.getElementById('btn-install-update');
     const btnOpenSourceCode = document.getElementById('btn-open-source-code');
 
+    const mcpEnabledToggle = document.getElementById('mcp-enabled-toggle');
+    const mcpPort = document.getElementById('mcp-port');
+    const mcpToken = document.getElementById('mcp-token');
+    const mcpClientConfig = document.getElementById('mcp-client-config');
+    const mcpStatusDot = document.getElementById('mcp-status-dot');
+    const mcpStatusText = document.getElementById('mcp-status-text');
+    const mcpBlockDestructiveToggle = document.getElementById('mcp-block-destructive-toggle');
+    const mcpAllowSessionsToggle = document.getElementById('mcp-allow-sessions-toggle');
+    const mcpBlockedPatterns = document.getElementById('mcp-blocked-patterns');
+    const btnMcpSave = document.getElementById('btn-mcp-save');
+    const btnMcpCopyToken = document.getElementById('btn-mcp-copy-token');
+    const btnMcpCopyConfig = document.getElementById('btn-mcp-copy-config');
+    const btnMcpRegenerate = document.getElementById('btn-mcp-regenerate');
+
+    let cachedMcpClientConfig = null;
     let activeCloudProvider = null;
     let activeProfileId = null;
     let activeProfileName = 'this account';
@@ -301,6 +318,17 @@
             setDeletePanelVisible(false);
 
             renderTags(data.tags);
+            if (sftpSkipPatternsToggle) {
+                sftpSkipPatternsToggle.checked = Boolean(data.sftpSettings && data.sftpSettings.skipPatternsEnabled);
+            }
+
+            if (sftpSkipPatterns) {
+                const patterns = data.sftpSettings && Array.isArray(data.sftpSettings.skipPatterns)
+                    ? data.sftpSettings.skipPatterns
+                    : ['node_modules', '.git', '.DS_Store'];
+                sftpSkipPatterns.value = patterns.join('\n');
+            }
+
             if (sftpOverwriteConfirmToggle) {
                 sftpOverwriteConfirmToggle.checked = !data.sftpSettings || data.sftpSettings.confirmOverwriteOnConflict !== false;
             }
@@ -521,7 +549,16 @@
             sftpSettings: {
                 confirmOverwriteOnConflict: sftpOverwriteConfirmToggle
                     ? Boolean(sftpOverwriteConfirmToggle.checked)
-                    : true
+                    : true,
+                skipPatternsEnabled: sftpSkipPatternsToggle
+                    ? Boolean(sftpSkipPatternsToggle.checked)
+                    : false,
+                skipPatterns: sftpSkipPatterns
+                    ? String(sftpSkipPatterns.value)
+                        .split('\n')
+                        .map(line => line.trim())
+                        .filter(Boolean)
+                    : ['node_modules', '.git', '.DS_Store']
             },
             uiTheme: selectedUiTheme
         };
@@ -604,8 +641,172 @@
         }
     });
 
+
+    /* ------------------------------------------------------------ MCP */
+
+    function hasMcpApi() {
+        return !!(window.electronAPI && window.electronAPI.mcp);
+    }
+
+    function renderMcpStatus(status) {
+        if (!mcpStatusDot || !mcpStatusText) return;
+
+        mcpStatusDot.classList.remove('running', 'error');
+
+        if (!status || !status.enabled) {
+            mcpStatusText.textContent = 'Disabled';
+            return;
+        }
+
+        if (status.error) {
+            mcpStatusDot.classList.add('error');
+            mcpStatusText.textContent = status.error;
+            return;
+        }
+
+        if (status.running) {
+            mcpStatusDot.classList.add('running');
+            mcpStatusText.textContent = `Listening on ${status.url}`;
+            return;
+        }
+
+        mcpStatusText.textContent = 'Stopped';
+    }
+
+    function renderMcpSettings(payload) {
+        if (!payload) return;
+        const settings = payload.settings || {};
+
+        if (mcpEnabledToggle) mcpEnabledToggle.checked = !!settings.enabled;
+        if (mcpPort) mcpPort.value = settings.port || 8790;
+        if (mcpToken) mcpToken.value = settings.token || '';
+        if (mcpBlockDestructiveToggle) mcpBlockDestructiveToggle.checked = settings.blockDestructiveCommands !== false;
+        if (mcpAllowSessionsToggle) mcpAllowSessionsToggle.checked = settings.allowExistingSessions !== false;
+        if (mcpBlockedPatterns) {
+            mcpBlockedPatterns.value = Array.isArray(settings.blockedPatterns)
+                ? settings.blockedPatterns.join('\n')
+                : '';
+        }
+        if (payload.clientConfig) {
+            cachedMcpClientConfig = payload.clientConfig;
+        }
+
+        renderMcpStatus(payload.status);
+    }
+
+    async function loadMcpSettings() {
+        if (!hasMcpApi()) return;
+        try {
+            const result = await window.electronAPI.mcp.getSettings();
+            if (result && result.success) renderMcpSettings(result);
+        } catch (err) {
+            console.error('Failed to load MCP settings:', err);
+        }
+    }
+
+    function collectMcpSettings() {
+        const patterns = String(mcpBlockedPatterns ? mcpBlockedPatterns.value : '')
+            .split('\n')
+            .map(line => line.trim())
+            .filter(Boolean);
+
+        return {
+            enabled: !!(mcpEnabledToggle && mcpEnabledToggle.checked),
+            port: Number(mcpPort ? mcpPort.value : 8790),
+            blockDestructiveCommands: !!(mcpBlockDestructiveToggle && mcpBlockDestructiveToggle.checked),
+            allowExistingSessions: !!(mcpAllowSessionsToggle && mcpAllowSessionsToggle.checked),
+            blockedPatterns: patterns
+        };
+    }
+
+    async function saveMcpSettings() {
+        if (!hasMcpApi()) return;
+
+        const payload = collectMcpSettings();
+        if (!Number.isInteger(payload.port) || payload.port < 1024 || payload.port > 65535) {
+            window.notifyUser('MCP port must be between 1024 and 65535.', 'error');
+            return;
+        }
+
+        try {
+            const result = await window.electronAPI.mcp.saveSettings(payload);
+            if (!result || !result.success) {
+                window.notifyUser((result && result.message) || 'Failed to save MCP settings.', 'error');
+                return;
+            }
+
+            renderMcpSettings(result);
+
+            const status = result.status || {};
+            if (status.enabled && status.error) {
+                window.notifyUser(status.error, 'error');
+            } else if (status.enabled && status.running) {
+                window.notifyUser(`MCP server is listening on ${status.url}`, 'success');
+            } else {
+                window.notifyUser('MCP settings saved.', 'success');
+            }
+        } catch (err) {
+            window.notifyUser('Failed to save MCP settings: ' + err.message, 'error');
+        }
+    }
+
+    function copyToClipboard(value, label) {
+        const text = String(value || '');
+        if (!text) return;
+
+        try {
+            if (window.clipboard && typeof window.clipboard.writeText === 'function') {
+                window.clipboard.writeText(text);
+            } else if (navigator.clipboard) {
+                navigator.clipboard.writeText(text);
+            }
+            window.notifyUser(`${label} copied.`, 'success');
+        } catch (err) {
+            window.notifyUser(`Could not copy ${label.toLowerCase()}.`, 'error');
+        }
+    }
+
+    if (btnMcpSave) btnMcpSave.addEventListener('click', saveMcpSettings);
+    if (btnMcpCopyToken) btnMcpCopyToken.addEventListener('click', () => copyToClipboard(mcpToken && mcpToken.value, 'Token'));
+    if (btnMcpCopyConfig) {
+        btnMcpCopyConfig.addEventListener('click', () => {
+            const configStr = cachedMcpClientConfig ? JSON.stringify(cachedMcpClientConfig, null, 2) : '';
+            copyToClipboard(configStr, 'Client configuration');
+        });
+    }
+
+    if (btnMcpRegenerate) {
+        btnMcpRegenerate.addEventListener('click', async () => {
+            if (!hasMcpApi()) return;
+
+            const approved = await window.confirmAction(
+                'Clients using the current token will stop working until you paste the new one. Continue?',
+                {
+                    title: 'Regenerate MCP token',
+                    confirmText: 'Regenerate',
+                    cancelText: 'Cancel',
+                    tone: 'danger'
+                }
+            );
+            if (!approved) return;
+
+            try {
+                const result = await window.electronAPI.mcp.regenerateToken();
+                if (result && result.success) {
+                    renderMcpSettings(result);
+                    window.notifyUser('New MCP token generated.', 'success');
+                } else {
+                    window.notifyUser((result && result.message) || 'Failed to regenerate token.', 'error');
+                }
+            } catch (err) {
+                window.notifyUser('Failed to regenerate token: ' + err.message, 'error');
+            }
+        });
+    }
+
     setupUpdaterEventBridge();
     renderThemeButton();
     renderDeleteButtonState();
     loadSettings();
+    loadMcpSettings();
 })();

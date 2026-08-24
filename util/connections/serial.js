@@ -36,21 +36,29 @@ module.exports = (data) => {
 
             const writeToStream = (msg) => {
                 if (msg.type === "input") {
-                    port.write(msg.message);
+                    try {
+                        if (port.isOpen) port.write(msg.message);
+                    } catch (_) {}
                 }
                 // Serial usually doesn't handle resize events like PTY/SSH
             };
 
             port.on('data', (d) => {
-                sendToFrontend({ type: "data", data: d.toString() });
+                try {
+                    sendToFrontend({ type: "data", data: d.toString() });
+                } catch (_) {}
             });
 
             port.on('close', () => {
-                sendToFrontend({ type: "disconnected" });
+                try {
+                    sendToFrontend({ type: "disconnected" });
+                } catch (_) {}
             });
 
             port.on('error', (err) => {
-                sendToFrontend({ type: "error", message: err.message });
+                try {
+                    sendToFrontend({ type: "error", message: err.message });
+                } catch (_) {}
             });
 
             resolve({
@@ -58,7 +66,11 @@ module.exports = (data) => {
                 on: (evt, cb) => emitter.on(evt, cb),
                 write: writeToStream,
                 end: () => {
-                    if (port.isOpen) port.close();
+                    try {
+                        if (port.isOpen) {
+                            port.close(() => {});
+                        }
+                    } catch (_) {}
                 }
             });
         });

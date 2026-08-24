@@ -1,16 +1,7 @@
 const { Client } = require('ssh2');
 const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
 const { EventEmitter } = require('events');
-const db = require('../profile-db');
-
-const SSH_PORT_MIN = 1;
-const SSH_PORT_MAX = 65535;
-const SSH_PORT_FALLBACK = 22;
-const SSH_READY_TIMEOUT_MS = 20000;
-const SSH_KEEPALIVE_INTERVAL_MS = 10000;
-const SSH_KEEPALIVE_COUNT_MAX = 6;
+const { buildConnectConfig } = require('./ssh-common');
 
 function createSessionId() {
     if (typeof crypto.randomUUID === 'function') {
@@ -19,73 +10,9 @@ function createSessionId() {
     return crypto.randomBytes(16).toString('hex');
 }
 
-function parseSshPort(value, fallback = SSH_PORT_FALLBACK) {
-    const candidate = value == null || String(value).trim() === '' ? fallback : value;
-    const parsed = Number(candidate);
-    if (!Number.isInteger(parsed) || parsed < SSH_PORT_MIN || parsed > SSH_PORT_MAX) {
-        throw new Error(`SSH port must be between ${SSH_PORT_MIN} and ${SSH_PORT_MAX}.`);
-    }
-    return parsed;
-}
-
 function parseTerminalDimension(value, fallback) {
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function loadPrivateKey(certPath) {
-    const normalizedPath = String(certPath || '').trim();
-    if (!normalizedPath) return null;
-
-    let keyPath = normalizedPath;
-    if (!path.isAbsolute(keyPath)) {
-        const relativeInFiles = path.join(process.cwd(), 'files', keyPath);
-        if (fs.existsSync(relativeInFiles)) {
-            keyPath = relativeInFiles;
-        }
-    }
-
-    return fs.readFileSync(keyPath);
-}
-
-function verifyAndPersistHost(data, port, hashedKey) {
-    const key = Buffer.isBuffer(hashedKey)
-        ? hashedKey.toString('hex')
-        : String(hashedKey || '');
-
-    let knownHosts;
-    try {
-        knownHosts = db.get('knownHosts');
-    } catch (_) {
-        knownHosts = [];
-    }
-
-    if (!Array.isArray(knownHosts)) {
-        knownHosts = [];
-    }
-
-    const hostEntry = knownHosts.find((item) => {
-        return item.address === data.address && Number(item.port) === port;
-    });
-
-    if (hostEntry) {
-        return hostEntry.key === key;
-    }
-
-    knownHosts.push({
-        address: data.address,
-        port,
-        key,
-        firstSeen: Date.now()
-    });
-
-    try {
-        db.set('knownHosts', knownHosts);
-    } catch (err) {
-        console.error('Failed to save known_hosts:', err);
-    }
-
-    return true;
 }
 
 module.exports = (data) => {
@@ -171,12 +98,20 @@ module.exports = (data) => {
 
                 const writeToStream = (data) => {
                     if (!stream) return;
-                    if (data.type === "input") {
-                        stream.write(data.message);
-                    } else if (data.type === "resize") {
-                        stream.setWindow(data.rows, data.cols, data.height || 0, data.width || 0);
-                    }
+                    try {
+                        if (data.type === "input") {
+                            stream.write(data.message);
+                        } else if (data.type === "resize") {
+                            stream.setWindow(data.rows, data.cols, data.height || 0, data.width || 0);
+                        }
+                    } catch (_) {}
                 };
+
+                stream.on('error', (streamErr) => {
+                    // Prevent unhandled stream error crashes
+                    const message = streamErr && streamErr.message ? streamErr.message : 'SSH stream error.';
+                    updateDisconnectInfo({ message });
+                });
 
                 stream.on('exit', (code, signal) => {
                     updateDisconnectInfo({
@@ -193,12 +128,17 @@ module.exports = (data) => {
                         conn.end();
                     } catch (_) {}
                 }).on('data', (d) => {
-                    sendToFrontend({ type: "data", data: d.toString() });
+                    try {
+                        sendToFrontend({ type: "data", data: d.toString() });
+                    } catch (_) {}
                 });
 
                 if (stream.stderr && typeof stream.stderr.on === 'function') {
+                    stream.stderr.on('error', () => {});
                     stream.stderr.on('data', (d) => {
-                        sendToFrontend({ type: "data", data: d.toString() });
+                        try {
+                            sendToFrontend({ type: "data", data: d.toString() });
+                        } catch (_) {}
                     });
                 }
 
@@ -206,7 +146,14 @@ module.exports = (data) => {
                     sessionId: sessionId,
                     on: (evt, cb) => emitter.on(evt, cb),
                     write: writeToStream,
-                    end: () => conn.end()
+                    end: () => {
+                        try {
+                            if (stream && typeof stream.end === 'function') stream.end();
+                        } catch (_) {}
+                        try {
+                            conn.end();
+                        } catch (_) {}
+                    }
                 });
             });
         }).on('error', (err) => {
@@ -230,56 +177,9 @@ module.exports = (data) => {
         });
 
         try {
-            const port = parseSshPort(data.port);
-            const connectConfig = {
-                host: String(data.address || '').trim(),
-                port,
-                username: data.username,
-                readyTimeout: SSH_READY_TIMEOUT_MS,
-                keepaliveInterval: SSH_KEEPALIVE_INTERVAL_MS,
-                keepaliveCountMax: SSH_KEEPALIVE_COUNT_MAX,
-                hostVerifier: (hashedKey) => {
-                    const verified = verifyAndPersistHost(data, port, hashedKey);
-                    if (!verified) {
-                        sendToFrontend({ type: "error", message: `SECURITY WARNING: Host key verification failed! Connection rejected as a security precaution.` });
-                        return false;
-                    }
-                    return true;
-                },
-                algorithms: {
-                    cipher: [
-                        'aes128-ctr',
-                        'aes192-ctr',
-                        'aes256-ctr',
-                        'aes128-gcm',
-                        'aes256-gcm',
-                        'aes128-cbc',
-                        'aes256-cbc',
-                        '3des-cbc'
-                    ]
-                }
-            };
-
-            if (data.password) {
-                connectConfig.password = data.password;
-            }
-
-            const certPath = String(data.certPath || '').trim();
-            if (certPath) {
-                try {
-                    connectConfig.privateKey = loadPrivateKey(certPath);
-                } catch (err) {
-                    throw new Error(`Private key cannot be read: ${err.message}`);
-                }
-            }
-
-            if (!connectConfig.password && !connectConfig.privateKey) {
-                throw new Error('Selected host has no password or private key.');
-            }
-
-            if (!connectConfig.host) {
-                throw new Error('Selected host has no address.');
-            }
+            const connectConfig = buildConnectConfig(data, () => {
+                sendToFrontend({ type: "error", message: `SECURITY WARNING: Host key verification failed! Connection rejected as a security precaution.` });
+            });
 
             conn.connect(connectConfig);
         } catch (e) {

@@ -69,9 +69,10 @@
         </div>
 
         <div class="settings-grid">
+            <!-- 1. Host Tags & File Transfer -->
             <div class="card settings-card">
                 <h3 class="card-title">
-                    <i class="fa-solid fa-tags"></i> Host Tags
+                    <i class="fa-solid fa-tags"></i> Host Tags & Transfer
                 </h3>
                 <div class="tags-surface">
                     <div id="tags-list" style="display: flex; flex-wrap: wrap; gap: 8px;">
@@ -92,97 +93,190 @@
                         </span>
                         <span class="toggle-text">
                             <span class="toggle-title">Ask before overwrite</span>
-                            <span class="toggle-subtitle">When a same-name file or folder exists, ask before replacing it. The SFTP dialog can turn this off with "Do not ask again".</span>
+                            <span class="toggle-subtitle">Prompt before replacing existing files.</span>
+                        </span>
+                    </label>
+
+                    <label class="settings-toggle-card" for="sftp-skip-patterns-toggle">
+                        <span class="switch">
+                            <input type="checkbox" id="sftp-skip-patterns-toggle">
+                            <span class="slider"></span>
+                        </span>
+                        <span class="toggle-text">
+                            <span class="toggle-title">Skip common folders</span>
+                            <span class="toggle-subtitle">Skip node_modules, .git, and cache folders when copying.</span>
                         </span>
                     </label>
                 </div>
             </div>
 
-            <div class="card settings-card">
-                <h3 class="card-title">
-                    <i class="fa-solid fa-robot"></i> AI Integration
-                </h3>
-
-                <div style="margin-bottom: 15px;">
-                    <label class="field-label">Endpoint</label>
-                    <div class="endpoint-row">
-                        <select id="ai-method">
-                            <option value="GET">GET</option>
-                            <option value="POST">POST</option>
-                        </select>
-                        <input type="text" id="ai-url" placeholder="https://api.example.com/v1/chat">
+            <!-- 2. Update Center -->
+            <div class="card settings-card update-card">
+                <div class="update-header">
+                    <div>
+                        <h3 class="card-title update-title">
+                            <i class="fa-solid fa-rocket"></i> Update Center
+                        </h3>
+                        <p class="update-subtitle">Checks GitHub Releases on app startup.</p>
                     </div>
                 </div>
 
-                <div class="form-group" style="margin-bottom: 10px;">
-                    <label class="field-label">Body (JSON)</label>
-                    <textarea id="ai-body" placeholder='{"model":"qwen2.5-coder:0.5b","prompt":"{{prompt}}","stream":false}'></textarea>
+                <div class="update-meta-grid">
+                    <div class="update-meta-item">
+                        <span class="update-meta-label">Current Version</span>
+                        <strong id="update-current-version">-</strong>
+                    </div>
+                    <div class="update-meta-item">
+                        <span class="update-meta-label">Available Version</span>
+                        <strong id="update-available-version">-</strong>
+                    </div>
+                    <div class="update-meta-item">
+                        <span class="update-meta-label">Last Check</span>
+                        <strong id="update-last-checked">Never</strong>
+                    </div>
                 </div>
 
-                <div class="form-group">
-                    <label class="field-label">Headers (Optional JSON)</label>
-                    <textarea id="ai-headers" placeholder='{"Content-Type":"application/json"}'></textarea>
+                <div class="update-toggle-row">
+                    <label class="switch">
+                        <input type="checkbox" id="auto-update-toggle" checked>
+                        <span class="slider"></span>
+                    </label>
+                    <div class="toggle-text">
+                        <div class="toggle-title">Automatic Update Checks</div>
+                        <div class="toggle-subtitle">Run background check on app launch.</div>
+                    </div>
+                </div>
+
+                <div id="update-progress-wrap" class="update-progress-wrap" hidden>
+                    <div class="update-progress-track">
+                        <div id="update-progress-fill" class="update-progress-fill" style="width: 0%;"></div>
+                    </div>
+                    <div id="update-progress-text" class="update-progress-text"></div>
+                </div>
+
+                <p id="update-message" class="update-message" hidden></p>
+
+                <div class="update-actions" style="display: flex; flex-direction: column; gap: 8px; margin-top: 14px;">
+                    <button class="btn btn-primary update-action-btn" id="btn-check-update" style="width: 100%;">
+                        <i class="fa-solid fa-rotate"></i> Check Now
+                    </button>
+                    <button class="btn btn-primary update-action-btn" id="btn-install-update" disabled style="width: 100%;">
+                        <i class="fa-solid fa-power-off"></i> Install & Restart
+                    </button>
+                    <button class="btn btn-primary update-action-btn" id="btn-open-source-code" type="button" style="width: 100%;">
+                        <i class="fa-brands fa-github"></i> Source Code
+                    </button>
                 </div>
             </div>
-
         </div>
 
-        <div class="card settings-card update-card">
-            <div class="update-header">
+        <!-- 3. AI & MCP Integration (Full Width) -->
+        <div class="card settings-card">
+            <h3 class="card-title">
+                <i class="fa-solid fa-robot"></i> AI & MCP Integration
+            </h3>
+
+            <div class="settings-grid" style="margin-top: 10px;">
+                <!-- AI Chat Endpoint Column -->
                 <div>
-                    <h3 class="card-title update-title">
-                        <i class="fa-solid fa-rocket"></i> Update Center
-                    </h3>
-                    <p class="update-subtitle">Checks GitHub Releases once when Termix starts. You can still check manually any time.</p>
+                    <div class="settings-inline-pref-title" style="margin-bottom: 12px;">
+                        <i class="fa-solid fa-brain"></i> AI Chat Endpoint
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 12px;">
+                        <label class="field-label">Endpoint URL</label>
+                        <div class="endpoint-row">
+                            <select id="ai-method">
+                                <option value="GET">GET</option>
+                                <option value="POST">POST</option>
+                            </select>
+                            <input type="text" id="ai-url" placeholder="https://api.example.com/v1/chat">
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 12px;">
+                        <label class="field-label">Body (JSON template)</label>
+                        <textarea id="ai-body" placeholder='{"model":"qwen2.5-coder:0.5b","prompt":"{{prompt}}","stream":false}'></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="field-label">Headers (Optional JSON)</label>
+                        <textarea id="ai-headers" placeholder='{"Content-Type":"application/json"}'></textarea>
+                    </div>
+                </div>
+
+                <!-- MCP Server Column -->
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <div class="settings-inline-pref-title">
+                        <i class="fa-solid fa-plug"></i> MCP Server (Local 127.0.0.1)
+                    </div>
+
+                    <label class="settings-toggle-card" for="mcp-enabled-toggle">
+                        <span class="switch">
+                            <input type="checkbox" id="mcp-enabled-toggle">
+                            <span class="slider"></span>
+                        </span>
+                        <span class="toggle-text">
+                            <span class="toggle-title">Enable MCP server</span>
+                            <span class="toggle-subtitle">Allows external AI tools (Claude, Cursor) to connect to Termix.</span>
+                        </span>
+                    </label>
+
+                    <div class="form-group" style="margin-top: 2px;">
+                        <label class="field-label">Port</label>
+                        <input type="number" id="mcp-port" min="1024" max="65535" value="8790">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="field-label">Access Token</label>
+                        <div class="endpoint-row">
+                            <input type="text" id="mcp-token" readonly>
+                            <button class="btn btn-primary" id="btn-mcp-copy-token" title="Copy token">
+                                <i class="fa-solid fa-copy"></i>
+                            </button>
+                            <button class="btn btn-primary" id="btn-mcp-regenerate" title="Generate a new token">
+                                <i class="fa-solid fa-rotate"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 4px;">
+                        <button type="button" class="btn btn-primary" id="btn-mcp-copy-config" style="width: 100%;">
+                            <i class="fa-solid fa-copy"></i> Copy Client Configuration
+                        </button>
+                    </div>
+
+                    <div class="settings-inline-pref-title" style="margin-top: 4px;">
+                        <i class="fa-solid fa-shield-halved"></i> Safety
+                    </div>
+
+                    <label class="settings-toggle-card" for="mcp-block-destructive-toggle">
+                        <span class="switch">
+                            <input type="checkbox" id="mcp-block-destructive-toggle" checked>
+                            <span class="slider"></span>
+                        </span>
+                        <span class="toggle-text">
+                            <span class="toggle-title">Block destructive commands</span>
+                            <span class="toggle-subtitle">Protects hosts by blocking wipes, formats, and dangerous commands.</span>
+                        </span>
+                    </label>
+
+                    <label class="settings-toggle-card" for="mcp-allow-sessions-toggle">
+                        <span class="switch">
+                            <input type="checkbox" id="mcp-allow-sessions-toggle" checked>
+                            <span class="slider"></span>
+                        </span>
+                        <span class="toggle-text">
+                            <span class="toggle-title">Allow typing into open terminals</span>
+                            <span class="toggle-subtitle">AI assistants can interact with your active terminal tabs.</span>
+                        </span>
+                    </label>
+
+                    <button class="btn btn-primary" id="btn-mcp-save" style="margin-top: 6px; width: 100%;">
+                        <i class="fa-solid fa-floppy-disk"></i> Save MCP Settings
+                    </button>
                 </div>
             </div>
-
-            <div class="update-meta-grid">
-                <div class="update-meta-item">
-                    <span class="update-meta-label">Current Version</span>
-                    <strong id="update-current-version">-</strong>
-                </div>
-                <div class="update-meta-item">
-                    <span class="update-meta-label">Available Version</span>
-                    <strong id="update-available-version">-</strong>
-                </div>
-                <div class="update-meta-item">
-                    <span class="update-meta-label">Last Check</span>
-                    <strong id="update-last-checked">Never</strong>
-                </div>
-            </div>
-
-            <div class="update-toggle-row">
-                <label class="switch">
-                    <input type="checkbox" id="auto-update-toggle" checked>
-                    <span class="slider"></span>
-                </label>
-                <div class="toggle-text">
-                    <div class="toggle-title">Automatic Update Checks</div>
-                    <div class="toggle-subtitle">Run a single background check on app launch.</div>
-                </div>
-            </div>
-
-            <div id="update-progress-wrap" class="update-progress-wrap" hidden>
-                <div class="update-progress-track">
-                    <div id="update-progress-fill" class="update-progress-fill" style="width: 0%;"></div>
-                </div>
-                <div id="update-progress-text" class="update-progress-text"></div>
-            </div>
-
-            <div class="update-actions">
-                <button class="btn btn-primary update-action-btn" id="btn-check-update">
-                    <i class="fa-solid fa-rotate"></i> Check Now
-                </button>
-                <button class="btn btn-primary update-action-btn" id="btn-install-update" disabled>
-                    <i class="fa-solid fa-power-off"></i> Install & Restart
-                </button>
-                <button class="btn btn-primary update-action-btn" id="btn-open-source-code" type="button">
-                    <i class="fa-brands fa-github"></i> Source Code
-                </button>
-            </div>
-
-            <p id="update-message" class="update-message" hidden></p>
         </div>
 
         <button id="btn-save-settings" class="btn btn-primary save-btn">
@@ -427,14 +521,10 @@
         outline: none;
     }
 
-    #ai-body {
-        height: 120px;
-        font-size: 0.9em;
-    }
-
+    #ai-body,
     #ai-headers {
-        height: 70px;
-        font-size: 0.85em;
+        height: 110px;
+        font-size: 0.88em;
     }
 
     .cloud-sync-card {
@@ -565,6 +655,37 @@
         display: flex;
         align-items: center;
         gap: 12px;
+    }
+
+    .mcp-status-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 10px 0 14px;
+        font-size: 0.85rem;
+        color: var(--text-muted);
+    }
+
+    .mcp-status-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background-color: var(--text-muted);
+        flex-shrink: 0;
+    }
+
+    .mcp-status-dot.running { background-color: #1d8e48; }
+    .mcp-status-dot.error { background-color: #e74856; }
+
+    #mcp-client-config {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.78rem;
+        width: 100%;
+    }
+
+    #mcp-token {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.78rem;
     }
 
     .switch {

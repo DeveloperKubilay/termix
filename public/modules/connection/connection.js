@@ -164,8 +164,14 @@ window.ConnectionModule = {
             term.refresh(0, Math.max(0, term.rows - 1));
         } catch (_) {}
 
+        // In a split layout several terminals are visible at once, but only the
+        // active tab of the focused pane may consume keyboard input.
         function isActiveTerminalTab() {
-            if (!window.TabManager || !window.TabManager.activeTabId) return true;
+            if (!window.TabManager) return true;
+            if (typeof window.TabManager.isTabFocused === 'function') {
+                return window.TabManager.isTabFocused(tabId);
+            }
+            if (!window.TabManager.activeTabId) return true;
             return window.TabManager.activeTabId === tabId;
         }
 
@@ -612,7 +618,9 @@ window.ConnectionModule = {
                 // Dispose terminal
                 try { term.dispose(); } catch (_) {}
                 // Send close request to backend (optional)
-                window.electronAPI.send('term-close', { sessionId: currentSessionId });
+                try {
+                    window.electronAPI.send('term-close', { sessionId: currentSessionId });
+                } catch (_) {}
             }
         };
     }

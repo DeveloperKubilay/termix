@@ -50,22 +50,34 @@ module.exports = (data) => {
                 useConpty: false // ConPTY bazen Electron'da donmaya sebep olur, WinPTY daha stabil (legacy)
             });
 
+            let isClosed = false;
+
             sendToFrontend({ type: "connected" });
 
             ptyProcess.onData((data) => {
-                sendToFrontend({ type: "data", data: data });
+                if (isClosed) return;
+                try {
+                    sendToFrontend({ type: "data", data: data });
+                } catch (_) {}
             });
 
             ptyProcess.onExit((e) => {
-                sendToFrontend({ type: "disconnected", exitCode: e.exitCode });
+                if (isClosed) return;
+                isClosed = true;
+                try {
+                    sendToFrontend({ type: "disconnected", exitCode: e ? e.exitCode : null });
+                } catch (_) {}
             });
 
             const writeToStream = (msg) => {
-                if (msg.type === "input") {
-                    ptyProcess.write(msg.message);
-                } else if (msg.type === "resize") {
-                    ptyProcess.resize(msg.cols, msg.rows);
-                }
+                if (isClosed || !ptyProcess) return;
+                try {
+                    if (msg.type === "input") {
+                        ptyProcess.write(msg.message);
+                    } else if (msg.type === "resize") {
+                        ptyProcess.resize(msg.cols, msg.rows);
+                    }
+                } catch (_) {}
             };
 
             resolve({
@@ -73,12 +85,17 @@ module.exports = (data) => {
                 on: (evt, cb) => emitter.on(evt, cb),
                 write: writeToStream,
                 end: () => {
-                    ptyProcess.kill();
+                    isClosed = true;
+                    try {
+                        ptyProcess.kill();
+                    } catch (_) {}
                 }
             });
 
         } catch (err) {
-            sendToFrontend({ type: "error", message: err.message });
+            try {
+                sendToFrontend({ type: "error", message: err.message });
+            } catch (_) {}
             reject(err);
         }
     });

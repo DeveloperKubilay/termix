@@ -8,6 +8,9 @@ const portForwardManager = require('./util/port-forwarding/manager');
 const sftpManager = require('./util/sftp/manager');
 const { enqueueProfileSync } = require('./util/cloud-sync');
 const updater = require('./util/updater');
+const mcpServer = require('./util/mcp/server');
+const mcpSessionStore = require('./util/mcp/session-store');
+const sshExec = require('./util/connections/ssh-exec');
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 
 if (!gotSingleInstanceLock) {
@@ -41,6 +44,12 @@ if (!gotSingleInstanceLock) {
     updater.init();
     const channels = loadIPC();
     console.log('Loaded IPC channels:', channels.length);
+
+    try {
+      await mcpServer.init({ getMainWindow: () => mainWindow });
+    } catch (err) {
+      console.error('Failed to start MCP server:', err);
+    }
   });
 
   app.on('window-all-closed', () => {
@@ -92,6 +101,24 @@ if (!gotSingleInstanceLock) {
       }
 
       try {
+        closeAllTerminals();
+      } catch (err) {
+        console.error('Failed to close active terminals:', err);
+      }
+
+      try {
+        await mcpServer.stop();
+      } catch (err) {
+        console.error('Failed to stop MCP server:', err);
+      }
+
+      try {
+        sshExec.closeAll();
+      } catch (err) {
+        console.error('Failed to close pooled SSH connections:', err);
+      }
+
+      try {
         await portForwardManager.stopAllForwards();
       } catch (err) {
         console.error('Failed to stop active port forwards:', err);
@@ -106,6 +133,23 @@ if (!gotSingleInstanceLock) {
       app.quit();
     })();
   });
+
+  function closeAllTerminals() {
+    if (!global.Terminals) return;
+    const sessionIds = Object.keys(global.Terminals);
+    for (const sessionId of sessionIds) {
+      try {
+        const session = global.Terminals[sessionId];
+        if (session && typeof session.end === 'function') {
+          session.end();
+        }
+        mcpSessionStore.remove(sessionId);
+      } catch (err) {
+        console.warn('Error closing terminal session on exit:', err);
+      }
+      delete global.Terminals[sessionId];
+    }
+  }
 
   function createMainWindow(store) {
     const { width, height } = screen.getPrimaryDisplay().workAreaSize;
@@ -128,10 +172,13 @@ if (!gotSingleInstanceLock) {
     });
 
     mainWindow.on('close', () => {
-      store.set('windowBounds', mainWindow.getBounds());
+      try {
+        store.set('windowBounds', mainWindow.getBounds());
+      } catch (_) {}
     });
     mainWindow.on('closed', () => {
       mainWindow = null;
+      closeAllTerminals();
     });
 
     mainWindow.setMenuBarVisibility(false);
@@ -140,36 +187,59 @@ if (!gotSingleInstanceLock) {
 
   // Frontend -> Backend (Input)
   ipcMain.on('term-input', (event, payload) => {
-    const { sessionId, data } = payload;
-    const session = global.Terminals[sessionId];
-    if (session) {
-      session.write({ type: 'input', message: data });
+    try {
+      const { sessionId, data } = payload || {};
+      const session = global.Terminals && global.Terminals[sessionId];
+      if (session && typeof session.write === 'function') {
+        session.write({ type: 'input', message: data });
+      }
+    } catch (e) {
+      console.warn("Error writing term input:", e);
     }
   });
 
   // Frontend -> Backend (Resize)
   ipcMain.on('term-resize', (event, payload) => {
-    const { sessionId, cols, rows } = payload;
-    const session = global.Terminals[sessionId];
-    if (session) {
-      session.write({ type: 'resize', cols, rows });
+    try {
+      const { sessionId, cols, rows } = payload || {};
+      const session = global.Terminals && global.Terminals[sessionId];
+      if (session && typeof session.write === 'function') {
+        session.write({ type: 'resize', cols, rows });
+      }
+    } catch (e) {
+      console.warn("Error resizing terminal:", e);
     }
   });
 
   // Frontend -> Backend (Close/Disconnect)
   ipcMain.on('term-close', (event, payload) => {
-    const { sessionId } = payload;
-    const session = global.Terminals[sessionId];
-    if (session) {
-      try {
-        session.end(); // SSH bağlantısını kapat
-        delete global.Terminals[sessionId]; // Listeden sil
-      } catch (e) {
-        console.error("Error closing session:", e);
+    try {
+      const { sessionId } = payload || {};
+      const session = global.Terminals && global.Terminals[sessionId];
+      if (session) {
+        try {
+          if (typeof session.end === 'function') {
+            session.end();
+          }
+          mcpSessionStore.remove(sessionId);
+          delete global.Terminals[sessionId];
+        } catch (e) {
+          console.error("Error closing session:", e);
+        }
       }
+    } catch (err) {
+      console.warn("Error handling term-close IPC:", err);
     }
   });
 }
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Rejection:', reason);
+});
 
 function getAppIcon() {
   const iconPath = path.join(__dirname, 'public/icons/favicon.ico');

@@ -5,6 +5,9 @@ const crypto = require('crypto');
 const { Client } = require('ssh2');
 const db = require('../profile-db');
 const { decrypt } = require('../crypto');
+const { normalizeSftpSettings } = require('../profile-defaults');
+const tarTransfer = require('./tar-transfer');
+const { createExcludeMatcher } = require('./exclude');
 const sessions = new Map();
 
 const SSH_READY_TIMEOUT_MS = 20000;
@@ -13,6 +16,10 @@ const SSH_KEEPALIVE_COUNT_MAX = 6;
 const SFTP_IDLE_PING_INTERVAL_MS = 20000;
 const SFTP_IDLE_PING_MIN_IDLE_MS = 15000;
 const SFTP_TRANSFER_STALL_TIMEOUT_MS = 30000;
+// How many files are transferred at once over a single SFTP channel.
+const TRANSFER_CONCURRENCY = 8;
+// Above this many files, one tar stream beats per-file SFTP round trips.
+const TAR_MIN_FILES = 200;
 
 function createSessionId() {
     if (typeof crypto.randomUUID === 'function') {
@@ -552,7 +559,17 @@ function sftpFastGet(sftp, remotePath, localPath) {
     });
 }
 
-function copyLocalFileToRemoteWithProgress(sftp, sourcePath, destinationPath, onChunk) {
+// A 2 KB file does not need 64 chunks in flight; asking for them wastes buffers
+// and crowds the SSH window when several files are transferred at once.
+function chunkOptionsForSize(size) {
+    const bytes = Number(size || 0);
+    if (bytes > 8 * 1024 * 1024) return { concurrency: 64, chunkSize: 32768 * 16 };
+    if (bytes > 1024 * 1024) return { concurrency: 16, chunkSize: 32768 * 8 };
+    if (bytes > 128 * 1024) return { concurrency: 8, chunkSize: 32768 * 4 };
+    return { concurrency: 2, chunkSize: 32768 };
+}
+
+function copyLocalFileToRemoteWithProgress(sftp, sourcePath, destinationPath, onChunk, knownSize = null) {
     return new Promise((resolve, reject) => {
         let lastTransferred = 0;
         let settled = false;
@@ -578,8 +595,7 @@ function copyLocalFileToRemoteWithProgress(sftp, sourcePath, destinationPath, on
         resetStallTimer();
 
         const options = {
-            concurrency: 64,
-            chunkSize: 32768 * 16,
+            ...chunkOptionsForSize(knownSize),
             step: (totalTransferred) => {
                 resetStallTimer();
                 const total = Number(totalTransferred);
@@ -597,7 +613,7 @@ function copyLocalFileToRemoteWithProgress(sftp, sourcePath, destinationPath, on
     });
 }
 
-function copyRemoteFileToLocalWithProgress(sftp, sourcePath, destinationPath, onChunk) {
+function copyRemoteFileToLocalWithProgress(sftp, sourcePath, destinationPath, onChunk, knownSize = null) {
     return new Promise((resolve, reject) => {
         let lastTransferred = 0;
         let settled = false;
@@ -623,8 +639,7 @@ function copyRemoteFileToLocalWithProgress(sftp, sourcePath, destinationPath, on
         resetStallTimer();
 
         const options = {
-            concurrency: 64,
-            chunkSize: 32768 * 16,
+            ...chunkOptionsForSize(knownSize),
             step: (totalTransferred) => {
                 resetStallTimer();
                 const total = Number(totalTransferred);
@@ -640,36 +655,6 @@ function copyRemoteFileToLocalWithProgress(sftp, sourcePath, destinationPath, on
             settle(err || null);
         });
     });
-}
-
-async function getLocalItemSize(targetPath) {
-    const stats = await fs.promises.stat(targetPath);
-    if (!stats.isDirectory()) {
-        return Number(stats.size || 0);
-    }
-
-    let total = 0;
-    const entries = await fs.promises.readdir(targetPath, { withFileTypes: true });
-    for (const entry of entries) {
-        total += await getLocalItemSize(path.join(targetPath, entry.name));
-    }
-    return total;
-}
-
-async function getRemoteItemSize(sftp, targetPath) {
-    const stats = await sftpStat(sftp, targetPath);
-    if (!attrsIsDirectory(stats)) {
-        return Number(stats.size || 0);
-    }
-
-    let total = 0;
-    const entries = await sftpReaddir(sftp, targetPath);
-    for (const entry of entries) {
-        const name = entry && entry.filename ? entry.filename : null;
-        if (!name || name === '.' || name === '..') continue;
-        total += await getRemoteItemSize(sftp, path.posix.join(targetPath, name));
-    }
-    return total;
 }
 
 function createCopyProgressReporter({ operationId, direction, totalBytes, onProgress }) {
@@ -765,20 +750,26 @@ function buildCopyConflict({ name, sourcePath, targetPath, isDirectory, destinat
     };
 }
 
-async function ensureRemoteDir(sftp, targetPath) {
+// `knownDirs` is an optional Set of paths already known to exist. A copy that
+// walks thousands of files would otherwise stat every path component again for
+// every single file.
+async function ensureRemoteDir(sftp, targetPath, knownDirs = null) {
     const normalized = normalizeRemotePath(targetPath, '/');
     if (normalized === '/') return;
+    if (knownDirs && knownDirs.has(normalized)) return;
 
     const parts = normalized.split('/').filter(Boolean);
     let current = '';
 
     for (const part of parts) {
         current = `${current}/${part}`;
+        if (knownDirs && knownDirs.has(current)) continue;
         try {
             const stats = await sftpStat(sftp, current);
             if (!attrsIsDirectory(stats)) {
                 throw new Error(`Remote path is not a directory: ${current}`);
             }
+            if (knownDirs) knownDirs.add(current);
         } catch (err) {
             if (isNoSuchFileError(err)) {
                 try {
@@ -793,6 +784,7 @@ async function ensureRemoteDir(sftp, targetPath) {
                         throw mkdirErr;
                     }
                 }
+                if (knownDirs) knownDirs.add(current);
                 continue;
             }
             throw err;
@@ -874,55 +866,288 @@ async function copyLocalPath(sourcePath, destinationPath) {
     await fs.promises.copyFile(sourcePath, destinationPath);
 }
 
-async function copyLocalToRemote(sftp, sourcePath, destinationPath, progressReporter = null) {
-    const stats = await fs.promises.stat(sourcePath);
+// Runs `worker` over `items` with a bounded number of transfers in flight. A
+// single SFTP channel pipelines requests happily, and waiting for one small
+// file at a time is what makes large folders crawl.
+async function runWithConcurrency(items, worker, concurrency = TRANSFER_CONCURRENCY) {
+    if (!items.length) return;
 
-    if (stats.isDirectory()) {
-        await ensureRemoteDir(sftp, destinationPath);
-        const children = await fs.promises.readdir(sourcePath);
-        for (const child of children) {
-            await copyLocalToRemote(
-                sftp,
-                path.join(sourcePath, child),
-                path.posix.join(destinationPath, child),
-                progressReporter
-            );
-        }
-        return;
-    }
+    let cursor = 0;
+    let firstError = null;
+    const workerCount = Math.max(1, Math.min(concurrency, items.length));
 
-    await ensureRemoteDir(sftp, path.posix.dirname(destinationPath));
-    await copyLocalFileToRemoteWithProgress(sftp, sourcePath, destinationPath, (bytes) => {
-        if (progressReporter) {
-            progressReporter.advance(bytes, path.basename(sourcePath));
+    const runners = Array.from({ length: workerCount }, async () => {
+        while (cursor < items.length && !firstError) {
+            const item = items[cursor++];
+            try {
+                await worker(item);
+            } catch (err) {
+                if (!firstError) firstError = err;
+            }
         }
     });
+
+    await Promise.all(runners);
+    if (firstError) throw firstError;
 }
 
-async function copyRemoteToLocal(sftp, sourcePath, destinationPath, progressReporter = null) {
-    const stats = await sftpStat(sftp, sourcePath);
+// Walks a local tree once and returns everything the copy needs: the
+// directories to create, the files to send and the total size for progress.
+async function collectLocalTree(sourcePath, exclude = null) {
+    const rootStats = await fs.promises.stat(sourcePath);
 
-    if (attrsIsDirectory(stats)) {
-        await fs.promises.mkdir(destinationPath, { recursive: true });
-        const entries = await sftpReaddir(sftp, sourcePath);
+    if (!rootStats.isDirectory()) {
+        const size = Number(rootStats.size || 0);
+        return { isDirectory: false, dirs: [], files: [{ relative: '', size }], totalBytes: size, skipped: 0 };
+    }
+
+    const dirs = [];
+    const files = [];
+    let totalBytes = 0;
+    let skipped = 0;
+    const pending = [''];
+
+    while (pending.length) {
+        const relativeDir = pending.pop();
+        dirs.push(relativeDir);
+
+        const absoluteDir = relativeDir ? path.join(sourcePath, relativeDir) : sourcePath;
+        const entries = await fs.promises.readdir(absoluteDir, { withFileTypes: true });
+
+        for (const entry of entries) {
+            const relative = relativeDir ? path.posix.join(relativeDir, entry.name) : entry.name;
+            const absolute = path.join(absoluteDir, entry.name);
+
+            if (exclude && exclude(relative, entry.name)) {
+                skipped += 1;
+                continue;
+            }
+
+            let isDirectory = entry.isDirectory();
+            let size = 0;
+
+            if (entry.isSymbolicLink()) {
+                // Follow links the way the previous implementation did.
+                const linkStats = await fs.promises.stat(absolute);
+                isDirectory = linkStats.isDirectory();
+                size = Number(linkStats.size || 0);
+            } else if (!isDirectory) {
+                const fileStats = await fs.promises.stat(absolute);
+                size = Number(fileStats.size || 0);
+            }
+
+            if (isDirectory) {
+                pending.push(relative);
+            } else {
+                files.push({ relative, size });
+                totalBytes += size;
+            }
+        }
+    }
+
+    return { isDirectory: true, dirs, files, totalBytes, skipped };
+}
+
+// Same walk on the remote side. readdir already carries the attributes, so no
+// per-file stat round trip is needed.
+async function collectRemoteTree(sftp, sourcePath, exclude = null) {
+    const rootStats = await sftpStat(sftp, sourcePath);
+
+    if (!attrsIsDirectory(rootStats)) {
+        const size = Number(rootStats.size || 0);
+        return { isDirectory: false, dirs: [], files: [{ relative: '', size }], totalBytes: size, skipped: 0 };
+    }
+
+    const dirs = [];
+    const files = [];
+    let totalBytes = 0;
+    let skipped = 0;
+    const pending = [''];
+
+    while (pending.length) {
+        const relativeDir = pending.pop();
+        dirs.push(relativeDir);
+
+        const absoluteDir = relativeDir ? path.posix.join(sourcePath, relativeDir) : sourcePath;
+        const entries = await sftpReaddir(sftp, absoluteDir);
+
         for (const entry of entries) {
             const name = entry && entry.filename ? entry.filename : null;
             if (!name || name === '.' || name === '..') continue;
-            await copyRemoteToLocal(
-                sftp,
-                path.posix.join(sourcePath, name),
-                path.join(destinationPath, name),
-                progressReporter
-            );
+
+            const relative = relativeDir ? path.posix.join(relativeDir, name) : name;
+
+            if (exclude && exclude(relative, name)) {
+                skipped += 1;
+                continue;
+            }
+
+            let attrs = entry.attrs;
+
+            if (!attrs) {
+                attrs = await sftpStat(sftp, path.posix.join(absoluteDir, name));
+            }
+
+            if (attrsIsDirectory(attrs)) {
+                pending.push(relative);
+            } else {
+                const size = Number(attrs.size || 0);
+                files.push({ relative, size });
+                totalBytes += size;
+            }
+        }
+    }
+
+    return { isDirectory: true, dirs, files, totalBytes, skipped };
+}
+
+// Creates directories parents first, but in parallel within each depth level.
+async function createRemoteDirs(sftp, destinationPath, relativeDirs, knownDirs) {
+    const byDepth = new Map();
+
+    for (const relative of relativeDirs) {
+        const target = relative ? path.posix.join(destinationPath, relative) : destinationPath;
+        const depth = target.split('/').filter(Boolean).length;
+        if (!byDepth.has(depth)) byDepth.set(depth, []);
+        byDepth.get(depth).push(target);
+    }
+
+    for (const depth of Array.from(byDepth.keys()).sort((a, b) => a - b)) {
+        await runWithConcurrency(byDepth.get(depth), (target) => ensureRemoteDir(sftp, target, knownDirs));
+    }
+}
+
+async function createLocalDirs(destinationPath, relativeDirs) {
+    for (const relative of relativeDirs.slice().sort((a, b) => a.length - b.length)) {
+        const target = relative ? path.join(destinationPath, relative) : destinationPath;
+        await fs.promises.mkdir(target, { recursive: true });
+    }
+}
+
+async function countLocalFiles(targetPath) {
+    let total = 0;
+    const pending = [targetPath];
+
+    while (pending.length) {
+        const dir = pending.pop();
+        let entries;
+        try {
+            entries = await fs.promises.readdir(dir, { withFileTypes: true });
+        } catch (_) {
+            continue;
+        }
+
+        for (const entry of entries) {
+            if (entry.isDirectory()) pending.push(path.join(dir, entry.name));
+            else total += 1;
+        }
+    }
+
+    return total;
+}
+
+// Probes the host once per session: can it pack and unpack tar archives?
+async function sessionSupportsTar(session) {
+    if (!session || !session.conn) return false;
+    if (typeof session.hasTar === 'boolean') return session.hasTar;
+
+    session.hasTar = await tarTransfer.detectRemoteTar(session.conn);
+    return session.hasTar;
+}
+
+async function copyLocalToRemote(sftp, sourcePath, destinationPath, progressReporter = null, options = {}) {
+    const knownDirs = options.knownDirs || new Set();
+    const exclude = options.exclude || null;
+    const tree = options.tree || await collectLocalTree(sourcePath, exclude);
+
+    if (!tree.isDirectory) {
+        await ensureRemoteDir(sftp, path.posix.dirname(destinationPath), knownDirs);
+        await copyLocalFileToRemoteWithProgress(sftp, sourcePath, destinationPath, (bytes) => {
+            if (progressReporter) {
+                progressReporter.advance(bytes, path.basename(sourcePath));
+            }
+        }, tree.files[0] ? tree.files[0].size : null);
+        return;
+    }
+
+    // One tar stream instead of thousands of per-file round trips.
+    if (options.session && tree.files.length >= TAR_MIN_FILES && await sessionSupportsTar(options.session)) {
+        await ensureRemoteDir(sftp, destinationPath, knownDirs);
+        await tarTransfer.uploadDirectory(options.session.conn, sourcePath, destinationPath, {
+            onBytes: (bytes) => {
+                if (progressReporter) progressReporter.advance(bytes, path.basename(sourcePath));
+            },
+            filter: exclude
+                ? (entryPath) => {
+                    const relative = String(entryPath || '').replace(/^\.\//, '');
+                    if (!relative || relative === '.') return true;
+                    return !exclude(relative, path.posix.basename(relative));
+                }
+                : null
+        });
+
+        // A tar stream either lands whole or the command fails, but the count is
+        // cheap and turns a silent partial copy into a visible error.
+        const delivered = await tarTransfer.countRemoteFiles(options.session.conn, destinationPath);
+        if (delivered != null && delivered < tree.files.length) {
+            throw new Error(`Transfer verification failed: ${delivered} of ${tree.files.length} files arrived at ${destinationPath}.`);
         }
         return;
     }
 
-    await fs.promises.mkdir(path.dirname(destinationPath), { recursive: true });
-    await copyRemoteFileToLocalWithProgress(sftp, sourcePath, destinationPath, (bytes) => {
-        if (progressReporter) {
-            progressReporter.advance(bytes, path.posix.basename(sourcePath));
+    await createRemoteDirs(sftp, destinationPath, tree.dirs, knownDirs);
+
+    await runWithConcurrency(tree.files, async (file) => {
+        const source = path.join(sourcePath, file.relative);
+        const target = path.posix.join(destinationPath, file.relative);
+        await copyLocalFileToRemoteWithProgress(sftp, source, target, (bytes) => {
+            if (progressReporter) {
+                progressReporter.advance(bytes, path.basename(source));
+            }
+        }, file.size);
+    });
+}
+
+async function copyRemoteToLocal(sftp, sourcePath, destinationPath, progressReporter = null, options = {}) {
+    const exclude = options.exclude || null;
+    const tree = options.tree || await collectRemoteTree(sftp, sourcePath, exclude);
+
+    if (!tree.isDirectory) {
+        await fs.promises.mkdir(path.dirname(destinationPath), { recursive: true });
+        await copyRemoteFileToLocalWithProgress(sftp, sourcePath, destinationPath, (bytes) => {
+            if (progressReporter) {
+                progressReporter.advance(bytes, path.posix.basename(sourcePath));
+            }
+        }, tree.files[0] ? tree.files[0].size : null);
+        return;
+    }
+
+    if (options.session && tree.files.length >= TAR_MIN_FILES && await sessionSupportsTar(options.session)) {
+        await fs.promises.mkdir(destinationPath, { recursive: true });
+        await tarTransfer.downloadDirectory(options.session.conn, sourcePath, destinationPath, {
+            onBytes: (bytes) => {
+                if (progressReporter) progressReporter.advance(bytes, path.posix.basename(sourcePath));
+            },
+            excludePatterns: exclude ? exclude.patterns : []
+        });
+
+        const delivered = await countLocalFiles(destinationPath);
+        if (delivered < tree.files.length) {
+            throw new Error(`Transfer verification failed: ${delivered} of ${tree.files.length} files arrived at ${destinationPath}.`);
         }
+        return;
+    }
+
+    await createLocalDirs(destinationPath, tree.dirs);
+
+    await runWithConcurrency(tree.files, async (file) => {
+        const source = path.posix.join(sourcePath, file.relative);
+        const target = path.join(destinationPath, file.relative);
+        await copyRemoteFileToLocalWithProgress(sftp, source, target, (bytes) => {
+            if (progressReporter) {
+                progressReporter.advance(bytes, path.posix.basename(source));
+            }
+        }, file.size);
     });
 }
 
@@ -958,26 +1183,25 @@ function copyRemoteFileViaStream(sftp, sourcePath, destinationPath) {
     });
 }
 
-async function copyRemoteToRemote(sftp, sourcePath, destinationPath) {
-    const stats = await sftpStat(sftp, sourcePath);
+async function copyRemoteToRemote(sftp, sourcePath, destinationPath, options = {}) {
+    const knownDirs = options.knownDirs || new Set();
+    const tree = options.tree || await collectRemoteTree(sftp, sourcePath);
 
-    if (attrsIsDirectory(stats)) {
-        await ensureRemoteDir(sftp, destinationPath);
-        const entries = await sftpReaddir(sftp, sourcePath);
-        for (const entry of entries) {
-            const name = entry && entry.filename ? entry.filename : null;
-            if (!name || name === '.' || name === '..') continue;
-            await copyRemoteToRemote(
-                sftp,
-                path.posix.join(sourcePath, name),
-                path.posix.join(destinationPath, name)
-            );
-        }
+    if (!tree.isDirectory) {
+        await ensureRemoteDir(sftp, path.posix.dirname(destinationPath), knownDirs);
+        await copyRemoteFileViaStream(sftp, sourcePath, destinationPath);
         return;
     }
 
-    await ensureRemoteDir(sftp, path.posix.dirname(destinationPath));
-    await copyRemoteFileViaStream(sftp, sourcePath, destinationPath);
+    await createRemoteDirs(sftp, destinationPath, tree.dirs, knownDirs);
+
+    await runWithConcurrency(tree.files, async (file) => {
+        await copyRemoteFileViaStream(
+            sftp,
+            path.posix.join(sourcePath, file.relative),
+            path.posix.join(destinationPath, file.relative)
+        );
+    });
 }
 
 function copyName(baseName, copyIndex, extensionForFile = '') {
@@ -1069,6 +1293,12 @@ async function connect(hostId) {
             };
 
             conn.once('ready', () => {
+                // Without this every SFTP round trip pays a Nagle/delayed-ACK
+                // stall, which dominates transfers of many small files.
+                try {
+                    conn.setNoDelay(true);
+                } catch (_) {}
+
                 conn.sftp(async (err, sftp) => {
                     if (err) {
                         try {
@@ -1811,12 +2041,26 @@ async function copyItems(payload = {}, onProgress = null) {
                 ? 'upload'
                 : (sourceSide === 'remote' && destinationSide === 'local' ? 'download' : null));
 
+        // The tree walk feeds both the progress total and the copy itself, so a
+        // large folder is only enumerated once.
+        const treeCache = new Map();
+        const knownRemoteDirs = new Set();
+
+        const sftpSettings = normalizeSftpSettings(db.get('sftpSettings'));
+        const exclude = sftpSettings.skipPatternsEnabled
+            ? createExcludeMatcher(sftpSettings.skipPatterns)
+            : null;
+        let skippedCount = 0;
+
         if (progressDirection) {
             let totalBytes = 0;
             for (const item of normalizedItems) {
-                totalBytes += sourceSide === 'local'
-                    ? await getLocalItemSize(item.path)
-                    : await getRemoteItemSize(sourceSession.sftp, item.path);
+                const tree = sourceSide === 'local'
+                    ? await collectLocalTree(item.path, exclude)
+                    : await collectRemoteTree(sourceSession.sftp, item.path, exclude);
+                treeCache.set(item.path, tree);
+                totalBytes += tree.totalBytes;
+                skippedCount += Number(tree.skipped || 0);
             }
 
             progressReporter = createCopyProgressReporter({
@@ -1919,7 +2163,12 @@ async function copyItems(payload = {}, onProgress = null) {
                     if (targetExists && conflictPolicy === 'overwrite') {
                         await removeRemotePath(destinationSession.sftp, targetPath);
                     }
-                    await copyLocalToRemote(destinationSession.sftp, sourcePath, targetPath, progressReporter);
+                    await copyLocalToRemote(destinationSession.sftp, sourcePath, targetPath, progressReporter, {
+                        tree: treeCache.get(sourcePath),
+                        knownDirs: knownRemoteDirs,
+                        session: destinationSession,
+                        exclude
+                    });
                 } else if (sourceSide === 'remote' && destinationSide === 'local') {
                     if (dryRun) {
                         continue;
@@ -1927,7 +2176,11 @@ async function copyItems(payload = {}, onProgress = null) {
                     if (targetExists && conflictPolicy === 'overwrite') {
                         await removeLocalPath(targetPath);
                     }
-                    await copyRemoteToLocal(sourceSession.sftp, sourcePath, targetPath, progressReporter);
+                    await copyRemoteToLocal(sourceSession.sftp, sourcePath, targetPath, progressReporter, {
+                        tree: treeCache.get(sourcePath),
+                        session: sourceSession,
+                        exclude
+                    });
                 } else {
                     if (resolvedIsDirectory && isNestedRemotePath(sourcePath, targetPath) && !isCrossSessionRemoteCopy) {
                         throw new Error(`Cannot copy folder into itself: ${sourcePath}`);
@@ -1948,7 +2201,9 @@ async function copyItems(payload = {}, onProgress = null) {
                         await copyLocalToRemote(destinationSession.sftp, bridgePath, targetPath);
                         await removeLocalPath(bridgePath);
                     } else {
-                        await copyRemoteToRemote(destinationSession.sftp, sourcePath, targetPath);
+                        await copyRemoteToRemote(destinationSession.sftp, sourcePath, targetPath, {
+                            knownDirs: knownRemoteDirs
+                        });
                     }
                 }
 
@@ -1976,7 +2231,9 @@ async function copyItems(payload = {}, onProgress = null) {
 
         return {
             success: true,
-            copiedCount
+            copiedCount,
+            skippedCount,
+            skippedPatterns: skippedCount > 0 && exclude ? exclude.patterns : []
         };
     } catch (err) {
         return {

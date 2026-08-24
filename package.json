@@ -8,11 +8,14 @@
     "url": "https://github.com/DeveloperKubilay/termix.git"
   },
   "main": "index.js",
+  "bin": {
+    "termix-mcp": "./util/mcp/stdio.js"
+  },
   "scripts": {
     "start": "electron .",
+    "mcp": "node util/mcp/stdio.js",
     "build": "electron-builder",
-    "site:preview": "node website/server.js",
-    "giiiiiit": "git reset --hard HEAD && git clean -fd"
+    "site:preview": "node website/server.js"
   },
   "build": {
     "appId": "com.Termix.app",
@@ -51,6 +54,7 @@
   "dependencies": {
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@fortawesome/fontawesome-free": "^6.7.2",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "electron-updater": "^6.8.3",
     "firebase": "^12.14.0",
     "kubitdb": "^1.5.5",
@@ -60,22 +64,25 @@
     "node-pty": "^1.1.0",
     "serialport": "^13.0.0",
     "ssh2": "^1.15.0",
+    "tar": "^7.5.13",
     "xterm": "^5.3.0",
     "xterm-addon-fit": "^0.8.0",
     "xterm-addon-unicode11": "^0.6.0",
-    "xterm-addon-webgl": "^0.16.0"
+    "xterm-addon-webgl": "^0.16.0",
+    "zod": "^4.4.3"
   },
   "optionalDependencies": {
     "dmg-license": "^1.0.11"
   },
   "overrides": {
-    "tar": "^7.5.11",
+    "tar": "$tar",
     "@xmldom/xmldom": "^0.8.13",
     "node-abi": "^4.31.0",
     "node-gyp": "^13.0.0"
   },
   "devDependencies": {
     "electron": "^42.3.0",
-    "electron-builder": "^26.8.1"
+    "electron-builder": "^26.8.1",
+    "jsdom": "^30.0.1"
   }
 }

@@ -3,7 +3,7 @@ const { getChannels } = require('./ipc-loader');
 
 const channels = getChannels();
 const validSendChannels = ['term-input', 'term-resize', 'term-close'];
-const validOnChannels = ['term-data', 'ssh-ready', 'term-error', 'term-disconnected', 'updater:status', 'sftp:copy-progress', 'ai:stream'];
+const validOnChannels = ['term-data', 'ssh-ready', 'term-error', 'term-disconnected', 'updater:status', 'sftp:copy-progress', 'ai:stream', 'mcp:open-terminal'];
 const pendingChannelEvents = new Map();
 const channelListeners = new Map();
 const MAX_PENDING_EVENTS_PER_CHANNEL = 200;

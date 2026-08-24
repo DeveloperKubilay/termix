@@ -1,4 +1,5 @@
 const newConnection = require('../../util/terminal/newconnection');
+const sessionStore = require('../../util/mcp/session-store');
 
 module.exports = async (filesPath, hostInfo, event) => {
     // Better logging
@@ -13,22 +14,35 @@ module.exports = async (filesPath, hostInfo, event) => {
         if (!global.Terminals) global.Terminals = {};
         global.Terminals[connection.sessionId] = connection;
 
+        // Mirror the session so MCP tools can list it and read its output.
+        sessionStore.register(connection.sessionId, hostInfo, 'ui');
+
+        const safeSend = (channel, payload) => {
+            if (event && event.sender && !event.sender.isDestroyed()) {
+                try {
+                    event.sender.send(channel, payload);
+                } catch (_) {}
+            }
+        };
+
         // Bridge: Backend (SSH) -> Frontend (IPC)
         connection.on('data', (msg) => {
             if (msg.type === 'data') {
-                event.sender.send('term-data', { sessionId: connection.sessionId, data: msg.data });
+                sessionStore.appendOutput(connection.sessionId, msg.data);
+                safeSend('term-data', { sessionId: connection.sessionId, data: msg.data });
             } else if (msg.type === 'connected') {
-                event.sender.send('ssh-ready', { sessionId: connection.sessionId });
+                safeSend('ssh-ready', { sessionId: connection.sessionId });
             } else if (msg.type === 'error') {
-                event.sender.send('term-error', { sessionId: connection.sessionId, message: msg.message });
+                safeSend('term-error', { sessionId: connection.sessionId, message: msg.message });
             } else if (msg.type === 'disconnected') {
-                event.sender.send('term-disconnected', {
+                safeSend('term-disconnected', {
                     sessionId: connection.sessionId,
                     exitCode: msg.exitCode,
                     signal: msg.signal,
                     message: msg.message
                 });
                 try {
+                    sessionStore.remove(connection.sessionId);
                     if (global.Terminals && global.Terminals[connection.sessionId]) {
                         delete global.Terminals[connection.sessionId];
                     }

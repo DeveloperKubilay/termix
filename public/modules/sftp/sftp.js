@@ -1708,7 +1708,19 @@
         }
 
         await refreshPane(destinationPaneKey);
-        setStatus(successMessage || `${result.copiedCount || copyPayload.items.length} item(s) pasted.`, 'success');
+
+        const baseMessage = successMessage || `${result.copiedCount || copyPayload.items.length} item(s) pasted.`;
+        // Never let the skip list drop things silently: say what was left out.
+        const skipped = Number(result.skippedCount || 0);
+        const skipNote = skipped > 0
+            ? ` ${skipped} item(s) skipped by the transfer skip list${
+                Array.isArray(result.skippedPatterns) && result.skippedPatterns.length
+                    ? ` (${result.skippedPatterns.join(', ')})`
+                    : ''
+            }.`
+            : '';
+
+        setStatus(`${baseMessage}${skipNote}`, 'success');
         return true;
     }
 
@@ -2377,9 +2389,10 @@
             return;
         }
 
-        const refreshed = await refreshPane(key, parentPath);
+        const newDirectoryPath = result.path || (parentPath ? `${parentPath}/${nameCheck.name}` : nameCheck.name);
+        const refreshed = await refreshPane(key, newDirectoryPath);
         if (!refreshed) {
-            await refreshPane(key, pane.path || parentPath);
+            await refreshPane(key, parentPath || pane.path);
         }
         setStatus(`Folder '${nameCheck.name}' created.`, 'success');
     }
@@ -2866,17 +2879,44 @@
                 return;
             }
 
+            // Do not intercept shortcuts if not currently on the dashboard SFTP view
+            if (window.TabManager && window.TabManager.activeTabId && window.TabManager.activeTabId !== 'dashboard') {
+                return;
+            }
+            if (window.ModuleLoader && window.ModuleLoader.currentModule && window.ModuleLoader.currentModule !== 'sftp') {
+                return;
+            }
+
             if (event.key === 'Escape' && ui.contextMenu && ui.contextMenu.classList.contains('show')) {
                 event.preventDefault();
                 closeContextMenu();
                 return;
             }
 
-            const activeTag = document.activeElement && document.activeElement.tagName
-                ? document.activeElement.tagName.toLowerCase()
-                : '';
+            const activeEl = document.activeElement;
+            const targetEl = event.target;
+            const isEditorOrInput = (el) => {
+                if (!el) return false;
+                const tag = el.tagName ? el.tagName.toLowerCase() : '';
+                if (tag === 'input' || tag === 'textarea' || el.isContentEditable) return true;
+                if (typeof el.closest === 'function') {
+                    if (
+                        el.closest('.monaco-editor') ||
+                        el.closest('.sftp-editor-tab') ||
+                        el.closest('.sftp-editor') ||
+                        el.closest('.sftp-editor-monaco') ||
+                        el.closest('.sftp-editor-text') ||
+                        el.closest('.drawer') ||
+                        el.closest('.modal') ||
+                        el.closest('#ai-drawer')
+                    ) {
+                        return true;
+                    }
+                }
+                return false;
+            };
 
-            if (activeTag === 'input' || activeTag === 'textarea' || (document.activeElement && document.activeElement.isContentEditable)) {
+            if (isEditorOrInput(activeEl) || isEditorOrInput(targetEl)) {
                 return;
             }
 
