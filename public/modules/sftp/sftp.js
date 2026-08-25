@@ -1856,8 +1856,9 @@
             return;
         }
 
-        const deletedPaths = new Set(selected.map((entry) => entry.path));
-        pane.entries = (pane.entries || []).filter((entry) => !deletedPaths.has(entry.path));
+        const normalizeForMatch = (p) => String(p || '').replace(/\\/g, '/').replace(/\/+$/, '').trim().toLowerCase();
+        const deletedSet = new Set(selected.map((entry) => normalizeForMatch(entry.path)));
+        pane.entries = (pane.entries || []).filter((entry) => !deletedSet.has(normalizeForMatch(entry.path)));
         pane.selected.clear();
         renderPane(key);
 
@@ -2566,6 +2567,14 @@
                 }
                 if (action === 'create-file') {
                     await createFileInPane(paneKey, directoryPath);
+                    return;
+                }
+                if (action === 'refresh') {
+                    const pane = getPaneState(paneKey);
+                    if (pane) {
+                        await refreshPane(paneKey, pane.path);
+                        setStatus('Folder refreshed.', 'info');
+                    }
                     return;
                 }
 
