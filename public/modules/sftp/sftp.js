@@ -1151,7 +1151,7 @@
         activatePane(state.activePaneKey, false);
     }
 
-    async function refreshPane(key, targetPath) {
+    async function refreshPane(key, targetPath, options = {}) {
         const pane = getPaneState(key);
         if (!pane) return false;
 
@@ -1185,13 +1185,54 @@
             return false;
         }
 
-        pane.path = result.path || payload.path || pane.path;
+        const newPath = result.path || payload.path || pane.path;
+        pane.path = newPath;
         pane.parentPath = result.parentPath || null;
         pane.entries = Array.isArray(result.entries) ? result.entries : [];
         clearPaneSelection(pane);
 
+        if (!Array.isArray(pane.history)) {
+            pane.history = [];
+            pane.historyIndex = -1;
+        }
+
+        if (!options.isHistoryNavigation && newPath) {
+            if (pane.historyIndex === -1 || pane.history[pane.historyIndex] !== newPath) {
+                pane.history = pane.history.slice(0, pane.historyIndex + 1);
+                pane.history.push(newPath);
+                pane.historyIndex = pane.history.length - 1;
+            }
+        }
+
         renderPane(key);
         return true;
+    }
+
+    async function navigatePaneHistory(key, direction) {
+        const pane = getPaneState(key);
+        if (!pane) return;
+        if (!Array.isArray(pane.history)) {
+            pane.history = [];
+            pane.historyIndex = -1;
+        }
+
+        if (direction === 'back') {
+            if (pane.historyIndex > 0) {
+                pane.historyIndex -= 1;
+                const target = pane.history[pane.historyIndex];
+                await refreshPane(key, target, { isHistoryNavigation: true });
+                return;
+            }
+            if (pane.parentPath) {
+                await refreshPane(key, pane.parentPath);
+            }
+        } else if (direction === 'forward') {
+            if (pane.historyIndex < pane.history.length - 1) {
+                pane.historyIndex += 1;
+                const target = pane.history[pane.historyIndex];
+                await refreshPane(key, target, { isHistoryNavigation: true });
+            }
+        }
     }
 
     async function disconnectPane(key, silent) {
@@ -1213,6 +1254,8 @@
         pane.path = '';
         pane.parentPath = null;
         pane.entries = [];
+        pane.history = [];
+        pane.historyIndex = -1;
         clearPaneSelection(pane);
         pane.loading = false;
         clearTransferQueues('Transfers cancelled due to disconnect.');
@@ -1321,6 +1364,8 @@
             pane.path = '';
             pane.parentPath = null;
             pane.entries = [];
+            pane.history = [];
+            pane.historyIndex = -1;
             clearPaneSelection(pane);
             renderPane(key);
             await refreshPane(key, '');
@@ -1332,6 +1377,8 @@
         pane.path = '';
         pane.parentPath = null;
         pane.entries = [];
+        pane.history = [];
+        pane.historyIndex = -1;
         clearPaneSelection(pane);
         renderPane(key);
         setStatus(`Select a VDS for the ${key === 'left' ? 'left' : 'right'} pane.`, 'info');
@@ -2873,6 +2920,53 @@
         if (window.__sftpGlobalBlurHandler) {
             window.removeEventListener('blur', window.__sftpGlobalBlurHandler);
         }
+        if (window.__sftpGlobalMouseNavHandler) {
+            document.removeEventListener('pointerdown', window.__sftpGlobalPreventMouseNav, true);
+            document.removeEventListener('mousedown', window.__sftpGlobalPreventMouseNav, true);
+            document.removeEventListener('mouseup', window.__sftpGlobalMouseNavHandler, true);
+            document.removeEventListener('auxclick', window.__sftpGlobalMouseNavHandler, true);
+        }
+
+        const handleGlobalMouseNav = async (event) => {
+            if (event.button === 3 || event.button === 4) {
+                if (window.TabManager && window.TabManager.activeTabId && window.TabManager.activeTabId !== 'dashboard') {
+                    return;
+                }
+                if (window.ModuleLoader && window.ModuleLoader.currentModule && window.ModuleLoader.currentModule !== 'sftp') {
+                    return;
+                }
+
+                const targetPaneEl = event.target && typeof event.target.closest === 'function'
+                    ? event.target.closest('.sftp-pane')
+                    : null;
+                const key = (targetPaneEl && targetPaneEl.dataset.pane) || state.activePaneKey || 'left';
+
+                event.preventDefault();
+                event.stopPropagation();
+
+                if (event.button === 3) {
+                    await navigatePaneHistory(key, 'back');
+                } else if (event.button === 4) {
+                    await navigatePaneHistory(key, 'forward');
+                }
+            }
+        };
+
+        const preventMouseNavDefault = (event) => {
+            if (event.button === 3 || event.button === 4) {
+                if (window.TabManager && window.TabManager.activeTabId === 'dashboard' &&
+                    window.ModuleLoader && window.ModuleLoader.currentModule === 'sftp') {
+                    event.preventDefault();
+                }
+            }
+        };
+
+        window.__sftpGlobalMouseNavHandler = handleGlobalMouseNav;
+        window.__sftpGlobalPreventMouseNav = preventMouseNavDefault;
+        document.addEventListener('pointerdown', preventMouseNavDefault, true);
+        document.addEventListener('mousedown', preventMouseNavDefault, true);
+        document.addEventListener('mouseup', handleGlobalMouseNav, true);
+        document.addEventListener('auxclick', handleGlobalMouseNav, true);
 
         const handle = async (event) => {
             if (!document.getElementById('sftp-pane-left')) {
@@ -2970,6 +3064,18 @@
             if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key === 'Enter') {
                 event.preventDefault();
                 await activateSelectedItem(key);
+                return;
+            }
+
+            if ((event.altKey && event.key === 'ArrowLeft') || (!event.ctrlKey && !event.metaKey && !event.altKey && event.key === 'Backspace')) {
+                event.preventDefault();
+                await navigatePaneHistory(key, 'back');
+                return;
+            }
+
+            if (event.altKey && event.key === 'ArrowRight') {
+                event.preventDefault();
+                await navigatePaneHistory(key, 'forward');
                 return;
             }
 

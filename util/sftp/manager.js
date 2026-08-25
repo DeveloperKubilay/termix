@@ -227,6 +227,20 @@ function attrsIsDirectory(attrs, longname = '') {
     return false;
 }
 
+function attrsIsSymbolicLink(attrs, longname = '') {
+    if (!attrs) return false;
+    if (typeof attrs.isSymbolicLink === 'function') {
+        return attrs.isSymbolicLink();
+    }
+    if (typeof attrs.mode === 'number') {
+        return (attrs.mode & 0o170000) === 0o120000;
+    }
+    if (typeof longname === 'string') {
+        return longname.startsWith('l');
+    }
+    return false;
+}
+
 function getHostById(hostId) {
     const normalized = normalizeId(hostId);
     const hosts = getArray('hosts');
@@ -396,6 +410,47 @@ function sftpStat(sftp, targetPath) {
                 return;
             }
             resolve(stats);
+        });
+    });
+}
+
+function sftpLstat(sftp, targetPath) {
+    return new Promise((resolve, reject) => {
+        sftp.lstat(targetPath, (err, stats) => {
+            if (err) {
+                reject(err);
+                return;
+            }
+            resolve(stats);
+        });
+    });
+}
+
+function sftpChmod(sftp, targetPath, mode) {
+    return new Promise((resolve, reject) => {
+        sftp.chmod(targetPath, mode, (err) => {
+            if (err) {
+                reject(err);
+                return;
+            }
+            resolve();
+        });
+    });
+}
+
+function execRemoteCommand(conn, command) {
+    return new Promise((resolve, reject) => {
+        if (!conn || typeof conn.exec !== 'function') {
+            return reject(new Error('SSH connection not available for exec'));
+        }
+        conn.exec(command, (err, stream) => {
+            if (err) return reject(err);
+            let stderr = '';
+            stream.stderr.on('data', (d) => { stderr += d; });
+            stream.on('close', (code) => {
+                if (code === 0) resolve();
+                else reject(new Error(stderr.trim() || `Command failed with code ${code}`));
+            });
         });
     });
 }
@@ -822,29 +877,68 @@ async function removeLocalPath(targetPath) {
     }
 }
 
-async function removeRemotePath(sftp, targetPath) {
+async function removeRemotePath(sftp, targetPath, session = null) {
     const normalized = normalizeRemotePath(targetPath, '/');
     let stats = null;
 
     try {
-        stats = await sftpStat(sftp, normalized);
+        stats = await sftpLstat(sftp, normalized);
     } catch (err) {
         if (isNoSuchFileError(err)) return;
         throw err;
     }
 
-    if (attrsIsDirectory(stats)) {
-        const entries = await sftpReaddir(sftp, normalized);
-        for (const entry of entries) {
-            const name = entry && entry.filename ? entry.filename : null;
-            if (!name || name === '.' || name === '..') continue;
-            await removeRemotePath(sftp, path.posix.join(normalized, name));
+    if (attrsIsDirectory(stats) && !attrsIsSymbolicLink(stats)) {
+        if (session && session.conn && !isRemoteRoot(normalized)) {
+            try {
+                const safePath = `'${normalized.replace(/'/g, `'\\''`)}'`;
+                await execRemoteCommand(session.conn, `rm -rf -- ${safePath}`);
+                return;
+            } catch (_) {}
         }
-        await sftpRmdir(sftp, normalized);
+
+        try {
+            const entries = await sftpReaddir(sftp, normalized);
+            for (const entry of entries) {
+                const name = entry && entry.filename ? entry.filename : null;
+                if (!name || name === '.' || name === '..') continue;
+                await removeRemotePath(sftp, path.posix.join(normalized, name), session);
+            }
+        } catch (err) {
+            try {
+                await sftpChmod(sftp, normalized, 0o777);
+                const entries = await sftpReaddir(sftp, normalized);
+                for (const entry of entries) {
+                    const name = entry && entry.filename ? entry.filename : null;
+                    if (!name || name === '.' || name === '..') continue;
+                    await removeRemotePath(sftp, path.posix.join(normalized, name), session);
+                }
+            } catch (_) {}
+        }
+
+        try {
+            await sftpRmdir(sftp, normalized);
+        } catch (err) {
+            try {
+                await sftpChmod(sftp, normalized, 0o777);
+                await sftpRmdir(sftp, normalized);
+            } catch (_) {
+                throw err;
+            }
+        }
         return;
     }
 
-    await sftpUnlink(sftp, normalized);
+    try {
+        await sftpUnlink(sftp, normalized);
+    } catch (err) {
+        try {
+            await sftpChmod(sftp, normalized, 0o666);
+            await sftpUnlink(sftp, normalized);
+        } catch (_) {
+            throw err;
+        }
+    }
 }
 
 async function copyLocalPath(sourcePath, destinationPath) {
@@ -1842,7 +1936,7 @@ async function deleteItems(payload = {}) {
                 if (isRemoteRoot(normalized)) {
                     throw new Error('Remote root folder cannot be deleted.');
                 }
-                await removeRemotePath(session.sftp, normalized);
+                await removeRemotePath(session.sftp, normalized, session);
             }
         }
 
