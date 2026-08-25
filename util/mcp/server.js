@@ -2,6 +2,7 @@
 // connect over Streamable HTTP on the loopback interface and drive the tools in
 // ./tools.js. Disabled until the user turns it on in Settings > MCP.
 const http = require('http');
+const path = require('path');
 const crypto = require('crypto');
 
 const db = require('../profile-db');
@@ -154,6 +155,18 @@ function createRequestHandler() {
             return;
         }
 
+        if (url.pathname === '/api/open-terminal' && req.method === 'POST') {
+            try {
+                const raw = await readBody(req);
+                const host = raw ? JSON.parse(raw) : null;
+                const delivered = openTerminalInUi(host);
+                sendJson(res, 200, { success: delivered });
+            } catch (err) {
+                sendJson(res, 500, { error: err.message });
+            }
+            return;
+        }
+
         if (url.pathname !== MCP_PATH) {
             sendJson(res, 404, { error: 'Not found' });
             return;
@@ -258,17 +271,14 @@ function getStatus() {
     };
 }
 
-// The snippet a user pastes into their MCP client configuration.
+// The snippet a user pastes into their MCP client configuration (Claude, Cursor, Antigravity).
 function getClientConfig() {
-    const settings = ensureToken();
+    const stdioScriptPath = path.resolve(__dirname, 'stdio.js');
     return {
         mcpServers: {
             termix: {
-                type: 'http',
-                url: `http://${HOST}:${settings.port}${MCP_PATH}`,
-                headers: {
-                    Authorization: `Bearer ${settings.token}`
-                }
+                command: 'node',
+                args: [stdioScriptPath]
             }
         }
     };
