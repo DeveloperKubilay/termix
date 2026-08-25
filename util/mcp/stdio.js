@@ -51,7 +51,11 @@ async function main() {
     const transport = new StdioServerTransport();
     await server.connect(transport);
 
+    let idleTimer = null;
+    const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes idle auto-shutdown
+
     const cleanup = async () => {
+        if (idleTimer) clearTimeout(idleTimer);
         try {
             await closeSftpSessions();
             await server.close();
@@ -59,8 +63,22 @@ async function main() {
         process.exit(0);
     };
 
+    const resetIdleTimer = () => {
+        if (idleTimer) clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => {
+            cleanup();
+        }, IDLE_TIMEOUT_MS);
+        if (idleTimer && typeof idleTimer.unref === 'function') idleTimer.unref();
+    };
+
+    process.stdin.on('data', resetIdleTimer);
+    process.stdin.on('end', cleanup);
+    process.stdin.on('close', cleanup);
+    process.on('disconnect', cleanup);
     process.on('SIGINT', cleanup);
     process.on('SIGTERM', cleanup);
+
+    resetIdleTimer();
 }
 
 main().catch((err) => {
