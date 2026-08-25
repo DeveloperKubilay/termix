@@ -385,17 +385,22 @@ function registerTools(server, context = {}) {
     if (openTerminalInUi) {
         server.registerTool('open_terminal_tab', {
             title: 'Open a visible terminal tab in Termix GUI',
-            description: 'Opens a visible, interactive terminal tab for a host directly in the Termix app window on the user screen. ALWAYS call this tool when the user asks to connect to a host or open a terminal in Termix.',
+            description: 'Opens a visible, interactive terminal tab for a host directly in the Termix app window on the user screen and returns its sessionId immediately. ALWAYS call this tool when the user asks to connect to a host or open a terminal in Termix.',
             inputSchema: {
                 host: z.string().describe('Host id, name or user@address (from list_hosts)')
             }
         }, safe(async ({ host }) => {
             const target = resolveHost(host);
-            const delivered = openTerminalInUi(publicHost(target));
-            if (!delivered) {
-                return errorResult('The Termix window is not available right now. The command can still be run with run_command or open_session.');
+            const result = await openTerminalInUi(publicHost(target));
+            if (!result || !result.success) {
+                return errorResult((result && result.error) || 'The Termix window is not available right now. The command can still be run with run_command or open_session.');
             }
-            return textResult(`Opened a visible terminal tab for ${target.name} in Termix. Call list_sessions in a moment to get its session id.`);
+            return jsonResult({
+                success: true,
+                sessionId: result.sessionId || null,
+                host: publicHost(target),
+                message: `Opened visible terminal tab for ${target.name} in Termix GUI.`
+            });
         }));
     }
 

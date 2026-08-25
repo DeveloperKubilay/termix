@@ -1861,7 +1861,15 @@
         pane.selected.clear();
         renderPane(key);
 
-        await refreshPane(key);
+        const currentPath = pane.path;
+        await refreshPane(key, currentPath);
+
+        const otherKey = key === 'left' ? 'right' : 'left';
+        const otherPane = getPaneState(otherKey);
+        if (otherPane && otherPane.path === currentPath) {
+            await refreshPane(otherKey, currentPath);
+        }
+
         setStatus(`${selected.length} item(s) deleted.`, 'success');
     }
 

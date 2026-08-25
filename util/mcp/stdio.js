@@ -18,19 +18,28 @@ function openTerminalInUi(host) {
             port: 8790,
             path: '/api/open-terminal',
             method: 'POST',
-            timeout: 1500,
+            timeout: 6000,
             headers: {
                 'Content-Type': 'application/json',
                 'Content-Length': Buffer.byteLength(payload)
             }
         }, (res) => {
-            resolve(res.statusCode === 200);
+            const chunks = [];
+            res.on('data', (c) => chunks.push(c));
+            res.on('end', () => {
+                try {
+                    const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+                    resolve(parsed);
+                } catch (_) {
+                    resolve({ success: res.statusCode === 200 });
+                }
+            });
         });
 
-        req.on('error', () => resolve(false));
+        req.on('error', () => resolve({ success: false, error: 'Termix GUI is not responding.' }));
         req.on('timeout', () => {
             req.destroy();
-            resolve(false);
+            resolve({ success: false, error: 'Timed out waiting for Termix GUI.' });
         });
 
         req.write(payload);

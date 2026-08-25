@@ -100,18 +100,42 @@ function readBody(req) {
     });
 }
 
-function openTerminalInUi(host) {
+async function openTerminalInUi(host) {
     const getMainWindow = contextRef.getMainWindow;
     const window = typeof getMainWindow === 'function' ? getMainWindow() : null;
-    if (!window || window.isDestroyed()) return false;
+    if (!window || window.isDestroyed()) {
+        return { success: false, error: 'Termix GUI window is not available.' };
+    }
+
+    const initialSessions = new Set(sessionStore.list().map(s => s.sessionId));
 
     try {
         window.webContents.send('mcp:open-terminal', host);
-        return true;
     } catch (err) {
         console.error('Failed to ask the UI for a terminal tab:', err);
-        return false;
+        return { success: false, error: err.message };
     }
+
+    // Wait up to 5 seconds for connection to establish and register in sessionStore
+    const start = Date.now();
+    while (Date.now() - start < 5000) {
+        await new Promise(r => setTimeout(r, 150));
+        const currentSessions = sessionStore.list();
+        const found = currentSessions.find(s => !initialSessions.has(s.sessionId));
+        if (found) {
+            return {
+                success: true,
+                sessionId: found.sessionId,
+                host: found.host
+            };
+        }
+    }
+
+    return {
+        success: true,
+        sessionId: null,
+        message: 'Terminal tab opened in Termix GUI.'
+    };
 }
 
 // A fresh McpServer per request keeps the endpoint stateless, which is the
@@ -222,8 +246,8 @@ function createRequestHandler() {
             try {
                 const raw = await readBody(req);
                 const host = raw ? JSON.parse(raw) : null;
-                const delivered = openTerminalInUi(host);
-                sendJson(res, 200, { success: delivered });
+                const delivered = await openTerminalInUi(host);
+                sendJson(res, 200, delivered);
             } catch (err) {
                 sendJson(res, 500, { error: err.message });
             }

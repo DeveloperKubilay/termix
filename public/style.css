@@ -1456,16 +1456,21 @@ body.sidebar-resizing {
     background: transparent;
 }
 
-.app-confirm-btn.danger {
-    background: #f38ba8;
-    color: #111111;
-    border-color: #f38ba8;
+.app-confirm-btn.danger,
+:root[data-theme="modern"] .app-confirm-btn.danger {
+    background: #ef4444 !important;
+    color: #ffffff !important;
+    border-color: #ef4444 !important;
     font-size: 0.88rem;
     font-weight: 650;
+    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.35);
 }
 
-.app-confirm-btn.danger:hover {
-    background: #ee7f9e;
+.app-confirm-btn.danger:hover,
+:root[data-theme="modern"] .app-confirm-btn.danger:hover {
+    background: #dc2626 !important;
+    border-color: #dc2626 !important;
+    color: #ffffff !important;
     filter: none;
 }
 
