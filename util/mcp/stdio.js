@@ -41,7 +41,13 @@ function openTerminalInUi(host) {
 async function main() {
     const server = new McpServer(SERVER_INFO, {
         capabilities: { tools: {} },
-        instructions: 'Termix MCP Server. Gives AI assistants direct access to list saved hosts, run commands over SSH, and manage SFTP files.'
+        instructions: `Termix MCP Server gives AI assistants full control over saved servers, SSH commands, remote files, and live terminal sessions:
+- Use 'list_hosts' first to discover saved servers and their IDs/names.
+- Use 'run_command' for instant, high-speed SSH command execution.
+- Use 'open_terminal_tab' when the user asks to open or connect to a terminal in the Termix GUI window.
+- Use 'list_sessions' to view active terminals, 'read_output' to read what is currently displayed on screen, and 'send_input' to type into an open terminal.
+- Use 'list_directory', 'read_file', and 'write_file' for remote SFTP file management.
+- Use 'list_snippets' to view saved command snippets.`
     });
 
     registerTools(server, {
@@ -52,7 +58,7 @@ async function main() {
     await server.connect(transport);
 
     let idleTimer = null;
-    const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes idle auto-shutdown
+    const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes idle auto-shutdown
 
     const cleanup = async () => {
         if (idleTimer) clearTimeout(idleTimer);

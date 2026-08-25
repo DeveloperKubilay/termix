@@ -122,7 +122,13 @@ async function handleMcpRequest(req, res, body) {
 
     const server = new McpServer(SERVER_INFO, {
         capabilities: { tools: {} },
-        instructions: 'Termix exposes the servers saved in the app. Use list_hosts first, run_command for one-off commands, and open_session/send_input/read_output when a command needs an interactive shell.'
+        instructions: `Termix MCP Server gives AI assistants full control over saved servers, SSH commands, remote files, and live terminal sessions:
+- Use 'list_hosts' first to discover saved servers and their IDs/names.
+- Use 'run_command' for instant, high-speed SSH command execution.
+- Use 'open_terminal_tab' when the user asks to open or connect to a terminal in the Termix GUI window.
+- Use 'list_sessions' to view active terminals, 'read_output' to read what is currently displayed on screen, and 'send_input' to type into an open terminal.
+- Use 'list_directory', 'read_file', and 'write_file' for remote SFTP file management.
+- Use 'list_snippets' to view saved command snippets.`
     });
 
     registerTools(server, { openTerminalInUi });

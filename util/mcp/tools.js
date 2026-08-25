@@ -196,8 +196,8 @@ function registerTools(server, context = {}) {
     /* ------------------------------------------------------------ hosts */
 
     server.registerTool('list_hosts', {
-        title: 'List hosts',
-        description: 'Lists the servers saved in Termix. Credentials are never returned.',
+        title: 'List saved hosts',
+        description: 'Lists all saved SSH/SFTP servers in Termix. Always call this tool first to discover available host IDs, names, tags, usernames, and addresses before running commands or opening sessions.',
         inputSchema: {
             query: z.string().optional().describe('Filter on name, address or username'),
             tag: z.string().optional().describe('Only hosts carrying this tag')
@@ -224,11 +224,11 @@ function registerTools(server, context = {}) {
     /* --------------------------------------------------------- commands */
 
     server.registerTool('run_command', {
-        title: 'Run a command',
-        description: 'Runs a single shell command on a host over SSH and returns stdout, stderr and the exit code. The command runs in its own non-interactive session, so it cannot answer prompts; use open_session and send_input for anything interactive.',
+        title: 'Run a shell command',
+        description: 'Executes a non-interactive shell command on a host over SSH using Termix high-speed pooled connection and returns stdout, stderr, and the exit code. Use this for quick checks, builds, scripts, running bash commands, git commands, etc.',
         inputSchema: {
-            host: z.string().describe('Host id, name or user@address'),
-            command: z.string().describe('Shell command to run'),
+            host: z.string().describe('Host id, name or user@address (from list_hosts)'),
+            command: z.string().describe('Shell command to run on the remote host'),
             timeoutMs: z.number().int().positive().optional().describe('Timeout in milliseconds (default 30000)')
         }
     }, safe(async ({ host, command, timeoutMs }) => {
@@ -258,7 +258,7 @@ function registerTools(server, context = {}) {
 
     server.registerTool('list_sessions', {
         title: 'List terminal sessions',
-        description: 'Lists live terminal sessions, both the ones the user has open in the app and the ones opened through MCP.',
+        description: 'Lists all currently open terminal sessions and live tabs (both in the Termix GUI window and headless MCP sessions). Returns sessionId, host info, and buffer sizes.',
         inputSchema: {}
     }, safe(async () => {
         let sessions = sessionStore.list();
@@ -275,10 +275,10 @@ function registerTools(server, context = {}) {
     }));
 
     server.registerTool('open_session', {
-        title: 'Open a shell session',
-        description: 'Opens a persistent shell on a host. The session is not shown in the app window; use open_terminal_tab for that. Drive it with send_input and read_output.',
+        title: 'Open a headless shell session',
+        description: 'Opens a persistent background PTY shell on a host. This session is headless (not shown as a tab in Termix GUI). Use send_input to type and read_output to read responses. If you want to open a visible tab for the user, use open_terminal_tab instead.',
         inputSchema: {
-            host: z.string().describe('Host id, name or user@address')
+            host: z.string().describe('Host id, name or user@address (from list_hosts)')
         }
     }, safe(async ({ host }) => {
         const target = resolveHost(host);
@@ -306,12 +306,12 @@ function registerTools(server, context = {}) {
     }));
 
     server.registerTool('send_input', {
-        title: 'Type into a session',
-        description: 'Sends keystrokes to a live terminal session. A newline is appended unless submit is false.',
+        title: 'Type into an active terminal session',
+        description: 'Sends keystrokes or commands into an active terminal session (either a visible GUI tab or a headless session). Useful for interactive prompts (sudo password, y/n questions, top, nano). Appends a newline by default.',
         inputSchema: {
-            sessionId: z.string().describe('Session id from list_sessions or open_session'),
-            input: z.string().describe('Text to type'),
-            submit: z.boolean().optional().describe('Append a newline (default true)')
+            sessionId: z.string().describe('Session id (from list_sessions or open_session)'),
+            input: z.string().describe('Text or command to type into the terminal'),
+            submit: z.boolean().optional().describe('Append Enter/newline (default true)')
         }
     }, safe(async ({ sessionId, input, submit }) => {
         const settings = getSettings();
@@ -340,12 +340,12 @@ function registerTools(server, context = {}) {
     }));
 
     server.registerTool('read_output', {
-        title: 'Read session output',
-        description: 'Returns the recent output of a terminal session, with ANSI escapes stripped.',
+        title: 'Read terminal output and screen content',
+        description: 'Returns recent output and screen text from an active terminal session (including live tabs opened by the user in Termix). Strips ANSI color escapes by default for clean reading.',
         inputSchema: {
-            sessionId: z.string().describe('Session id from list_sessions'),
-            lines: z.number().int().positive().optional().describe('How many trailing lines (default 200)'),
-            raw: z.boolean().optional().describe('Keep ANSI escape sequences')
+            sessionId: z.string().describe('Session id (from list_sessions)'),
+            lines: z.number().int().positive().optional().describe('Number of trailing lines to read (default 200)'),
+            raw: z.boolean().optional().describe('Keep raw ANSI escape sequences (default false)')
         }
     }, safe(async ({ sessionId, lines, raw }) => {
         let output = sessionStore.readOutput(sessionId, { lines, raw });
@@ -360,10 +360,10 @@ function registerTools(server, context = {}) {
     }));
 
     server.registerTool('close_session', {
-        title: 'Close a session',
-        description: 'Closes a terminal session. Sessions the user opened in the app are closed too, so prefer closing only what you opened.',
+        title: 'Close a terminal session',
+        description: 'Closes an active terminal session. Closes the underlying SSH channel.',
         inputSchema: {
-            sessionId: z.string()
+            sessionId: z.string().describe('Session id to close')
         }
     }, safe(async ({ sessionId }) => {
         const session = global.Terminals && global.Terminals[sessionId];
@@ -384,29 +384,29 @@ function registerTools(server, context = {}) {
 
     if (openTerminalInUi) {
         server.registerTool('open_terminal_tab', {
-            title: 'Open a terminal tab',
-            description: 'Opens a terminal for a host as a visible tab in the Termix window, exactly as if the user had clicked connect.',
+            title: 'Open a visible terminal tab in Termix GUI',
+            description: 'Opens a visible, interactive terminal tab for a host directly in the Termix app window on the user screen. ALWAYS call this tool when the user asks to connect to a host or open a terminal in Termix.',
             inputSchema: {
-                host: z.string().describe('Host id, name or user@address')
+                host: z.string().describe('Host id, name or user@address (from list_hosts)')
             }
         }, safe(async ({ host }) => {
             const target = resolveHost(host);
             const delivered = openTerminalInUi(publicHost(target));
             if (!delivered) {
-                return errorResult('The Termix window is not available right now.');
+                return errorResult('The Termix window is not available right now. The command can still be run with run_command or open_session.');
             }
-            return textResult(`Opening a terminal tab for ${target.name}. Call list_sessions in a moment to get its session id.`);
+            return textResult(`Opened a visible terminal tab for ${target.name} in Termix. Call list_sessions in a moment to get its session id.`);
         }));
     }
 
     /* ------------------------------------------------------------ files */
 
     server.registerTool('list_directory', {
-        title: 'List a remote directory',
-        description: 'Lists a directory on a host over SFTP.',
+        title: 'List remote directory via SFTP',
+        description: 'Lists files and folders inside a remote directory on a host over SFTP.',
         inputSchema: {
-            host: z.string(),
-            path: z.string().optional().describe('Absolute path (default: home directory)')
+            host: z.string().describe('Host id, name or user@address (from list_hosts)'),
+            path: z.string().optional().describe('Absolute path to list (default: user home directory)')
         }
     }, safe(async ({ host, path: targetPath }) => {
         const target = resolveHost(host);
@@ -423,12 +423,12 @@ function registerTools(server, context = {}) {
     }));
 
     server.registerTool('read_file', {
-        title: 'Read a remote file',
-        description: 'Reads a text file from a host over SFTP.',
+        title: 'Read remote file via SFTP',
+        description: 'Reads the text content of a remote file (config, log, script, etc.) on a host over SFTP.',
         inputSchema: {
-            host: z.string(),
-            path: z.string().describe('Absolute path of the file'),
-            maxBytes: z.number().int().positive().optional()
+            host: z.string().describe('Host id, name or user@address (from list_hosts)'),
+            path: z.string().describe('Absolute path of the remote file to read'),
+            maxBytes: z.number().int().positive().optional().describe('Maximum bytes to read (default 512KB)')
         }
     }, safe(async ({ host, path: targetPath, maxBytes }) => {
         const target = resolveHost(host);
@@ -450,12 +450,12 @@ function registerTools(server, context = {}) {
     }));
 
     server.registerTool('write_file', {
-        title: 'Write a remote file',
-        description: 'Writes a text file on a host over SFTP, replacing what is there.',
+        title: 'Write remote file via SFTP',
+        description: 'Creates or updates a remote text file on a host over SFTP, replacing its contents.',
         inputSchema: {
-            host: z.string(),
-            path: z.string().describe('Absolute path of the file'),
-            content: z.string()
+            host: z.string().describe('Host id, name or user@address (from list_hosts)'),
+            path: z.string().describe('Absolute path of the remote file to write'),
+            content: z.string().describe('New content to write into the file')
         }
     }, safe(async ({ host, path: targetPath, content }) => {
         const target = resolveHost(host);
@@ -474,8 +474,8 @@ function registerTools(server, context = {}) {
     /* --------------------------------------------------------- snippets */
 
     server.registerTool('list_snippets', {
-        title: 'List snippets',
-        description: 'Lists the command snippets saved in Termix.',
+        title: 'List saved snippets',
+        description: 'Lists all reusable command snippets saved by the user in Termix.',
         inputSchema: {}
     }, safe(async () => {
         const raw = db.get('snippets');
