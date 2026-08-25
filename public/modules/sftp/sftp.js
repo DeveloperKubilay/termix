@@ -1691,6 +1691,9 @@
 
         let result = null;
         try {
+            if (!transferDirection) {
+                setStatus('Transferring item(s)...', 'info');
+            }
             result = transferDirection
                 ? await enqueueTransferOperation(transferDirection, runCopy)
                 : await runCopy(null);

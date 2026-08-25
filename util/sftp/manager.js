@@ -2197,8 +2197,14 @@ async function copyItems(payload = {}, onProgress = null) {
                         if (await localExists(bridgePath)) {
                             await removeLocalPath(bridgePath);
                         }
-                        await copyRemoteToLocal(sourceSession.sftp, sourcePath, bridgePath);
-                        await copyLocalToRemote(destinationSession.sftp, bridgePath, targetPath);
+                        await copyRemoteToLocal(sourceSession.sftp, sourcePath, bridgePath, progressReporter, {
+                            session: sourceSession,
+                            exclude
+                        });
+                        await copyLocalToRemote(destinationSession.sftp, bridgePath, targetPath, progressReporter, {
+                            session: destinationSession,
+                            exclude
+                        });
                         await removeLocalPath(bridgePath);
                     } else {
                         await copyRemoteToRemote(destinationSession.sftp, sourcePath, targetPath, {
