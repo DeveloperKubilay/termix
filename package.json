@@ -1,7 +1,7 @@
 {
   "name": "Termix",
   "version": "1.0.0",
-  "description": "A modern terminal & SSH client",
+  "description": "Termix",
   "author": "DeveloperKubilay",
   "repository": {
     "type": "git",
@@ -38,11 +38,15 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Termix"
+      "shortcutName": "Termix",
+      "uninstallDisplayName": "Termix"
     },
     "win": {
       "target": "nsis",
-      "icon": "public/icons/favicon.ico"
+      "icon": "public/icons/favicon.ico",
+      "fileDescription": "Termix",
+      "legalTrademarks": "Termix",
+      "publisherName": "DeveloperKubilay"
     },
     "linux": {
       "target": "AppImage"
