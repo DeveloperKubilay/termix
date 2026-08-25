@@ -661,14 +661,21 @@ const TabManager = {
                 this.sidebar.style.transition = '';
                 const willExpand = this.sidebar.classList.contains('collapsed');
                 if (willExpand) {
-                    const currentW = parseFloat(this.sidebar.style.width) || 0;
-                    const minW = this.sidebar.classList.contains('ai-mode') ? 320 : 250;
-                    if (currentW < minW) {
-                        this.sidebar.style.width = '';
-                    }
+                    this.sidebar.style.width = '';
                     this.sidebar.classList.remove('collapsed');
                 } else {
                     this.sidebar.classList.add('collapsed');
+                }
+                requestAnimationFrame(() => this.refreshVisibleSessions());
+                setTimeout(() => this.refreshVisibleSessions(), 120);
+                setTimeout(() => this.refreshVisibleSessions(), 260);
+            });
+        }
+
+        if (this.sidebar) {
+            this.sidebar.addEventListener('transitionend', (e) => {
+                if (e.target === this.sidebar && e.propertyName === 'width') {
+                    this.refreshVisibleSessions();
                 }
             });
         }

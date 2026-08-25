@@ -766,6 +766,10 @@
         }
     }
 
+    if (mcpEnabledToggle) mcpEnabledToggle.addEventListener('change', saveMcpSettings);
+    if (mcpBlockDestructiveToggle) mcpBlockDestructiveToggle.addEventListener('change', saveMcpSettings);
+    if (mcpAllowSessionsToggle) mcpAllowSessionsToggle.addEventListener('change', saveMcpSettings);
+    if (mcpPort) mcpPort.addEventListener('change', saveMcpSettings);
     if (btnMcpSave) btnMcpSave.addEventListener('click', saveMcpSettings);
     if (btnMcpCopyToken) btnMcpCopyToken.addEventListener('click', () => copyToClipboard(mcpToken && mcpToken.value, 'Token'));
     if (btnMcpCopyConfig) {

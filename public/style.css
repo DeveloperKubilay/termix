@@ -59,9 +59,10 @@ body {
     flex-direction: column;
     padding: 10px 10px 0 10px; /* Reduced bottom padding */
     border-right: 1px solid var(--border);
-    transition: width 0.3s ease, padding 0.3s ease, opacity 0.3s ease;
+    transition: width 0.22s cubic-bezier(0.2, 0, 0, 1), padding 0.22s cubic-bezier(0.2, 0, 0, 1), opacity 0.18s ease;
     overflow: hidden;
     white-space: nowrap;
+    will-change: width, opacity;
 }
 
 .sidebar.ai-mode {
