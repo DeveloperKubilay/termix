@@ -38,13 +38,11 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Termix",
-      "uninstallDisplayName": "Termix"
+      "shortcutName": "Termix"
     },
     "win": {
       "target": "nsis",
-      "icon": "public/icons/favicon.ico",
-      "publisherName": "DeveloperKubilay"
+      "icon": "public/icons/favicon.ico"
     },
     "linux": {
       "target": "AppImage"
