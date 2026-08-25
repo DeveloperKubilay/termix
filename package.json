@@ -44,8 +44,6 @@
     "win": {
       "target": "nsis",
       "icon": "public/icons/favicon.ico",
-      "fileDescription": "Termix",
-      "legalTrademarks": "Termix",
       "publisherName": "DeveloperKubilay"
     },
     "linux": {
