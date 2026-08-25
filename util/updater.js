@@ -80,7 +80,7 @@ function resetTransferStats() {
     state.total = 0;
 }
 
-function installAndRestart({ autoTriggered = false } = {}) {
+async function installAndRestart({ autoTriggered = false } = {}) {
     if (installScheduled || installingUpdate) {
         return false;
     }
@@ -96,6 +96,19 @@ function installAndRestart({ autoTriggered = false } = {}) {
             ? `Installing version ${version} and restarting...`
             : 'Installing update and restarting...');
     emitState();
+
+    try {
+        const mcpServer = require('./mcp/server');
+        await mcpServer.stop();
+    } catch (_) {}
+    try {
+        const sftpManager = require('./sftp/manager');
+        await sftpManager.disconnectAll();
+    } catch (_) {}
+    try {
+        const sshExec = require('./connections/ssh-exec');
+        sshExec.closeAll();
+    } catch (_) {}
 
     try {
         autoUpdater.quitAndInstall(false, true);

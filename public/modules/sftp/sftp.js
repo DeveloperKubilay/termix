@@ -1856,6 +1856,11 @@
             return;
         }
 
+        const deletedPaths = new Set(selected.map((entry) => entry.path));
+        pane.entries = (pane.entries || []).filter((entry) => !deletedPaths.has(entry.path));
+        pane.selected.clear();
+        renderPane(key);
+
         await refreshPane(key);
         setStatus(`${selected.length} item(s) deleted.`, 'success');
     }
@@ -2566,6 +2571,10 @@
                     return;
                 }
                 if (action === 'delete') {
+                    const pane = getPaneState(paneKey);
+                    if (pane && targetPath && !pane.selected.has(targetPath)) {
+                        selectOnly(paneKey, targetPath);
+                    }
                     await deleteSelected(paneKey);
                 }
             });

@@ -1,6 +1,9 @@
 const fs = require('fs');
-const { app, BrowserWindow, nativeImage, screen, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, nativeImage, screen, ipcMain } = require('electron');
 const path = require('path');
+
+// Disable native menu bar completely so Alt key does not show File/Edit menu
+Menu.setApplicationMenu(null);
 
 const { loadIPC } = require('./util/ipc-loader');
 const profileManager = require('./util/profile-manager');
@@ -181,6 +184,8 @@ if (!gotSingleInstanceLock) {
       closeAllTerminals();
     });
 
+    mainWindow.removeMenu();
+    mainWindow.setMenu(null);
     mainWindow.setMenuBarVisibility(false);
     mainWindow.loadFile(path.join(__dirname, 'index.html'));
   }
