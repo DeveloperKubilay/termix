@@ -1863,7 +1863,6 @@
         renderPane(key);
 
         const currentPath = pane.path;
-        await new Promise((resolve) => setTimeout(resolve, 100));
         await refreshPane(key, currentPath);
 
         const otherKey = key === 'left' ? 'right' : 'left';

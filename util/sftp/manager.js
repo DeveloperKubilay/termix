@@ -438,18 +438,55 @@ function sftpChmod(sftp, targetPath, mode) {
     });
 }
 
-function execRemoteCommand(conn, command) {
+function execRemoteCommand(conn, command, timeoutMs = 8000) {
     return new Promise((resolve, reject) => {
         if (!conn || typeof conn.exec !== 'function') {
             return reject(new Error('SSH connection not available for exec'));
         }
+        let settled = false;
+        let timer = null;
+
+        const cleanup = () => {
+            if (timer) clearTimeout(timer);
+        };
+
+        timer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            reject(new Error('Command timed out'));
+        }, timeoutMs);
+
         conn.exec(command, (err, stream) => {
-            if (err) return reject(err);
+            if (err) {
+                cleanup();
+                settled = true;
+                return reject(err);
+            }
             let stderr = '';
+            let stdout = '';
+            stream.on('data', (d) => { stdout += d; });
             stream.stderr.on('data', (d) => { stderr += d; });
             stream.on('close', (code) => {
-                if (code === 0) resolve();
+                if (settled) return;
+                settled = true;
+                cleanup();
+                if (code === 0 || code === null || code === undefined) resolve(stdout);
                 else reject(new Error(stderr.trim() || `Command failed with code ${code}`));
+            });
+            stream.on('end', () => {
+                // If close doesn't fire, end ensures resolution
+                if (!settled) {
+                    settled = true;
+                    cleanup();
+                    resolve(stdout);
+                }
+            });
+            stream.on('error', (streamErr) => {
+                if (!settled) {
+                    settled = true;
+                    cleanup();
+                    reject(streamErr);
+                }
             });
         });
     });
