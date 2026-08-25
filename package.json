@@ -57,7 +57,7 @@
   },
   "dependencies": {
     "@fontsource/jetbrains-mono": "^5.2.8",
-    "@fortawesome/fontawesome-free": "^6.7.2",
+    "@fortawesome/fontawesome-free": "^7.3.1",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "electron-updater": "^6.8.3",
     "firebase": "^12.14.0",
