@@ -1,7 +1,27 @@
 const path = require('path');
-const electron = require('electron');
+const os = require('os');
+const fs = require('fs');
+
+let electron = null;
+try {
+    electron = require('electron');
+} catch (_) {}
 
 const ASAR_ROOT = path.resolve(__dirname, '..');
+
+function getDefaultUserDataPath() {
+    const homedir = os.homedir();
+    if (process.platform === 'win32') {
+        const appData = process.env.APPDATA || path.join(homedir, 'AppData', 'Roaming');
+        return path.join(appData, 'Termix');
+    }
+    if (process.platform === 'darwin') {
+        return path.join(homedir, 'Library', 'Application Support', 'Termix');
+    }
+    return process.env.XDG_CONFIG_HOME
+        ? path.join(process.env.XDG_CONFIG_HOME, 'Termix')
+        : path.join(homedir, '.config', 'Termix');
+}
 
 function resolveDataRoot() {
     const app = electron && electron.app;
@@ -9,8 +29,19 @@ function resolveDataRoot() {
         return app.isPackaged ? app.getPath('userData') : ASAR_ROOT;
     }
 
-    // Preload/renderer can import this module while electron.app is unavailable.
-    // Fall back to workspace root to keep channel discovery working.
+    if (ASAR_ROOT.includes('app.asar')) {
+        return getDefaultUserDataPath();
+    }
+
+    if (fs.existsSync(path.join(ASAR_ROOT, 'profiles'))) {
+        return ASAR_ROOT;
+    }
+
+    const defaultPath = getDefaultUserDataPath();
+    if (fs.existsSync(defaultPath)) {
+        return defaultPath;
+    }
+
     return ASAR_ROOT;
 }
 
