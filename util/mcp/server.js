@@ -273,7 +273,28 @@ function getStatus() {
 
 // The snippet a user pastes into their MCP client configuration (Claude, Cursor, Antigravity).
 function getClientConfig() {
+    let isPackaged = false;
+    try {
+        const { app } = require('electron');
+        isPackaged = Boolean(app && app.isPackaged);
+    } catch (_) {}
+
     const stdioScriptPath = path.resolve(__dirname, 'stdio.js');
+
+    if (isPackaged) {
+        return {
+            mcpServers: {
+                termix: {
+                    command: process.execPath,
+                    args: [stdioScriptPath],
+                    env: {
+                        ELECTRON_RUN_AS_NODE: '1'
+                    }
+                }
+            }
+        };
+    }
+
     return {
         mcpServers: {
             termix: {
