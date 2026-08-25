@@ -10,8 +10,44 @@ const newConnection = require('../terminal/newconnection');
 const sftpManager = require('../sftp/manager');
 const sessionStore = require('./session-store');
 const { inspectCommand } = require('./guard');
+const http = require('http');
 
 const MAX_FILE_BYTES = 512 * 1024;
+
+function queryTermixGui(endpoint, method = 'GET', body = null) {
+    return new Promise((resolve) => {
+        const payload = body ? JSON.stringify(body) : null;
+        const options = {
+            hostname: '127.0.0.1',
+            port: 8790,
+            path: endpoint,
+            method,
+            timeout: 1500,
+            headers: payload ? {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(payload)
+            } : {}
+        };
+
+        const req = http.request(options, (res) => {
+            const chunks = [];
+            res.on('data', (c) => chunks.push(c));
+            res.on('end', () => {
+                try {
+                    const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+                    resolve(parsed);
+                } catch (_) {
+                    resolve(null);
+                }
+            });
+        });
+
+        req.on('error', () => resolve(null));
+        req.on('timeout', () => { req.destroy(); resolve(null); });
+        if (payload) req.write(payload);
+        req.end();
+    });
+}
 
 // SFTP sessions opened on behalf of MCP, keyed by host id.
 const sftpSessions = new Map();
@@ -225,7 +261,16 @@ function registerTools(server, context = {}) {
         description: 'Lists live terminal sessions, both the ones the user has open in the app and the ones opened through MCP.',
         inputSchema: {}
     }, safe(async () => {
-        const sessions = sessionStore.list();
+        let sessions = sessionStore.list();
+        const remote = await queryTermixGui('/api/sessions', 'GET');
+        if (remote && Array.isArray(remote.sessions)) {
+            const localIds = new Set(sessions.map(s => s.sessionId));
+            for (const remSession of remote.sessions) {
+                if (!localIds.has(remSession.sessionId)) {
+                    sessions.push(remSession);
+                }
+            }
+        }
         return jsonResult({ count: sessions.length, sessions });
     }));
 
@@ -270,25 +315,28 @@ function registerTools(server, context = {}) {
         }
     }, safe(async ({ sessionId, input, submit }) => {
         const settings = getSettings();
-        const entry = sessionStore.get(sessionId);
-        if (!entry) return errorResult(`No live session with id ${sessionId}.`);
-
-        if (entry.origin === 'ui' && settings.allowExistingSessions === false) {
-            return errorResult('Typing into terminals opened by the user is disabled in Settings > MCP.');
-        }
-
         const verdict = inspectCommand(input, settings);
         if (!verdict.allowed) {
             return errorResult(`Refused by Termix command guard: ${verdict.reason}.`);
         }
 
+        const entry = sessionStore.get(sessionId);
         const session = global.Terminals && global.Terminals[sessionId];
-        if (!session) return errorResult(`Session ${sessionId} is no longer connected.`);
+        if (session) {
+            if (entry && entry.origin === 'ui' && settings.allowExistingSessions === false) {
+                return errorResult('Typing into terminals opened by the user is disabled in Settings > MCP.');
+            }
+            const payload = submit === false ? String(input) : `${input}\n`;
+            session.write({ type: 'input', message: payload });
+            return textResult(`Sent ${payload.length} characters.`);
+        }
 
-        const payload = submit === false ? String(input) : `${input}\n`;
-        session.write({ type: 'input', message: payload });
+        const remote = await queryTermixGui('/api/send-input', 'POST', { sessionId, input, submit });
+        if (remote && remote.success) {
+            return textResult(`Sent ${input.length} characters to Termix GUI session.`);
+        }
 
-        return textResult(`Sent ${payload.length} characters to ${entry.host.name}.`);
+        return errorResult(`Session ${sessionId} is not connected.`);
     }));
 
     server.registerTool('read_output', {
@@ -300,7 +348,13 @@ function registerTools(server, context = {}) {
             raw: z.boolean().optional().describe('Keep ANSI escape sequences')
         }
     }, safe(async ({ sessionId, lines, raw }) => {
-        const output = sessionStore.readOutput(sessionId, { lines, raw });
+        let output = sessionStore.readOutput(sessionId, { lines, raw });
+        if (!output) {
+            const remote = await queryTermixGui('/api/read-output', 'POST', { sessionId, lines, raw });
+            if (remote && remote.output) {
+                output = remote.output;
+            }
+        }
         if (!output) return errorResult(`No live session with id ${sessionId}.`);
         return jsonResult(output);
     }));
@@ -313,16 +367,19 @@ function registerTools(server, context = {}) {
         }
     }, safe(async ({ sessionId }) => {
         const session = global.Terminals && global.Terminals[sessionId];
-        if (!session) {
+        if (session) {
+            try { session.end(); } catch (_) {}
+            delete global.Terminals[sessionId];
             sessionStore.remove(sessionId);
-            return textResult(`Session ${sessionId} was already gone.`);
+            return textResult(`Closed session ${sessionId}.`);
         }
 
-        try { session.end(); } catch (_) {}
-        delete global.Terminals[sessionId];
-        sessionStore.remove(sessionId);
+        const remote = await queryTermixGui('/api/close-session', 'POST', { sessionId });
+        if (remote && remote.success) {
+            return textResult(`Closed session ${sessionId} in Termix GUI.`);
+        }
 
-        return textResult(`Closed session ${sessionId}.`);
+        return textResult(`Session ${sessionId} was already gone.`);
     }));
 
     if (openTerminalInUi) {

@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const db = require('../profile-db');
 const { normalizeMcpSettings } = require('../profile-defaults');
 const { registerTools, closeSftpSessions } = require('./tools');
+const sessionStore = require('./session-store');
 
 const HOST = '127.0.0.1';
 const MCP_PATH = '/mcp';
@@ -155,6 +156,62 @@ function createRequestHandler() {
             return;
         }
 
+        if (url.pathname === '/api/sessions' && req.method === 'GET') {
+            const sessions = sessionStore.list();
+            sendJson(res, 200, { success: true, sessions });
+            return;
+        }
+
+        if (url.pathname === '/api/read-output' && req.method === 'POST') {
+            try {
+                const raw = await readBody(req);
+                const payload = raw ? JSON.parse(raw) : {};
+                const output = sessionStore.readOutput(payload.sessionId, {
+                    lines: payload.lines,
+                    raw: payload.raw
+                });
+                sendJson(res, 200, { success: true, output });
+            } catch (err) {
+                sendJson(res, 500, { error: err.message });
+            }
+            return;
+        }
+
+        if (url.pathname === '/api/send-input' && req.method === 'POST') {
+            try {
+                const raw = await readBody(req);
+                const payload = raw ? JSON.parse(raw) : {};
+                const session = global.Terminals && global.Terminals[payload.sessionId];
+                if (!session) {
+                    sendJson(res, 404, { success: false, error: `Session ${payload.sessionId} not found.` });
+                    return;
+                }
+                const text = payload.submit === false ? String(payload.input) : `${payload.input}\n`;
+                session.write({ type: 'input', message: text });
+                sendJson(res, 200, { success: true });
+            } catch (err) {
+                sendJson(res, 500, { error: err.message });
+            }
+            return;
+        }
+
+        if (url.pathname === '/api/close-session' && req.method === 'POST') {
+            try {
+                const raw = await readBody(req);
+                const payload = raw ? JSON.parse(raw) : {};
+                const session = global.Terminals && global.Terminals[payload.sessionId];
+                if (session) {
+                    try { session.end(); } catch (_) {}
+                    delete global.Terminals[payload.sessionId];
+                }
+                sessionStore.remove(payload.sessionId);
+                sendJson(res, 200, { success: true });
+            } catch (err) {
+                sendJson(res, 500, { error: err.message });
+            }
+            return;
+        }
+
         if (url.pathname === '/api/open-terminal' && req.method === 'POST') {
             try {
                 const raw = await readBody(req);
@@ -173,6 +230,11 @@ function createRequestHandler() {
         }
 
         const settings = readSettings();
+        if (!settings.enabled) {
+            sendJson(res, 503, { error: 'MCP HTTP endpoint is disabled in Settings > MCP.' });
+            return;
+        }
+
         if (!timingSafeEqual(extractToken(req, url), settings.token)) {
             sendJson(res, 401, { error: 'Invalid or missing MCP token.' });
             return;
@@ -221,9 +283,6 @@ async function start() {
     await stop();
 
     const settings = ensureToken();
-    if (!settings.enabled) {
-        return { ...runtimeState };
-    }
 
     return new Promise((resolve) => {
         const server = http.createServer(createRequestHandler());
