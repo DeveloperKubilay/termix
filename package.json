@@ -56,7 +56,7 @@
     "@fortawesome/fontawesome-free": "^6.7.2",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "electron-updater": "^6.8.3",
-    "firebase": "^12.14.0",
+    "firebase": "^12.18.0",
     "kubitdb": "^1.5.5",
     "markdown-it": "^14.2.0",
     "monaco-editor": "^0.55.1",
