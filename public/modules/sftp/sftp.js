@@ -1430,6 +1430,15 @@
         state.dragHoverRow = null;
     }
 
+    function isPathInsideOrSame(candidatePath, basePath) {
+        const normalize = (value) => String(value || '').replace(/\\/g, '/').replace(/\/+$/, '');
+        const base = normalize(basePath);
+        const candidate = normalize(candidatePath);
+        if (!base || !candidate) return false;
+        if (base === candidate) return true;
+        return candidate.startsWith(`${base}/`);
+    }
+
     function buildCopyPayload(sourcePaneKey, entries) {
         const pane = getPaneState(sourcePaneKey);
         if (!pane) return null;
@@ -1760,17 +1769,13 @@
         await refreshPane(destinationPaneKey);
 
         const baseMessage = successMessage || `${result.copiedCount || copyPayload.items.length} item(s) pasted.`;
-        // Never let the skip list drop things silently: say what was left out.
+        // The status line reports the action only; skip-list details stay in the console.
         const skipped = Number(result.skippedCount || 0);
-        const skipNote = skipped > 0
-            ? ` ${skipped} item(s) skipped by the transfer skip list${
-                Array.isArray(result.skippedPatterns) && result.skippedPatterns.length
-                    ? ` (${result.skippedPatterns.join(', ')})`
-                    : ''
-            }.`
-            : '';
+        if (skipped > 0) {
+            console.info(`${skipped} item(s) skipped by the transfer skip list`, result.skippedPatterns || []);
+        }
 
-        setStatus(`${baseMessage}${skipNote}`, 'success');
+        setStatus(baseMessage, 'success');
         return true;
     }
 
@@ -1799,26 +1804,37 @@
 
         if (success && isCut) {
             state.clipboard = null;
-            const sourcePaneKey = clipboardSnapshot.sourcePaneKey;
-            const sourcePane = getPaneState(sourcePaneKey);
-            const sourceSide = clipboardSnapshot.sourceSide;
-            const sessionId = sourceSide === 'remote'
-                ? (sourcePane && sourcePane.sessionId ? sourcePane.sessionId : clipboardSnapshot.sourceSessionId)
-                : null;
-            try {
-                const deleteResult = await sftpApi.deleteItems({
-                    side: sourceSide,
-                    sessionId,
-                    items: clipboardSnapshot.items.map((item) => ({ path: item.path }))
-                });
-                if (!deleteResult || deleteResult.success === false) {
-                    setStatus(deleteResult && deleteResult.message ? deleteResult.message : 'Move failed: could not delete source items.', 'error');
-                }
-            } catch (err) {
-                setStatus(err && err.message ? err.message : 'Move failed: could not delete source items.', 'error');
-            }
-            await refreshPane(sourcePaneKey);
+            await removeMovedSourceItems(clipboardSnapshot);
         }
+    }
+
+    // Second half of a move: the copy already landed, so drop the originals.
+    async function removeMovedSourceItems(copyPayload) {
+        const sourcePaneKey = copyPayload.sourcePaneKey;
+        const sourcePane = getPaneState(sourcePaneKey);
+        const sourceSide = copyPayload.sourceSide;
+        const sessionId = sourceSide === 'remote'
+            ? (sourcePane && sourcePane.sessionId ? sourcePane.sessionId : copyPayload.sourceSessionId)
+            : null;
+
+        let removed = true;
+        try {
+            const deleteResult = await sftpApi.deleteItems({
+                side: sourceSide,
+                sessionId,
+                items: copyPayload.items.map((item) => ({ path: item.path }))
+            });
+            if (!deleteResult || deleteResult.success === false) {
+                setStatus(deleteResult && deleteResult.message ? deleteResult.message : 'Move failed: could not delete source items.', 'error');
+                removed = false;
+            }
+        } catch (err) {
+            setStatus(err && err.message ? err.message : 'Move failed: could not delete source items.', 'error');
+            removed = false;
+        }
+
+        await refreshPane(sourcePaneKey);
+        return removed;
     }
 
     async function deleteSelected(key) {
@@ -2820,7 +2836,8 @@
                 state.dragPayload = payload;
 
                 if (event.dataTransfer) {
-                    event.dataTransfer.effectAllowed = 'copy';
+                    // Same pane means move, the other pane means copy; allow both.
+                    event.dataTransfer.effectAllowed = 'copyMove';
                     event.dataTransfer.setData('text/plain', 'termix-sftp-drag');
                 }
             });
@@ -2831,9 +2848,13 @@
                 paneUi.list.classList.add('drag-over');
 
                 const candidateRow = event.target.closest('.sftp-file-row');
+                const candidatePath = candidateRow ? decodePathValue(candidateRow.dataset.path || '') : '';
+                const isOwnSubtree = state.dragPayload.sourcePaneKey === key
+                    && state.dragPayload.items.some((item) => isPathInsideOrSame(candidatePath, item.path));
                 const isDirectoryDropTarget = candidateRow
                     && candidateRow.dataset.parent !== '1'
-                    && candidateRow.dataset.directory === '1';
+                    && candidateRow.dataset.directory === '1'
+                    && !isOwnSubtree;
 
                 if (state.dragHoverRow && state.dragHoverRow !== candidateRow) {
                     state.dragHoverRow.classList.remove('drop-target');
@@ -2849,7 +2870,7 @@
                 }
 
                 if (event.dataTransfer) {
-                    event.dataTransfer.dropEffect = 'copy';
+                    event.dataTransfer.dropEffect = state.dragPayload.sourcePaneKey === key ? 'move' : 'copy';
                 }
             });
 
@@ -2882,13 +2903,30 @@
                 clearDropIndicators();
                 state.dragPayload = null;
 
+                // Dropping inside the source pane relocates; crossing panes duplicates.
+                const isMove = payload.sourcePaneKey === key;
+
                 // Block dropping to the same source directory
-                if (payload.sourcePaneKey === key && destinationPath === null) {
+                if (isMove && destinationPath === null) {
                     setStatus('Cannot drag files to the current directory.', 'error');
                     return;
                 }
 
-                await executeCopyToPane(payload, key, destinationPath, 'Copy completed.');
+                if (isMove && payload.items.some((item) => isPathInsideOrSame(destinationPath, item.path))) {
+                    setStatus('Cannot move a folder into itself.', 'error');
+                    return;
+                }
+
+                const success = await executeCopyToPane(
+                    payload,
+                    key,
+                    destinationPath,
+                    isMove ? 'Move completed.' : 'Copy completed.'
+                );
+
+                if (success && isMove) {
+                    await removeMovedSourceItems(payload);
+                }
             });
 
             paneUi.list.addEventListener('dragend', () => {
