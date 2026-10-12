@@ -54,11 +54,11 @@
   "dependencies": {
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@fortawesome/fontawesome-free": "^6.7.2",
-    "@modelcontextprotocol/sdk": "^1.30.0",
-    "electron-updater": "^6.8.3",
-    "firebase": "^12.14.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "electron-updater": "^6.8.9",
+    "firebase": "^12.18.0",
     "kubitdb": "^1.5.5",
-    "markdown-it": "^14.2.0",
+    "markdown-it": "^14.3.2",
     "monaco-editor": "^0.55.1",
     "node-machine-id": "^1.1.12",
     "node-pty": "^1.1.0",
@@ -76,14 +76,25 @@
   },
   "overrides": {
     "tar": "$tar",
-    "dompurify": "^3.4.14",
-    "@xmldom/xmldom": "^0.8.13",
+    "dompurify": "^3.4.16",
+    "@xmldom/xmldom": "^0.9.12",
     "node-abi": "^4.31.0",
-    "node-gyp": "^13.0.0"
+    "node-gyp": "^13.0.0",
+    "undici": "^8.11.2",
+    "fast-uri": "^3.1.8",
+    "ip-address": "^10.7.4",
+    "js-yaml": "^4.3.2",
+    "qs": "^6.16.0",
+    "hono": "^4.13.13",
+    "brace-expansion": "^2.1.7",
+    "proxy-addr": "^2.0.8",
+    "source-map-js": "^1.2.2",
+    "http-cache-semantics": "^4.3.0",
+    "@grpc/grpc-js": "^1.13.6"
   },
   "devDependencies": {
-    "electron": "^42.3.0",
-    "electron-builder": "^26.8.1",
+    "electron": "^42.11.12",
+    "electron-builder": "^26.15.3",
     "jsdom": "^30.0.1"
   }
 }
