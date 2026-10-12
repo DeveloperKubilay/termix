@@ -77,7 +77,7 @@
   "overrides": {
     "tar": "$tar",
     "dompurify": "^3.4.16",
-    "@xmldom/xmldom": "^0.9.12",
+    "@xmldom/xmldom": "~0.8.15",
     "node-abi": "^4.31.0",
     "node-gyp": "^13.0.0",
     "undici": "^8.11.2",
