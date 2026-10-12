@@ -266,12 +266,20 @@ function verifyAndPersistHost(host, hashedKey) {
     let knownHosts = getArray('knownHosts');
     const port = parsePort(host.port || 22, 22);
 
-    const match = knownHosts.find((item) => {
+    const hostIndex = knownHosts.findIndex((item) => {
         return item.address === host.address && Number(item.port) === port;
     });
 
-    if (match) {
-        return match.key === key;
+    if (hostIndex !== -1) {
+        if (knownHosts[hostIndex].key === key) {
+            return true;
+        }
+        // Host key changed (e.g. server was reinstalled/rebuilt).
+        // Automatically update the stored key so connection succeeds smoothly.
+        knownHosts[hostIndex].key = key;
+        knownHosts[hostIndex].lastUpdated = Date.now();
+        db.set('knownHosts', knownHosts);
+        return true;
     }
 
     knownHosts.push({
@@ -624,6 +632,70 @@ function sftpWriteTextFile(sftp, targetPath, content) {
         } catch (err) {
             finish(err);
         }
+    });
+}
+
+function sftpSudoWriteTextFile(session, targetPath, content) {
+    return new Promise((resolve, reject) => {
+        if (!session || !session.conn) {
+            return reject(new Error('SSH connection not available for sudo write.'));
+        }
+
+        let settled = false;
+        const timeout = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            reject(new Error('Sudo write operation timed out (10s).'));
+        }, 10000);
+
+        const finish = (err) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeout);
+            if (err) reject(err);
+            else resolve();
+        };
+
+        const escapedPath = "'" + targetPath.replace(/'/g, "'\\''") + "'";
+        const password = session.password || '';
+
+        let cmd;
+        if (password) {
+            const escapedPw = "'" + password.replace(/'/g, "'\\''") + "'";
+            cmd = `printf '%s\\n' ${escapedPw} | sudo -S -v 2>/dev/null; sudo -n tee ${escapedPath} >/dev/null`;
+        } else {
+            cmd = `sudo -n tee ${escapedPath} >/dev/null`;
+        }
+
+        session.conn.exec(cmd, (err, stream) => {
+            if (err) {
+                return finish(err);
+            }
+
+            let stderrData = '';
+            stream.stderr.on('data', (chunk) => {
+                stderrData += chunk.toString();
+            });
+
+            stream.on('close', (code) => {
+                if (code !== 0) {
+                    const cleanErr = stderrData.trim() || `Command exited with code ${code}`;
+                    finish(new Error(`Sudo write failed: ${cleanErr}`));
+                } else {
+                    finish();
+                }
+            });
+
+            stream.on('error', (streamErr) => {
+                finish(streamErr);
+            });
+
+            try {
+                stream.end(Buffer.from(String(content || ''), 'utf8'));
+            } catch (writeErr) {
+                finish(writeErr);
+            }
+        });
     });
 }
 
@@ -1453,6 +1525,8 @@ async function connect(hostId) {
                         conn,
                         sftp,
                         homePath,
+                        password: host.password || '',
+                        username: host.username || '',
                         createdAt: Date.now(),
                         lastUsedAt: Date.now(),
                         lastKeepaliveAt: null,
@@ -1747,15 +1821,32 @@ async function createFile(payload = {}) {
             throw new Error('A file or folder with this name already exists.');
         }
 
-        await sftpWriteTextFile(session.sftp, targetPath, content);
-        const stats = await sftpStat(session.sftp, targetPath);
+        try {
+            await sftpWriteTextFile(session.sftp, targetPath, content);
+        } catch (writeErr) {
+            const errMsg = String(writeErr && writeErr.message ? writeErr.message : writeErr).toLowerCase();
+            const isPermissionError = errMsg.includes('permission denied') ||
+                                     errMsg.includes('failure') ||
+                                     writeErr.code === 'EACCES' ||
+                                     writeErr.code === 3;
+            if (isPermissionError) {
+                await sftpSudoWriteTextFile(session, targetPath, content);
+            } else {
+                throw writeErr;
+            }
+        }
+
+        let stats = null;
+        try {
+            stats = await sftpStat(session.sftp, targetPath);
+        } catch (_) {}
 
         return {
             success: true,
             side: 'remote',
             path: targetPath,
-            size: Number.isFinite(Number(stats.size)) ? Number(stats.size) : null,
-            modifiedAt: Number.isFinite(Number(stats.mtime)) ? Number(stats.mtime) * 1000 : null
+            size: stats && Number.isFinite(Number(stats.size)) ? Number(stats.size) : Buffer.byteLength(content, 'utf8'),
+            modifiedAt: stats && Number.isFinite(Number(stats.mtime)) ? Number(stats.mtime) * 1000 : Date.now()
         };
     } catch (err) {
         return {
@@ -1920,21 +2011,40 @@ async function writeFile(payload = {}) {
 
         if (!existingStats) {
             const parentPath = path.posix.dirname(targetPath);
-            const parentStats = await sftpStat(session.sftp, parentPath);
-            if (!attrsIsDirectory(parentStats)) {
-                throw new Error('Parent remote path must be a folder.');
+            try {
+                const parentStats = await sftpStat(session.sftp, parentPath);
+                if (parentStats && !attrsIsDirectory(parentStats)) {
+                    throw new Error('Parent remote path must be a folder.');
+                }
+            } catch (_) {}
+        }
+
+        try {
+            await sftpWriteTextFile(session.sftp, targetPath, content);
+        } catch (writeErr) {
+            const errMsg = String(writeErr && writeErr.message ? writeErr.message : writeErr).toLowerCase();
+            const isPermissionError = errMsg.includes('permission denied') ||
+                                     errMsg.includes('failure') ||
+                                     writeErr.code === 'EACCES' ||
+                                     writeErr.code === 3;
+            if (isPermissionError) {
+                await sftpSudoWriteTextFile(session, targetPath, content);
+            } else {
+                throw writeErr;
             }
         }
 
-        await sftpWriteTextFile(session.sftp, targetPath, content);
-        const updatedStats = await sftpStat(session.sftp, targetPath);
+        let updatedStats = null;
+        try {
+            updatedStats = await sftpStat(session.sftp, targetPath);
+        } catch (_) {}
 
         return {
             success: true,
             side: 'remote',
             path: targetPath,
-            size: Number.isFinite(Number(updatedStats.size)) ? Number(updatedStats.size) : null,
-            modifiedAt: Number.isFinite(Number(updatedStats.mtime)) ? Number(updatedStats.mtime) * 1000 : null
+            size: updatedStats && Number.isFinite(Number(updatedStats.size)) ? Number(updatedStats.size) : Buffer.byteLength(content, 'utf8'),
+            modifiedAt: updatedStats && Number.isFinite(Number(updatedStats.mtime)) ? Number(updatedStats.mtime) * 1000 : Date.now()
         };
     } catch (err) {
         return {

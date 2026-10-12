@@ -2753,7 +2753,15 @@
 
             paneUi.list.addEventListener('click', async (event) => {
                 const row = event.target.closest('.sftp-file-row');
-                if (!row) return;
+                if (!row) {
+                    activatePane(key, false);
+                    closeContextMenu();
+                    if (!event.ctrlKey && !event.metaKey && !event.shiftKey) {
+                        clearPaneSelection(pane);
+                        updateSelectionClasses(key);
+                    }
+                    return;
+                }
 
                 activatePane(key, false);
                 closeContextMenu();
