@@ -24,6 +24,7 @@ window.ConnectionModule = {
         let outputListener = null;
         let disconnectListener = null;
         let sshReadyListener = null;
+        let osc52Listener = null;
 
         const toText = (value) => String(value == null ? '' : value).trim();
 
@@ -108,6 +109,27 @@ window.ConnectionModule = {
             sshReadyListener = null;
         };
 
+        const clearOsc52Listener = () => {
+            disposeListener(osc52Listener);
+            osc52Listener = null;
+        };
+
+        const decodeOsc52Payload = (value) => {
+            if (typeof value !== 'string') return null;
+            const normalized = value.replace(/\s+/g, '');
+            if (!normalized) return '';
+            if (normalized.length > 1024 * 1024) return null;
+
+            try {
+                const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+                const binary = window.atob(padded);
+                const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+                return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+            } catch (_) {
+                return null;
+            }
+        };
+
         // Match container color with the value from settings.
         const TerminalSettings = await window.electronAPI.connection.getSettings();
         if (TerminalSettings.theme && TerminalSettings.theme.background) {
@@ -163,6 +185,29 @@ window.ConnectionModule = {
             fitAddon.fit();
             term.refresh(0, Math.max(0, term.rows - 1));
         } catch (_) {}
+
+        try {
+            if (term.parser && typeof term.parser.registerOscHandler === 'function') {
+                osc52Listener = term.parser.registerOscHandler(52, (data) => {
+                    if (typeof data !== 'string') return false;
+                    const separatorIndex = data.indexOf(';');
+                    if (separatorIndex < 0) return false;
+
+                    const payload = data.slice(separatorIndex + 1);
+                    if (payload === '?') return true;
+
+                    const decoded = decodeOsc52Payload(payload);
+                    if (decoded == null) return true;
+
+                    if (window.clipboard && typeof window.clipboard.writeText === 'function') {
+                        window.clipboard.writeText(decoded);
+                    }
+                    return true;
+                });
+            }
+        } catch (e) {
+            console.warn('OSC 52 handler could not be registered', e);
+        }
 
         // In a split layout several terminals are visible at once, but only the
         // active tab of the focused pane may consume keyboard input.
@@ -358,6 +403,7 @@ window.ConnectionModule = {
                 clearInitialResizeTimer();
                 clearRestartHandler();
                 clearEventListeners();
+                clearOsc52Listener();
                 emitAiSelectionContext('');
                 try { window.electronAPI.send('term-close', { sessionId: currentSessionId }); } catch (_) {}
                 window.removeEventListener('keydown', handleTerminalZoomKeydown);
@@ -610,6 +656,7 @@ window.ConnectionModule = {
                 clearInitialResizeTimer();
                 clearRestartHandler();
                 clearEventListeners();
+                clearOsc52Listener();
                 emitAiSelectionContext('');
                 // Stop observer
                 if (resizeObserver) resizeObserver.disconnect();
