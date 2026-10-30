@@ -1,0 +1,78 @@
+import java.security.MessageDigest
+
+plugins {
+    id 'com.android.application'
+}
+
+if (project.findProperty('termixAllowEolRuntime') != 'true') {
+    throw new GradleException('Local preview only: bundled Node 18 is EOL and 4 KB aligned. Pass -PtermixAllowEolRuntime=true explicitly; this is NOT a production/16 KB build.')
+}
+
+def backendDigest = MessageDigest.getInstance('SHA-256')
+fileTree('src/main/assets/backend').files.sort { it.path }.each { file ->
+    backendDigest.update(project.file('src/main/assets/backend').toPath().relativize(file.toPath()).toString().replace('\\', '/').getBytes('UTF-8'))
+    backendDigest.update(file.bytes)
+}
+def backendAssetVersion = backendDigest.digest().encodeHex().toString()
+
+def previewAbis = (project.findProperty('termixAbis') ?: 'arm64-v8a').split(',')
+
+android {
+    namespace 'com.termix.android.preview'
+    compileSdk 35
+    buildToolsVersion '35.0.0'
+    ndkVersion '27.2.12479018'
+
+    defaultConfig {
+        applicationId 'com.termix.android.preview'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '0.1-feasibility'
+        buildConfigField 'String', 'BACKEND_ASSET_VERSION', '"' + backendAssetVersion + '"'
+        ndk {
+            abiFilters.addAll(previewAbis)
+        }
+        externalNativeBuild {
+            cmake {
+                arguments '-DANDROID_STL=c++_shared', '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON'
+                cppFlags '-std=c++17', '-Wall', '-Wextra'
+            }
+        }
+    }
+    buildTypes {
+        debug {
+            debuggable true
+        }
+        release {
+            // This stage is a local debug preview, not a release candidate.
+            minifyEnabled false
+        }
+    }
+    buildFeatures {
+        buildConfig true
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    externalNativeBuild {
+        cmake {
+            path file('src/main/cpp/CMakeLists.txt')
+            version '3.22.1'
+        }
+    }
+    sourceSets {
+        main.jniLibs.srcDirs = [rootProject.file('runtime/bin')]
+    }
+    packaging {
+        jniLibs {
+            // Correct ZIP alignment for our native bridge; does NOT fix a 4 KB libnode ELF.
+            useLegacyPackaging false
+        }
+    }
+}
+
+dependencies {
+    implementation 'androidx.webkit:webkit:1.12.1'
+}

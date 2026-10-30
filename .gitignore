@@ -4,3 +4,40 @@ kubitdb.json
 files
 todo
 /profiles
+
+# Android generated assets, local SDK paths and native runtime cache
+/android/.gradle/
+/android/**/build/
+/android/.cxx/
+/android/**/.cxx/
+/android/local.properties
+/android/runtime/
+/android/app/src/main/assets/
+/.android-downloads/
+/.android-test/
+/util/android/node_modules/
+/dist/
+*.jks
+*.keystore
+
+# Device screenshots may contain hostnames, usernames and terminal output.
+/android_*.png
+/phone_*.png
+/termix_screen*.png
+
+# Local assistant settings, transcripts and temporary worktrees.
+/.claude/
+
+# Local private key and signing material.
+*.pem
+*.p12
+*.pfx
+
+# Ad-hoc physical-device inspection scripts (kept locally, not CI tests).
+/tests/android/cleanup-test-tab.js
+/tests/android/device-fixture.js
+/tests/android/device-touch.js
+/tests/android/inspect-*.js
+/tests/android/test-*.js
+/tests/android/verify-*.js
+/util/android/cdp-eval.js

@@ -266,24 +266,56 @@
         }, 100);
     }
 
+    const searchClearBtn = document.getElementById('search-clear');
+
+    const handleConnectOrSearch = () => {
+        const cmd = searchInput ? searchInput.value.trim() : '';
+        const sshInfo = parseSSHCommand(cmd);
+        if (sshInfo) {
+            openSSHPasswordDrawer(sshInfo);
+            return;
+        }
+        if (cmd) {
+            const query = cmd.toLowerCase();
+            const matches = allHosts.filter(h => (h.name || '').toLowerCase() === query || (h.address || '').toLowerCase() === query);
+            if (matches.length === 1) {
+                const targetCard = Array.from(document.querySelectorAll('.host-card')).find(c => {
+                    const nameEl = c.querySelector('.host-name');
+                    return nameEl && nameEl.textContent.trim().toLowerCase() === (matches[0].name || '').toLowerCase();
+                });
+                if (targetCard) targetCard.click();
+            } else {
+                filterHosts();
+            }
+        }
+    };
+
     if (btnTopConnect && searchInput) {
-        btnTopConnect.addEventListener('click', () => {
-            const cmd = searchInput.value.trim();
-            const sshInfo = parseSSHCommand(cmd);
-            if (sshInfo) {
-                openSSHPasswordDrawer(sshInfo);
+        btnTopConnect.addEventListener('click', handleConnectOrSearch);
+    }
+
+    if (searchInput) {
+        searchInput.addEventListener('input', () => {
+            if (searchClearBtn) {
+                searchClearBtn.style.display = searchInput.value.trim() ? 'inline-flex' : 'none';
+            }
+            filterHosts();
+        });
+
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                handleConnectOrSearch();
             }
         });
     }
 
-    if (searchInput) {
-        searchInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                const cmd = searchInput.value.trim();
-                const sshInfo = parseSSHCommand(cmd);
-                if (sshInfo) {
-                    openSSHPasswordDrawer(sshInfo);
-                }
+    if (searchClearBtn) {
+        searchClearBtn.addEventListener('click', () => {
+            if (searchInput) {
+                searchInput.value = '';
+                searchClearBtn.style.display = 'none';
+                filterHosts();
+                searchInput.focus();
             }
         });
     }
@@ -336,16 +368,23 @@
     }
 
     function filterHosts() {
-        if (selectedTags.size === 0) {
-            renderHosts(allHosts);
-            return;
-        }
+        const query = (searchInput ? searchInput.value.trim().toLowerCase() : '');
+        const isSSHCommand = query.startsWith('ssh ');
 
         const filteredHosts = allHosts.filter(host => {
-            if (!host.tags || !Array.isArray(host.tags)) return false;
-            // AND logic: Host must have ALL selected tags
-            for (const tag of selectedTags) {
-                if (!host.tags.includes(tag)) return false;
+            if (selectedTags.size > 0) {
+                if (!host.tags || !Array.isArray(host.tags)) return false;
+                // AND logic: Host must have ALL selected tags
+                for (const tag of selectedTags) {
+                    if (!host.tags.includes(tag)) return false;
+                }
+            }
+            if (query && !isSSHCommand) {
+                const name = (host.name || '').toLowerCase();
+                const address = (host.address || '').toLowerCase();
+                const username = (host.username || '').toLowerCase();
+                const tags = Array.isArray(host.tags) ? host.tags.join(' ').toLowerCase() : '';
+                return name.includes(query) || address.includes(query) || username.includes(query) || tags.includes(query);
             }
             return true;
         });

@@ -15,7 +15,11 @@
     "start": "electron .",
     "mcp": "node util/mcp/stdio.js",
     "build": "electron-builder",
-    "site:preview": "node website/server.js"
+    "site:preview": "node website/server.js",
+    "android:runtime:preview": "node util/android/prepare-runtime.js --allow-eol-preview",
+    "android:prepare": "node util/android/prepare-assets.js",
+    "android:build:preview": "node util/android/build.js --allow-eol-preview",
+    "android:test": "node util/android/run-tests.js"
   },
   "build": {
     "appId": "com.Termix.app",

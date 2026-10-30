@@ -1,7 +1,8 @@
 (function() {
     async function loadKeys() {
         const keysList = document.getElementById('keys-list');
-        
+        if (!keysList) return;
+
         const keyFiles = await window.electronAPI.keychain.getKeyFiles();
 
         if (keyFiles.length === 0) {
@@ -95,7 +96,7 @@
         }
     }
 
-    document.getElementById('btn-new-key').addEventListener('click', async () => {
+    document.getElementById('btn-new-key')?.addEventListener('click', async () => {
         await window.electronAPI.keychain.openFilesFolder();
         setTimeout(loadKeys, 1000);
     });

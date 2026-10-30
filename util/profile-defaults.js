@@ -10,6 +10,7 @@ const DEFAULT_TERMINAL_SETTINGS = {
     fontFamily: '"JetBrains Mono", monospace',
     rightClickCopyPaste: true,
     fontSize: 14,
+    mobileFontSize: 11,
     fontWeight: 500,
     letterSpacing: 0,
     lineHeight: 1.2,
@@ -116,7 +117,11 @@ function normalizeAiSettings(value) {
 }
 
 function normalizeTerminalSettings(value) {
+    const isAndroid = process.env.TERMIX_PLATFORM === 'android';
     const out = clone(DEFAULT_TERMINAL_SETTINGS);
+    if (isAndroid) {
+        out.fontSize = 11;
+    }
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         return out;
     }

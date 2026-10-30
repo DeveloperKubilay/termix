@@ -2,10 +2,13 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 
+const IS_ANDROID = process.env.TERMIX_PLATFORM === 'android';
 let electron = null;
-try {
-    electron = require('electron');
-} catch (_) {}
+if (!IS_ANDROID) {
+    try {
+        electron = require('electron');
+    } catch (_) {}
+}
 
 const ASAR_ROOT = path.resolve(__dirname, '..');
 
@@ -24,6 +27,13 @@ function getDefaultUserDataPath() {
 }
 
 function resolveDataRoot() {
+    if (IS_ANDROID) {
+        const root = process.env.TERMIX_DATA_ROOT;
+        if (!root || !path.isAbsolute(root)) {
+            throw new Error('Android requires an absolute private TERMIX_DATA_ROOT.');
+        }
+        return path.resolve(root);
+    }
     const app = electron && electron.app;
     if (app && typeof app.getPath === 'function') {
         return app.isPackaged ? app.getPath('userData') : ASAR_ROOT;
@@ -49,6 +59,7 @@ const DATA_ROOT = resolveDataRoot();
 
 module.exports = {
     ASAR_ROOT,
+    IS_ANDROID,
     DATA_ROOT,
     PROFILES_DIR: path.join(DATA_ROOT, 'profiles'),
     FILES_DIR: path.join(DATA_ROOT, 'files'),

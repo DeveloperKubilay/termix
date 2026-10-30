@@ -4,6 +4,34 @@
         <div id="sftp-global-status" class="sftp-status info">Ready</div>
     </div>
 
+    <div class="sftp-mobile-toolbar" id="sftp-mobile-toolbar">
+        <button type="button" class="btn btn-primary" id="sftp-m-upload" title="Dosya Yükle">
+            <i class="fa-solid fa-cloud-arrow-up"></i> <span>Yükle</span>
+        </button>
+        <button type="button" class="btn btn-primary" id="sftp-m-download" title="Cihaza İndir" style="display: none;">
+            <i class="fa-solid fa-cloud-arrow-down"></i> <span>İndir</span>
+        </button>
+        <button type="button" class="btn btn-primary" id="sftp-m-move" title="Taşı">
+            <i class="fa-solid fa-arrows-up-down-left-right"></i> <span>Taşı</span>
+        </button>
+        <button type="button" class="btn btn-primary" id="sftp-m-copy" title="Kopyala">
+            <i class="fa-solid fa-copy"></i> <span>Kopyala</span>
+        </button>
+        <button type="button" class="btn btn-primary" id="sftp-m-paste" title="Yapıştır">
+            <i class="fa-solid fa-paste"></i> <span>Yapıştır</span>
+        </button>
+        <button type="button" class="btn btn-primary" id="sftp-m-mkdir" title="Yeni Klasör">
+            <i class="fa-solid fa-folder-plus"></i> <span>Klasör</span>
+        </button>
+        <button type="button" class="btn btn-primary sftp-btn-danger" id="sftp-m-delete" title="Sil">
+            <i class="fa-solid fa-trash"></i> <span>Sil</span>
+        </button>
+        <button type="button" class="btn btn-primary sftp-btn-disconnect" id="sftp-m-disconnect" title="Bağlantıyı Kes">
+            <i class="fa-solid fa-arrow-right-from-bracket"></i> <span>Çıkış</span>
+        </button>
+        <input type="file" id="sftp-mobile-file-input" style="display: none;" multiple>
+    </div>
+
     <div class="sftp-transfer-progress-stack">
         <div id="sftp-transfer-progress-upload" class="sftp-transfer-progress" hidden>
             <div class="sftp-transfer-progress-head">
@@ -64,6 +92,9 @@
                     <div class="sftp-host-search-row">
                         <i class="fa-solid fa-magnifying-glass"></i>
                         <input id="sftp-host-search-left" type="text" spellcheck="false" placeholder="Search VDS...">
+                        <button type="button" class="sftp-search-clear-btn" id="sftp-host-search-clear-left" style="display: none;" title="Clear search">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
                     </div>
                     <div class="sftp-host-list" id="sftp-host-list-left"></div>
                 </div>
@@ -107,6 +138,9 @@
                     <div class="sftp-host-search-row">
                         <i class="fa-solid fa-magnifying-glass"></i>
                         <input id="sftp-host-search-right" type="text" spellcheck="false" placeholder="Search VDS...">
+                        <button type="button" class="sftp-search-clear-btn" id="sftp-host-search-clear-right" style="display: none;" title="Clear search">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
                     </div>
                     <div class="sftp-host-list" id="sftp-host-list-right"></div>
                 </div>
@@ -126,6 +160,10 @@
         <button type="button" class="sftp-context-action" data-action="paste">
             <i class="fa-solid fa-paste"></i>
             <span>Paste</span>
+        </button>
+        <button type="button" class="sftp-context-action" id="sftp-context-download" data-action="download" style="display: none;">
+            <i class="fa-solid fa-cloud-arrow-down"></i>
+            <span>Download to Device</span>
         </button>
         <div class="sftp-context-sep"></div>
         <button type="button" class="sftp-context-action" data-action="create-directory">
@@ -166,6 +204,10 @@
 </div>
 
 <style>
+    .sftp-mobile-toolbar {
+        display: none;
+    }
+
     .sftp-module {
         height: 100%;
         display: flex;

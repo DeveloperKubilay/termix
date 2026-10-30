@@ -15,9 +15,9 @@ function parseTerminalDimension(value, fallback) {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-module.exports = (data) => {
+module.exports = (data, options = {}) => {
     return new Promise((resolve, reject) => {
-        const sessionId = createSessionId();
+        const sessionId = options.sessionId || createSessionId();
         const conn = new Client();
         const emitter = new EventEmitter();
         let stream = null;
@@ -30,8 +30,20 @@ module.exports = (data) => {
         };
 
         const sendToFrontend = (msg) => {
+            if (typeof options.onEvent === 'function') options.onEvent(msg);
             emitter.emit('data', msg);
         };
+
+        const cancel = () => {
+            const error = Object.assign(new Error('SSH connection cancelled.'), { code: 'CANCELLED' });
+            rejectOnce(error);
+            try { if (stream) stream.destroy(); } catch (_) {}
+            try { conn.destroy(); } catch (_) {}
+            emitDisconnect({ message: error.message });
+        };
+        conn.once('close', () => {
+            if (options.signal) options.signal.removeEventListener('abort', cancel);
+        });
 
         const resolveOnce = (value) => {
             if (settled) return;
@@ -74,6 +86,7 @@ module.exports = (data) => {
         };
 
         conn.on('ready', () => {
+            if (options.signal && options.signal.aborted) { cancel(); return; }
             try {
                 conn.setNoDelay(true);
             } catch (_) {}
@@ -95,6 +108,7 @@ module.exports = (data) => {
                 }
 
                 stream = shellStream;
+                if (options.signal && options.signal.aborted) { cancel(); return; }
 
                 const writeToStream = (data) => {
                     if (!stream) return;
@@ -176,13 +190,19 @@ module.exports = (data) => {
             emitDisconnect();
         });
 
+        if (options.signal) {
+            if (options.signal.aborted) { cancel(); return; }
+            options.signal.addEventListener('abort', cancel, { once: true });
+        }
         try {
             const connectConfig = buildConnectConfig(data, () => {
                 sendToFrontend({ type: "error", message: `SECURITY WARNING: Host key verification failed! Connection rejected as a security precaution.` });
-            });
+            }, options);
 
             conn.connect(connectConfig);
         } catch (e) {
+            if (options.signal) options.signal.removeEventListener('abort', cancel);
+            try { conn.destroy(); } catch (_) {}
             rejectOnce(e);
         }
     });

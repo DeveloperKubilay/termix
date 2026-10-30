@@ -663,6 +663,25 @@ body.sidebar-resizing {
     margin-left: 10px;
 }
 
+.search-clear-btn,
+.sftp-search-clear-btn {
+    background: transparent;
+    border: none;
+    color: #a6adc8;
+    cursor: pointer;
+    padding: 0 4px;
+    font-size: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.search-clear-btn:hover,
+.sftp-search-clear-btn:hover {
+    color: var(--text-main);
+}
+
 .btn {
     padding: 8px 15px;
     border-radius: 6px;

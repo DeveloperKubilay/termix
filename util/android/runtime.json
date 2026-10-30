@@ -1,0 +1,11 @@
+{
+  "version": "18.20.4",
+  "status": "development-preview-eol-4kb",
+  "source": "https://github.com/nodejs-mobile/nodejs-mobile",
+  "url": "https://github.com/nodejs-mobile/nodejs-mobile/releases/download/v18.20.4/nodejs-mobile-v18.20.4-android.zip",
+  "sha256": "bd7321eaa1a7602fbe0bb87302df2d79d87835cf4363fbdd17c350dbb485c2af",
+  "size": 57287354,
+  "abis": ["arm64-v8a", "x86_64"],
+  "warning": "Node 18 is end-of-life. This upstream binary predates the 16 KB page-size fix. Local feasibility/debug preview only; not a production or 16 KB-compatible runtime.",
+  "alignedSourceRevision": "d9552e0e01ed5bdbe12a31d1ce6c0877a4f39580"
+}

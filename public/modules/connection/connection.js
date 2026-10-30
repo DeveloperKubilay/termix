@@ -13,6 +13,23 @@ window.ConnectionModule = {
         const container = document.getElementById(containerId);
         if (!container) return;
         const tabId = containerId.replace('terminal-', '');
+        const isAndroid = Boolean(window.TermixAndroid);
+        const clientRequestId = isAndroid ? `connect-${tabId}-${Date.now()}` : null;
+        let currentSessionId = null;
+        let mobileToolbar = null;
+        let pendingCleanup = () => {};
+        // Register cancellation before the first await; closing a connecting tab must
+        // not leave an orphan socket (including while a host-trust prompt is open).
+        if (isAndroid && window.TabManager) {
+            const pendingTab = window.TabManager.tabs.find(tab => tab.id === tabId);
+            if (pendingTab) pendingTab.sessionObj = {
+                dispose() {
+                    isUserDisconnected = true;
+                    window.electronAPI.send('term-close', { requestId: clientRequestId, ...(currentSessionId ? { sessionId: currentSessionId } : {}) });
+                    pendingCleanup();
+                }
+            };
+        }
         let resizeObserver = null;
         const aiContextSourceId = `terminal:${tabId}`;
         let lastSelectionForAi = null;
@@ -131,14 +148,31 @@ window.ConnectionModule = {
         };
 
         // Match container color with the value from settings.
-        const TerminalSettings = await window.electronAPI.connection.getSettings();
+        let TerminalSettings;
+        try {
+            TerminalSettings = await window.electronAPI.connection.getSettings();
+        } catch (error) {
+            if (isAndroid) {
+                if (!isUserDisconnected) window.notifyUser(`Terminal settings failed: ${error.message}`, 'error');
+                return null;
+            }
+            throw error;
+        }
+        if (isUserDisconnected || !document.getElementById(containerId)) return null;
         if (TerminalSettings.theme && TerminalSettings.theme.background) {
             container.style.backgroundColor = TerminalSettings.theme.background;
         }
 
-        const baseFontSize = Number(TerminalSettings.fontSize) || 14;
-        const defaultTabFontSize = Math.max(6, Math.round((baseFontSize * DEFAULT_TAB_FONT_SCALE) * 10) / 10);
-        const hostFontSize = Number(hostInfo && hostInfo.terminalFontSize);
+        const defaultMobileFontSize = 11;
+        const baseFontSize = isAndroid
+            ? (Number(TerminalSettings.mobileFontSize) || defaultMobileFontSize)
+            : (Number(TerminalSettings.fontSize) || 14);
+        const defaultTabFontSize = isAndroid
+            ? baseFontSize
+            : Math.max(6, Math.round((baseFontSize * DEFAULT_TAB_FONT_SCALE) * 10) / 10);
+        const hostFontSize = isAndroid
+            ? Number(hostInfo && hostInfo.mobileTerminalFontSize)
+            : Number(hostInfo && hostInfo.terminalFontSize);
         const initialFontSize = Number.isFinite(hostFontSize) && hostFontSize >= 6
             ? hostFontSize
             : defaultTabFontSize;
@@ -166,6 +200,7 @@ window.ConnectionModule = {
         // Wait one animation frame so the browser applies the loaded font metrics
         // before xterm.js measures character cell dimensions.
         await new Promise(resolve => requestAnimationFrame(resolve));
+        if (isUserDisconnected || !document.getElementById(containerId)) return null;
 
         const term = new window.Terminal({
             ...TerminalSettings,
@@ -180,6 +215,17 @@ window.ConnectionModule = {
         term.loadAddon(fitAddon);
 
         term.open(container);
+        pendingCleanup = () => {
+            clearOsc52Listener();
+            if (mobileToolbar) mobileToolbar.dispose();
+            if (resizeObserver) resizeObserver.disconnect();
+            try { term.dispose(); } catch (_) {}
+        };
+        if (isAndroid && term.textarea) {
+            term.textarea.setAttribute('autocapitalize', 'off');
+            term.textarea.setAttribute('autocorrect', 'off');
+            term.textarea.setAttribute('spellcheck', 'false');
+        }
         try {
             await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
             fitAddon.fit();
@@ -200,7 +246,7 @@ window.ConnectionModule = {
                     if (decoded == null) return true;
 
                     if (window.clipboard && typeof window.clipboard.writeText === 'function') {
-                        window.clipboard.writeText(decoded);
+                        Promise.resolve(window.clipboard.writeText(decoded)).catch(error => console.warn('Clipboard write failed:', error));
                     }
                     return true;
                 });
@@ -220,9 +266,11 @@ window.ConnectionModule = {
             return window.TabManager.activeTabId === tabId;
         }
 
-        function focusTerminal() {
+        function focusTerminal(forceScroll = false) {
             if (!document.getElementById(containerId)) return;
-            try { term.focus(); } catch (_) {}
+            try {
+                term.focus();
+            } catch (_) {}
 
             const helperTextarea = container.querySelector('.xterm-helper-textarea');
             if (helperTextarea && document.activeElement !== helperTextarea) {
@@ -231,6 +279,17 @@ window.ConnectionModule = {
                 } catch (_) {
                     try { helperTextarea.focus(); } catch (_) {}
                 }
+            }
+
+            if (forceScroll) {
+                try { term.scrollToBottom(); } catch (_) {}
+            } else {
+                try {
+                    const buffer = term.buffer ? term.buffer.active : null;
+                    if (buffer && buffer.viewportY >= buffer.baseY && (!term.hasSelection || !term.hasSelection())) {
+                        term.scrollToBottom();
+                    }
+                } catch (_) {}
             }
         }
 
@@ -260,18 +319,21 @@ window.ConnectionModule = {
 
         scheduleTerminalFocus();
 
-        // Loading the WebGL addon after terminal init improves performance and reduces stutter.
-        try {
-            const webglAddon = new window.WebglAddon.WebglAddon();
-            webglAddon.onContextLoss(e => {
-                webglAddon.dispose();
-                // Force xterm to re-render via its DOM fallback renderer so that
-                // the screen does not go blank after a GPU context loss.
-                try { term.refresh(0, term.rows - 1); } catch (_) {}
-            });
-            term.loadAddon(webglAddon);
-        } catch (e) {
-            console.warn("WebGL addon could not be loaded", e);
+        // Loading the WebGL addon improves performance, eliminates stutter, and provides
+        // hardware-accelerated, crisp monospace glyph rendering on both desktop and Android WebView.
+        if (window.WebglAddon && typeof window.WebglAddon.WebglAddon === 'function') {
+            try {
+                const webglAddon = new window.WebglAddon.WebglAddon();
+                webglAddon.onContextLoss(e => {
+                    webglAddon.dispose();
+                    // Force xterm to re-render via its DOM fallback renderer so that
+                    // the screen does not go blank after a GPU context loss.
+                    try { term.refresh(0, term.rows - 1); } catch (_) {}
+                });
+                term.loadAddon(webglAddon);
+            } catch (e) {
+                console.warn("WebGL addon could not be loaded", e);
+            }
         }
 
         // --- SERIAL BAUD RATE PROMPT ---
@@ -334,6 +396,19 @@ window.ConnectionModule = {
 
         let sessionResult;
         let connectRetryAttempt = 0;
+        const sendTerminalInput = data => {
+            if (isUserDisconnected || !currentSessionId) return;
+            markActivity();
+            window.electronAPI.send('term-input', { sessionId: currentSessionId, data });
+        };
+        if (window.TermixMobile) mobileToolbar = window.TermixMobile.attachTerminal(container, term, sendTerminalInput, sendResize);
+        pendingCleanup = () => {
+            clearTimeout(msgTimer);
+            clearOsc52Listener();
+            if (mobileToolbar) mobileToolbar.dispose();
+            if (resizeObserver) resizeObserver.disconnect();
+            try { term.dispose(); } catch (_) {}
+        };
 
         // Fit the terminal to the container before connecting so that the backend
         // opens the shell with the actual initial dimensions rather than 80x24.
@@ -342,20 +417,34 @@ window.ConnectionModule = {
         hostInfo.initialRows = term.rows || 24;
 
         while (true) {
+            if (isUserDisconnected || !document.getElementById(containerId)) { pendingCleanup(); return null; }
             try {
-                sessionResult = await window.electronAPI.connection.connect(hostInfo);
+                sessionResult = isAndroid
+                    ? await window.electronAPI.connection.connect(hostInfo, { clientRequestId })
+                    : await window.electronAPI.connection.connect(hostInfo);
             } catch (err) {
                 sessionResult = { status: 'error', message: err && err.message ? err.message : 'Connection failed.' };
             }
 
             clearTimeout(msgTimer);
+            if (isUserDisconnected || !document.getElementById(containerId)) {
+                if (sessionResult && sessionResult.sessionId) window.electronAPI.send('term-close', { sessionId: sessionResult.sessionId });
+                pendingCleanup();
+                return null;
+            }
 
-            if (sessionResult && sessionResult.status !== 'error') {
+            if (sessionResult && sessionResult.status !== 'error' && (!isAndroid || sessionResult.sessionId)) {
                 break;
             }
 
             const errorMessage = sessionResult && sessionResult.message ? sessionResult.message : 'Unknown connection error.';
             term.writeln(`\x1b[31mConnection Error: ${errorMessage}\x1b[0m`);
+            if (isAndroid) {
+                // Never retry rejected credentials or host trust indefinitely. The user
+                // can edit the host and explicitly reconnect from the dashboard.
+                term.writeln('Check the host details, then close this tab and reconnect.');
+                return { term, fitAddon, focus: focusTerminal, dispose: () => { isUserDisconnected = true; pendingCleanup(); } };
+            }
 
             const retryDelay = getConnectRetryDelay(connectRetryAttempt);
             const retryDelaySeconds = Math.round(retryDelay / 1000);
@@ -380,7 +469,7 @@ window.ConnectionModule = {
             connectRetryAttempt += 1;
         }
 
-        const currentSessionId = sessionResult.sessionId;
+        currentSessionId = sessionResult.sessionId;
 
         if (didRenderConnectMsg) {
             term.clear();
@@ -391,7 +480,11 @@ window.ConnectionModule = {
         const outputHandler = (event, msg) => {
             if (msg && msg.sessionId === currentSessionId) {
                 markActivity();
-                term.write(msg.data);
+                term.write(msg.data, () => {
+                    if (isAndroid) {
+                        try { term.scrollToBottom(); } catch (_) {}
+                    }
+                });
             }
         };
 
@@ -404,6 +497,7 @@ window.ConnectionModule = {
                 clearRestartHandler();
                 clearEventListeners();
                 clearOsc52Listener();
+                if (mobileToolbar) mobileToolbar.dispose();
                 emitAiSelectionContext('');
                 try { window.electronAPI.send('term-close', { sessionId: currentSessionId }); } catch (_) {}
                 window.removeEventListener('keydown', handleTerminalZoomKeydown);
@@ -434,6 +528,17 @@ window.ConnectionModule = {
                 clearRestartHandler();
 
                 const disconnectMessage = toText(msg.message);
+                if (isAndroid) {
+                    currentSessionId = null;
+                    if (window.TabManager && typeof window.TabManager.closeTab === 'function') {
+                        window.TabManager.closeTab(tabId);
+                        return;
+                    }
+                    term.writeln('');
+                    term.writeln(`Session ended.${disconnectMessage ? ' ' + disconnectMessage : ''}`);
+                    term.writeln('Close this tab and select the host to reconnect.');
+                    return;
+                }
                 const idleForMs = Date.now() - lastActivityAt;
                 const lowerDisconnectMessage = disconnectMessage.toLowerCase();
                 const shouldQuickReconnect = msg.exitCode === 0 && (
@@ -488,9 +593,7 @@ window.ConnectionModule = {
 
         // Frontend -> Backend (Input)
         term.onData(data => {
-            if (isUserDisconnected) return;
-            markActivity();
-            window.electronAPI.send('term-input', { sessionId: currentSessionId, data });
+            sendTerminalInput(mobileToolbar ? mobileToolbar.filterInput(data) : data);
         });
 
         const isEditableElement = (element) => {
@@ -537,12 +640,27 @@ window.ConnectionModule = {
             window.electronAPI.send('term-input', { sessionId: currentSessionId, data });
         };
 
+        let lastCols = 0;
+        let lastRows = 0;
+
         function sendResize() {
             // Skip resize if container is hidden or has zero dimensions.
-            if (!container.clientWidth || !container.clientHeight) return;
+            if (isUserDisconnected || !currentSessionId || !container.clientWidth || !container.clientHeight) return;
 
             // Calculate dimensions via fit addon.
             fitAddon.fit();
+
+            // Deduplicate to avoid flooding the backend and SSH channel with redundant resizes.
+            if (term.cols === lastCols && term.rows === lastRows) return;
+            lastCols = term.cols;
+            lastRows = term.rows;
+
+            try {
+                const buffer = term.buffer ? term.buffer.active : null;
+                if (buffer && buffer.viewportY >= buffer.baseY) {
+                    term.scrollToBottom();
+                }
+            } catch (_) {}
 
             // Notify backend about the new dimensions.
             // Guard for window.electronAPI.send.
@@ -589,10 +707,15 @@ window.ConnectionModule = {
 
         const persistHostFontSize = async (fontSize) => {
             if (!hostInfo || hostInfo.id == null) return;
-            if (!window.electronAPI || !window.electronAPI.hosts || !window.electronAPI.hosts.updateTerminalFontSize) return;
-
             const parsed = Number(fontSize);
             if (!Number.isFinite(parsed) || parsed < 6) return;
+
+            if (isAndroid) {
+                hostInfo.mobileTerminalFontSize = parsed;
+                return;
+            }
+
+            if (!window.electronAPI || !window.electronAPI.hosts || !window.electronAPI.hosts.updateTerminalFontSize) return;
 
             try {
                 await window.electronAPI.hosts.updateTerminalFontSize(hostInfo.id, parsed);
@@ -620,23 +743,23 @@ window.ConnectionModule = {
         };
 
         window.addEventListener('keydown', handleTerminalZoomKeydown);
-        window.addEventListener('keydown', handleTerminalAutoFocusKeydown, true);
+        if (!isAndroid) window.addEventListener('keydown', handleTerminalAutoFocusKeydown, true);
 
         term.onSelectionChange(() => {
             const selection = term.getSelection();
-            if (TerminalSettings.rightClickCopyPaste && selection) {
-                clipboard.writeText(selection);
+            if (!isAndroid && TerminalSettings.rightClickCopyPaste && selection) {
+                Promise.resolve(clipboard.writeText(selection)).catch(error => console.warn('Clipboard write failed:', error));
             }
             emitAiSelectionContext(selection);
         });
 
-        if (TerminalSettings.rightClickCopyPaste) { // Paste on right-click
-            container.addEventListener('contextmenu', (e) => {
+        if (!isAndroid && TerminalSettings.rightClickCopyPaste) { // Paste on right-click (desktop only)
+            container.addEventListener('contextmenu', async (e) => {
                 e.preventDefault();
-                const text = clipboard.readText();
-                if (text) {
-                    term.paste(text);
-                }
+                try {
+                    const text = await clipboard.readText();
+                    if (text && !isUserDisconnected) term.paste(text);
+                } catch (error) { window.notifyUser(`Clipboard read failed: ${error.message}`, 'error'); }
             });
         }
 
@@ -657,6 +780,7 @@ window.ConnectionModule = {
                 clearRestartHandler();
                 clearEventListeners();
                 clearOsc52Listener();
+                if (mobileToolbar) mobileToolbar.dispose();
                 emitAiSelectionContext('');
                 // Stop observer
                 if (resizeObserver) resizeObserver.disconnect();
@@ -666,7 +790,7 @@ window.ConnectionModule = {
                 try { term.dispose(); } catch (_) {}
                 // Send close request to backend (optional)
                 try {
-                    window.electronAPI.send('term-close', { sessionId: currentSessionId });
+                    window.electronAPI.send('term-close', { ...(currentSessionId ? { sessionId: currentSessionId } : {}), ...(clientRequestId ? { requestId: clientRequestId } : {}) });
                 } catch (_) {}
             }
         };

@@ -1,14 +1,16 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { machineIdSync } = require('node-machine-id');
-const { PROFILES_DIR } = require('./paths');
+const { PROFILES_DIR, IS_ANDROID } = require('./paths');
 
 const PORTABLE_KEY_ENV = 'TERMIX_PORTABLE_KEY';
 const PORTABLE_KEY_FILE = path.join(PROFILES_DIR, '.termix-portable-key');
 
 function getPortableKey() {
     let material = process.env[PORTABLE_KEY_ENV] || '';
+    if (IS_ANDROID && (!/^[A-Za-z0-9+/]{64}$/.test(material) || Buffer.from(material, 'base64').length !== 48)) {
+        throw new Error('Android requires a Keystore-protected 48-byte TERMIX_PORTABLE_KEY.');
+    }
     if (!material) {
         if (!fs.existsSync(PORTABLE_KEY_FILE)) {
             const keyDir = path.dirname(PORTABLE_KEY_FILE);
@@ -21,8 +23,15 @@ function getPortableKey() {
     return crypto.scryptSync(material, 'TermixGlobalSalt', 32); 
 }
 
-const machineID = machineIdSync();
-const oldMachineKey = crypto.createHash('sha256').update(machineID+"Termix").digest().slice(0, 32);
+let oldMachineKey;
+function getMachineKey() {
+    if (IS_ANDROID) throw new Error('Machine-bound desktop ciphers are not supported on Android.');
+    if (!oldMachineKey) {
+        const machineID = require('node-machine-id').machineIdSync();
+        oldMachineKey = crypto.createHash('sha256').update(machineID + 'Termix').digest().slice(0, 32);
+    }
+    return oldMachineKey;
+}
 const newPortableKey = getPortableKey();
 
 function encrypt(text) {
@@ -48,7 +57,7 @@ function decrypt(text) {
             const parts = text.split(':');
             const iv = Buffer.from(parts[0], 'hex');
             const encryptedText = Buffer.from(parts.join(':'), 'hex');
-            const decipher = crypto.createDecipheriv('aes-256-cbc', oldMachineKey, iv);
+            const decipher = crypto.createDecipheriv('aes-256-cbc', getMachineKey(), iv);
             const decrypted = Buffer.concat([decipher.update(encryptedText), decipher.final()]);
             return decrypted.toString('utf8');
         }
@@ -61,7 +70,7 @@ module.exports = { encrypt, decrypt };
 
 if (require.main === module) {
 
-    console.log(`Machine ID: ${machineID} 🧠`);
+    if (!IS_ANDROID) getMachineKey();
     const message = "Only my computer can read this";
     console.log(`Original: ${message} 😎`);
     const encrypted = encrypt(message);

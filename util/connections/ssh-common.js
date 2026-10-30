@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const db = require('../profile-db');
+const { IS_ANDROID, FILES_DIR } = require('../paths');
 
 const SSH_PORT_MIN = 1;
 const SSH_PORT_MAX = 65535;
@@ -36,6 +37,10 @@ function loadPrivateKey(certPath) {
     if (!normalizedPath) return null;
 
     let keyPath = normalizedPath;
+    if (IS_ANDROID) {
+        keyPath = require('../android/backend/sandbox').safePath(FILES_DIR, keyPath);
+        return fs.readFileSync(keyPath);
+    }
     if (!path.isAbsolute(keyPath)) {
         const relativeInFiles = path.join(process.cwd(), 'files', keyPath);
         if (fs.existsSync(relativeInFiles)) {
@@ -100,8 +105,11 @@ function verifyAndPersistHost(data, port, hashedKey) {
 
 // Builds an ssh2 connect config from a stored host record. `onHostKeyRejected`
 // is invoked when the host key does not match the known_hosts entry.
-function buildConnectConfig(data, onHostKeyRejected) {
+function buildConnectConfig(data, onHostKeyRejected, options = {}) {
     const port = parseSshPort(data.port);
+    if (IS_ANDROID && typeof options.hostVerifier !== 'function') {
+        throw new Error('Android SSH requires explicit host key verification.');
+    }
     const config = {
         host: String(data.address || '').trim(),
         port,
@@ -109,13 +117,13 @@ function buildConnectConfig(data, onHostKeyRejected) {
         readyTimeout: SSH_READY_TIMEOUT_MS,
         keepaliveInterval: SSH_KEEPALIVE_INTERVAL_MS,
         keepaliveCountMax: SSH_KEEPALIVE_COUNT_MAX,
-        hostVerifier: (hashedKey) => {
+        hostVerifier: options.hostVerifier || ((hashedKey) => {
             const verified = verifyAndPersistHost(data, port, hashedKey);
             if (!verified && typeof onHostKeyRejected === 'function') {
                 onHostKeyRejected();
             }
             return verified;
-        },
+        }),
         algorithms: {
             cipher: SSH_CIPHERS
         }

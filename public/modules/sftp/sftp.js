@@ -50,6 +50,7 @@
                 list: document.getElementById('sftp-list-left'),
                 hostOverlay: document.getElementById('sftp-overlay-left'),
                 hostSearch: document.getElementById('sftp-host-search-left'),
+                hostSearchClear: document.getElementById('sftp-host-search-clear-left'),
                 hostList: document.getElementById('sftp-host-list-left')
             },
             right: {
@@ -65,6 +66,7 @@
                 list: document.getElementById('sftp-list-right'),
                 hostOverlay: document.getElementById('sftp-overlay-right'),
                 hostSearch: document.getElementById('sftp-host-search-right'),
+                hostSearchClear: document.getElementById('sftp-host-search-clear-right'),
                 hostList: document.getElementById('sftp-host-list-right')
             }
         }
@@ -738,7 +740,7 @@
     function closeContextMenu() {
         if (ui.contextMenu) {
             ui.contextMenu.classList.remove('show');
-            const itemActions = ui.contextMenu.querySelectorAll('button[data-action="rename"], button[data-action="delete"], button[data-action="copy"], button[data-action="cut"], button[data-action="paste"]');
+            const itemActions = ui.contextMenu.querySelectorAll('button[data-action="rename"], button[data-action="delete"], button[data-action="copy"], button[data-action="cut"], button[data-action="paste"], button[data-action="download"]');
             itemActions.forEach((action) => {
                 action.disabled = false;
                 action.style.opacity = '1';
@@ -779,6 +781,22 @@
             pasteAction.style.opacity = hasClipboard ? '1' : '0.45';
             pasteAction.style.pointerEvents = hasClipboard ? 'auto' : 'none';
         }
+
+        const downloadActions = ui.contextMenu.querySelectorAll('button[data-action="download"]');
+        const isAndroid = Boolean(window.TermixAndroid || document.documentElement.classList.contains('termix-android'));
+        downloadActions.forEach((action) => {
+            if (!isAndroid) {
+                action.style.display = 'none';
+                return;
+            }
+            action.style.display = 'flex';
+            const targetEntry = targetPath ? findEntryByPath(paneKey, targetPath) : null;
+            const isFolder = Boolean(targetEntry && (targetEntry.isDirectory || targetEntry.isParent));
+            const canDownload = Boolean(targetPath && pane && pane.mode === 'vds' && pane.sessionId && !isFolder);
+            action.disabled = !canDownload;
+            action.style.opacity = canDownload ? '1' : '0.45';
+            action.style.pointerEvents = canDownload ? 'auto' : 'none';
+        });
 
         ui.contextMenu.style.left = `${Math.max(6, Number(clientX) || 0)}px`;
         ui.contextMenu.style.top = `${Math.max(6, Number(clientY) || 0)}px`;
@@ -1092,6 +1110,13 @@
             paneUi.hostOverlay.classList.toggle('show', isRemoteMode && !isConnected);
         }
 
+        if (key === 'right') {
+            const mDisconnectBtn = document.getElementById('sftp-m-disconnect');
+            if (mDisconnectBtn) {
+                mDisconnectBtn.classList.toggle('active', isConnected);
+            }
+        }
+
         if (paneUi.list) {
             if (pane.loading) {
                 paneUi.list.innerHTML = '<div class="sftp-empty">Loading...</div>';
@@ -1355,6 +1380,11 @@
     async function switchPaneMode(key, mode) {
         const pane = getPaneState(key);
         if (!pane) return;
+
+        const isMobile = Boolean(window.TermixAndroid || document.documentElement.classList.contains('termix-android'));
+        if (isMobile && key === 'right' && mode === 'local') {
+            return;
+        }
 
         if (pane.mode === mode) return;
 
@@ -1674,8 +1704,15 @@
 
         const sourcePane = getPaneState(copyPayload.sourcePaneKey);
         let sourceSessionId = copyPayload.sourceSessionId;
-        if (copyPayload.sourceSide === 'remote' && sourcePane && sourcePane.sessionId) {
-            sourceSessionId = sourcePane.sessionId;
+        if (copyPayload.sourceSide === 'remote') {
+            if (copyPayload.isCut && Boolean(window.TermixAndroid)) {
+                if (sourcePane && sourcePane.sessionId && copyPayload.sourceSessionId && sourcePane.sessionId !== copyPayload.sourceSessionId) {
+                    setStatus('Taşıma başarısız: Kaynak sunucu oturumu değişti.', 'error');
+                    return false;
+                }
+            } else if (sourcePane && sourcePane.sessionId) {
+                sourceSessionId = sourcePane.sessionId;
+            }
         }
 
         const transferDirection = copyPayload.sourceSide === 'local' && destinationSide === 'remote'
@@ -1768,9 +1805,18 @@
 
         await refreshPane(destinationPaneKey);
 
+        const skipped = Number(result.skippedCount || 0);
+        const copied = Number(result.copiedCount || 0);
+
+        if (copyPayload.isCut && Boolean(window.TermixAndroid)) {
+            if (skipped > 0 || (copyPayload.items.length > 0 && copied < copyPayload.items.length)) {
+                setStatus('Taşıma tamamlanamadı: Bazı öğeler atlandı veya eksik kopyalandı. Kaynak dosyalar silinmedi.', 'error');
+                return false;
+            }
+        }
+
         const baseMessage = successMessage || `${result.copiedCount || copyPayload.items.length} item(s) pasted.`;
         // The status line reports the action only; skip-list details stay in the console.
-        const skipped = Number(result.skippedCount || 0);
         if (skipped > 0) {
             console.info(`${skipped} item(s) skipped by the transfer skip list`, result.skippedPatterns || []);
         }
@@ -1798,6 +1844,13 @@
                 setStatus('Cannot move files to the same directory.', 'error');
                 return;
             }
+            if (Boolean(window.TermixAndroid) && clipboardSnapshot.sourceSide === 'remote') {
+                const srcPane = getPaneState(clipboardSnapshot.sourcePaneKey);
+                if (srcPane && srcPane.sessionId && clipboardSnapshot.sourceSessionId && srcPane.sessionId !== clipboardSnapshot.sourceSessionId) {
+                    setStatus('Taşıma iptal edildi: Kaynak sunucu oturumu değişti.', 'error');
+                    return;
+                }
+            }
         }
 
         const success = await executeCopyToPane(clipboardSnapshot, key, null, `${clipboardSnapshot.items.length} item(s) pasted.`);
@@ -1813,9 +1866,18 @@
         const sourcePaneKey = copyPayload.sourcePaneKey;
         const sourcePane = getPaneState(sourcePaneKey);
         const sourceSide = copyPayload.sourceSide;
-        const sessionId = sourceSide === 'remote'
-            ? (sourcePane && sourcePane.sessionId ? sourcePane.sessionId : copyPayload.sourceSessionId)
-            : null;
+        let sessionId = copyPayload.sourceSessionId;
+        if (sourceSide === 'remote') {
+            if (copyPayload.isCut && Boolean(window.TermixAndroid)) {
+                if (sourcePane && sourcePane.sessionId && copyPayload.sourceSessionId && sourcePane.sessionId !== copyPayload.sourceSessionId) {
+                    setStatus('Taşıma iptal edildi: Kaynak sunucu oturumu değiştiği için kaynak silinemedi.', 'error');
+                    return false;
+                }
+                sessionId = copyPayload.sourceSessionId;
+            } else if (sourcePane && sourcePane.sessionId) {
+                sessionId = sourcePane.sessionId;
+            }
+        }
 
         let removed = true;
         try {
@@ -2548,6 +2610,93 @@
         renderAllPanes();
     }
 
+    async function downloadFromPane(paneKey, targetPath) {
+        const pane = getPaneState(paneKey);
+        if (!pane || !pane.sessionId) {
+            setStatus('VDS baglantisi aktif degil.', 'error');
+            return;
+        }
+        if (!targetPath) {
+            setStatus('Indirmek icin bir dosya secin.', 'error');
+            return;
+        }
+
+        const entry = findEntryByPath(paneKey, targetPath);
+        if (entry && (entry.isDirectory || entry.isParent)) {
+            setStatus('Klasor indirme desteklenmiyor. Yalnizca normal dosyalar indirilebilir.', 'error');
+            return;
+        }
+
+        const fileName = getItemNameForPath(paneKey, targetPath) || 'download';
+        setStatus(`Indirme hazirlaniyor: ${fileName}...`, 'info');
+
+        let stageInfo = null;
+        try {
+            if (!window.TermixAndroid || typeof window.TermixAndroid.invoke !== 'function') {
+                throw new Error('Android yerel disa aktarma koprusu bulunamadi.');
+            }
+
+            try {
+                stageInfo = await window.TermixAndroid.invoke('android:download-stage');
+            } catch (err) {
+                throw new Error(`Hazirlama dizini olusturulamadi: ${err && err.message ? err.message : err}`);
+            }
+
+            if (!stageInfo || !stageInfo.success || !stageInfo.stageDir) {
+                throw new Error(stageInfo && stageInfo.message ? stageInfo.message : 'Hazirlama (staging) dizini alinamadi.');
+            }
+
+            const stageDir = stageInfo.stageDir;
+            const stagedFilePath = `${stageDir.replace(/[/\\]+$/, '')}/${fileName}`;
+
+            setStatus(`Uzak sunucudan aliniyor: ${fileName}...`, 'info');
+            const copyResult = await sftpApi.copyItems({
+                sourceSide: 'remote',
+                destinationSide: 'local',
+                sourceSessionId: pane.sessionId,
+                destinationSessionId: null,
+                destinationPath: stageDir,
+                items: [{ path: targetPath, isDirectory: false }],
+                conflictPolicy: 'overwrite'
+            });
+
+            if (!copyResult || !copyResult.success) {
+                throw new Error(copyResult && copyResult.message ? copyResult.message : 'Hazirlama kopyalamasi basarisiz oldu.');
+            }
+
+            setStatus(`Cihaza kaydediliyor: ${fileName}...`, 'info');
+            let exportResult = null;
+            if (window.TermixAndroid && typeof window.TermixAndroid.invoke === 'function') {
+                exportResult = await window.TermixAndroid.invoke('native:export-file', {
+                    localPath: stagedFilePath,
+                    name: fileName
+                });
+            } else {
+                throw new Error('Android yerel disa aktarma koprusu bulunamadi.');
+            }
+
+            if (exportResult && exportResult.cancelled) {
+                setStatus('Indirme iptal edildi.', 'info');
+            } else if (exportResult && exportResult.success) {
+                const bytes = exportResult.bytes ? ` (${formatSize(exportResult.bytes)})` : '';
+                setStatus(`Indirildi: ${fileName}${bytes}`, 'success');
+            } else {
+                throw new Error('Disa aktarma tamamlanamadi.');
+            }
+        } catch (err) {
+            setStatus(`Indirme basarisiz (${fileName}): ${err.message}`, 'error');
+        } finally {
+            if (stageInfo && stageInfo.stageId && window.TermixAndroid && typeof window.TermixAndroid.invoke === 'function') {
+                try {
+                    await window.TermixAndroid.invoke('android:download-stage', {
+                        action: 'cleanup',
+                        stageId: stageInfo.stageId
+                    });
+                } catch (_) {}
+            }
+        }
+    }
+
     function bindContextMenuEvents() {
         if (ui.contextMenu) {
             ui.contextMenu.addEventListener('click', async (event) => {
@@ -2599,6 +2748,11 @@
                     return;
                 }
 
+                if (action === 'download') {
+                    await downloadFromPane(paneKey, targetPath);
+                    return;
+                }
+
                 if (action === 'rename') {
                     await renameItemInPane(paneKey, targetPath);
                     return;
@@ -2644,6 +2798,8 @@
         if (paneUi.hostOverlay) {
             paneUi.hostOverlay.addEventListener('click', async (event) => {
                 if (event.target !== paneUi.hostOverlay) return;
+                const isMobile = Boolean(window.TermixAndroid || document.documentElement.classList.contains('termix-android'));
+                if (isMobile) return;
                 activatePane(key, false);
                 closeContextMenu();
                 await switchPaneMode(key, 'local');
@@ -2725,6 +2881,102 @@
         if (paneUi.list) {
             paneUi.list.addEventListener('focus', () => activatePane(key, false));
 
+            // Mobile long-press recognizer with cancellation on movement and scrolling, suppressing double clicks
+            let longPressTriggered = false;
+            let lastTouchEndTime = 0;
+
+            if (window.TermixAndroid) {
+                let touchTimer = null;
+                let touchStartX = 0;
+                let touchStartY = 0;
+                let touchTargetRow = null;
+
+                function cancelLongPress() {
+                    if (touchTimer) {
+                        clearTimeout(touchTimer);
+                        touchTimer = null;
+                    }
+                    touchTargetRow = null;
+                }
+
+                paneUi.list.addEventListener('touchstart', (event) => {
+                    if (!window.TermixAndroid) return;
+                    if (event.touches.length !== 1) {
+                        cancelLongPress();
+                        return;
+                    }
+                    cancelLongPress();
+                    touchTargetRow = event.target.closest('.sftp-file-row');
+                    if (!touchTargetRow) return;
+
+                    const touch = event.touches[0];
+                    touchStartX = touch.clientX;
+                    touchStartY = touch.clientY;
+                    longPressTriggered = false;
+
+                    touchTimer = setTimeout(() => {
+                        touchTimer = null;
+                        if (!touchTargetRow) return;
+                        longPressTriggered = true;
+                        if (navigator.vibrate) {
+                            try { navigator.vibrate(40); } catch (_) {}
+                        }
+
+                        activatePane(key, false);
+                        let targetPath = null;
+                        if (touchTargetRow.dataset.parent !== '1') {
+                            targetPath = decodePathValue(touchTargetRow.dataset.path || '');
+                        }
+
+                        if (targetPath) {
+                            if (!pane.selected.has(targetPath)) {
+                                selectOnly(key, targetPath);
+                            }
+                        } else {
+                            clearPaneSelection(pane);
+                            updateSelectionClasses(key);
+                        }
+
+                        openContextMenu(key, targetPath, pane.path || '', touchStartX, touchStartY);
+                    }, 500);
+                }, { passive: true });
+
+                paneUi.list.addEventListener('touchmove', (event) => {
+                    if (!window.TermixAndroid || !touchTimer) return;
+                    if (event.touches.length !== 1) {
+                        cancelLongPress();
+                        return;
+                    }
+                    const touch = event.touches[0];
+                    const dx = touch.clientX - touchStartX;
+                    const dy = touch.clientY - touchStartY;
+                    if (Math.hypot(dx, dy) > 8) {
+                        cancelLongPress();
+                    }
+                }, { passive: true });
+
+                paneUi.list.addEventListener('touchend', (event) => {
+                    if (!window.TermixAndroid) return;
+                    cancelLongPress();
+                    if (longPressTriggered) {
+                        lastTouchEndTime = Date.now();
+                        if (event.cancelable) {
+                            event.preventDefault();
+                        }
+                    }
+                });
+
+                paneUi.list.addEventListener('touchcancel', () => {
+                    if (!window.TermixAndroid) return;
+                    cancelLongPress();
+                }, { passive: true });
+
+                paneUi.list.addEventListener('scroll', () => {
+                    if (!window.TermixAndroid) return;
+                    cancelLongPress();
+                }, { passive: true });
+            }
+
             paneUi.list.addEventListener('contextmenu', (event) => {
                 if (pane.loading) return;
                 if (getPaneSide(pane) === 'remote' && !pane.sessionId) return;
@@ -2752,6 +3004,13 @@
             });
 
             paneUi.list.addEventListener('click', async (event) => {
+                if (longPressTriggered || (Date.now() - lastTouchEndTime < 400)) {
+                    longPressTriggered = false;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return;
+                }
+
                 const row = event.target.closest('.sftp-file-row');
                 if (!row) {
                     activatePane(key, false);
@@ -2770,10 +3029,17 @@
                 if (!targetPath) return;
 
                 const isParentRow = row.dataset.parent === '1';
+                const isDirectory = row.dataset.directory === '1';
                 const withToggle = event.ctrlKey || event.metaKey;
                 const withRange = event.shiftKey;
 
                 if (isParentRow) {
+                    await refreshPane(key, targetPath);
+                    return;
+                }
+
+                const isMobile = Boolean(window.TermixAndroid || document.documentElement.classList.contains('termix-android'));
+                if (isMobile && isDirectory && pane.selected.has(targetPath)) {
                     await refreshPane(key, targetPath);
                     return;
                 }
@@ -2788,6 +3054,13 @@
             });
 
             paneUi.list.addEventListener('dblclick', async (event) => {
+                const isMobile = Boolean(window.TermixAndroid || document.documentElement.classList.contains('termix-android'));
+                if (isMobile) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return;
+                }
+
                 const row = event.target.closest('.sftp-file-row');
                 if (!row) return;
 
@@ -2959,7 +3232,21 @@
 
         if (paneUi.hostSearch) {
             paneUi.hostSearch.addEventListener('input', () => {
+                if (paneUi.hostSearchClear) {
+                    paneUi.hostSearchClear.style.display = paneUi.hostSearch.value.trim() ? 'inline-flex' : 'none';
+                }
                 renderHostList(key);
+            });
+        }
+
+        if (paneUi.hostSearchClear) {
+            paneUi.hostSearchClear.addEventListener('click', () => {
+                if (paneUi.hostSearch) {
+                    paneUi.hostSearch.value = '';
+                    paneUi.hostSearchClear.style.display = 'none';
+                    renderHostList(key);
+                    paneUi.hostSearch.focus();
+                }
             });
         }
 
@@ -3289,20 +3576,285 @@
         };
     }
 
+    function setupMobileToolbar() {
+        const toolbar = document.getElementById('sftp-mobile-toolbar');
+        if (!toolbar) return;
+
+        const isMobile = Boolean(window.TermixAndroid || document.documentElement.classList.contains('termix-android'));
+        if (!isMobile) return;
+
+        const fileInput = document.getElementById('sftp-mobile-file-input');
+        const uploadBtn = document.getElementById('sftp-m-upload');
+        const downloadBtn = document.getElementById('sftp-m-download');
+        const moveBtn = document.getElementById('sftp-m-move');
+        const copyBtn = document.getElementById('sftp-m-copy');
+        const pasteBtn = document.getElementById('sftp-m-paste');
+        const mkdirBtn = document.getElementById('sftp-m-mkdir');
+        const deleteBtn = document.getElementById('sftp-m-delete');
+        const refreshBtn = document.getElementById('sftp-m-refresh');
+
+        if (uploadBtn) {
+            uploadBtn.addEventListener('click', async () => {
+                activatePane('right', false);
+                const pane = getPaneState('right');
+                if (!pane || !pane.sessionId) {
+                    setStatus('VDS baglantisi aktif degil. Once bir sunucu secin.', 'error');
+                    return;
+                }
+
+                // If running on Android, use native streaming document picker with atomic staging
+                if (window.TermixAndroid && typeof window.TermixAndroid.invoke === 'function') {
+                    let pickResult = null;
+                    try {
+                        pickResult = await window.TermixAndroid.invoke('native:pick-upload-file');
+                        if (!pickResult || pickResult.cancelled) {
+                            return;
+                        }
+                        if (!pickResult.success || !pickResult.localPath) {
+                            throw new Error(pickResult && pickResult.message ? pickResult.message : 'Dosya secimi basarisiz.');
+                        }
+
+                        const fileName = pickResult.name || 'upload';
+                        const currentPath = pane.path || '/';
+                        setStatus(`Yukleniyor: ${fileName}...`, 'info');
+
+                        const copyResult = await sftpApi.copyItems({
+                            sourceSide: 'local',
+                            destinationSide: 'remote',
+                            sourceSessionId: null,
+                            destinationSessionId: pane.sessionId,
+                            destinationPath: currentPath,
+                            items: [{ path: pickResult.localPath, isDirectory: false }],
+                            conflictPolicy: 'overwrite'
+                        });
+
+                        if (!copyResult || !copyResult.success) {
+                            throw new Error(copyResult && copyResult.message ? copyResult.message : 'Yukleme basarisiz oldu.');
+                        }
+
+                        const sizeStr = pickResult.bytes ? ` (${formatSize(pickResult.bytes)})` : '';
+                        setStatus(`Yuklendi: ${fileName}${sizeStr}`, 'success');
+                        await refreshPane('right', pane.path);
+                    } catch (err) {
+                        setStatus(`Yukleme basarisiz: ${err.message}`, 'error');
+                    } finally {
+                        if (pickResult && pickResult.stageId) {
+                            try {
+                                await window.TermixAndroid.invoke('android:download-stage', {
+                                    action: 'cleanup',
+                                    stageId: pickResult.stageId
+                                });
+                            } catch (_) {}
+                        }
+                    }
+                    return;
+                }
+
+                if (fileInput) {
+                    fileInput.value = '';
+                    fileInput.click();
+                }
+            });
+        }
+
+        if (fileInput) {
+            fileInput.addEventListener('change', async () => {
+                const files = Array.from(fileInput.files || []);
+                if (!files.length) return;
+                const pane = getPaneState('right');
+                if (!pane || !pane.sessionId) {
+                    setStatus('VDS baglantisi aktif degil.', 'error');
+                    fileInput.value = '';
+                    return;
+                }
+
+                const currentPath = pane.path || '/';
+                for (const file of files) {
+                    setStatus(`Yukleniyor: ${file.name}...`, 'info');
+                    try {
+                        const targetPath = (currentPath.endsWith('/') ? currentPath : currentPath + '/') + file.name;
+                        const CHUNK_SIZE = 512 * 1024;
+                        const totalSize = file.size;
+
+                        if (totalSize === 0) {
+                            await sftpApi.writeFile({
+                                side: 'remote',
+                                sessionId: pane.sessionId,
+                                path: targetPath,
+                                content: '',
+                                encoding: 'utf8',
+                                append: false
+                            });
+                        } else {
+                            let offset = 0;
+                            let isFirst = true;
+                            while (offset < totalSize) {
+                                const slice = file.slice(offset, offset + CHUNK_SIZE);
+                                const arrayBuffer = await slice.arrayBuffer();
+                                const bytes = new Uint8Array(arrayBuffer);
+                                let binary = '';
+                                const len = bytes.byteLength;
+                                for (let i = 0; i < len; i++) {
+                                    binary += String.fromCharCode(bytes[i]);
+                                }
+                                const base64 = btoa(binary);
+                                const res = await sftpApi.writeFile({
+                                    side: 'remote',
+                                    sessionId: pane.sessionId,
+                                    path: targetPath,
+                                    content: base64,
+                                    encoding: 'base64',
+                                    append: !isFirst
+                                });
+                                if (!res || !res.success) {
+                                    throw new Error(res && res.message ? res.message : 'Yazma hatasi');
+                                }
+                                isFirst = false;
+                                offset += CHUNK_SIZE;
+                                const pct = Math.min(100, Math.round((offset / totalSize) * 100));
+                                setStatus(`Yukleniyor: ${file.name} (%${pct})...`, 'info');
+                            }
+                        }
+                        setStatus(`Yuklendi: ${file.name}`, 'success');
+                    } catch (err) {
+                        setStatus(`Yukleme basarisiz (${file.name}): ${err.message}`, 'error');
+                    }
+                }
+                fileInput.value = '';
+                await refreshPane('right', pane.path);
+            });
+        }
+
+        if (downloadBtn) {
+            downloadBtn.style.display = 'inline-flex';
+            downloadBtn.addEventListener('click', async () => {
+                activatePane('right', false);
+                const pane = getPaneState('right');
+                if (!pane || !pane.sessionId) {
+                    setStatus('VDS baglantisi aktif degil. Once bir sunucu secin.', 'error');
+                    return;
+                }
+                const selectedPath = pane.selected && pane.selected.size > 0 ? Array.from(pane.selected)[0] : null;
+                if (!selectedPath) {
+                    setStatus('Indirmek icin bir dosya secin.', 'error');
+                    return;
+                }
+                await downloadFromPane('right', selectedPath);
+            });
+        }
+
+        if (moveBtn) {
+            moveBtn.addEventListener('click', async () => {
+                activatePane('right', false);
+                const pane = getPaneState('right');
+                if (!pane || !pane.sessionId) {
+                    setStatus('VDS baglantisi aktif degil.', 'error');
+                    return;
+                }
+                if (!pane.selected || pane.selected.size === 0) {
+                    setStatus('Tasinacak ogeyi secin.', 'error');
+                    return;
+                }
+                cutSelected('right');
+                setStatus('Tasimak icin hedef klasore gidin ve "Yapistir" butonuna basin.', 'info');
+            });
+        }
+
+        if (copyBtn) {
+            copyBtn.addEventListener('click', () => {
+                activatePane('right', false);
+                const pane = getPaneState('right');
+                if (!pane || !pane.sessionId) {
+                    setStatus('VDS baglantisi aktif degil.', 'error');
+                    return;
+                }
+                if (!pane.selected || pane.selected.size === 0) {
+                    setStatus('Kopyalamak icin bir oge secin.', 'error');
+                    return;
+                }
+                copySelected('right');
+                setStatus('Kopyalandi. Yapistirmak icin "Yapistir" butonuna basin.', 'info');
+            });
+        }
+
+        if (pasteBtn) {
+            pasteBtn.addEventListener('click', async () => {
+                activatePane('right', false);
+                const pane = getPaneState('right');
+                if (!pane || !pane.sessionId) {
+                    setStatus('VDS baglantisi aktif degil.', 'error');
+                    return;
+                }
+                await pasteToPane('right');
+            });
+        }
+
+        if (mkdirBtn) {
+            mkdirBtn.addEventListener('click', async () => {
+                activatePane('right', false);
+                const pane = getPaneState('right');
+                if (!pane || !pane.sessionId) {
+                    setStatus('VDS baglantisi aktif degil.', 'error');
+                    return;
+                }
+                await createDirectoryInPane('right', pane.path || '/');
+            });
+        }
+
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', async () => {
+                activatePane('right', false);
+                const pane = getPaneState('right');
+                if (!pane || !pane.sessionId) {
+                    setStatus('VDS baglantisi aktif degil.', 'error');
+                    return;
+                }
+                if (!pane.selected || pane.selected.size === 0) {
+                    setStatus('Silmek icin bir oge secin.', 'error');
+                    return;
+                }
+                await deleteSelected('right');
+            });
+        }
+
+        const disconnectBtn = document.getElementById('sftp-m-disconnect');
+        if (disconnectBtn) {
+            disconnectBtn.addEventListener('click', async () => {
+                activatePane('right', false);
+                const pane = getPaneState('right');
+                if (!pane || !pane.sessionId) {
+                    renderPane('right');
+                    setStatus('VDS baglantisi aktif degil. Sunucu secin.', 'info');
+                    return;
+                }
+                await disconnectPane('right', false);
+            });
+        }
+    }
+
     async function init() {
         paneKeys.forEach((key) => bindPaneEvents(key));
         bindContextMenuEvents();
         setupCopyProgressBridge();
         bindGlobalShortcuts();
 
-        activatePane('left', false);
+        const isMobile = Boolean(window.TermixAndroid || document.documentElement.classList.contains('termix-android'));
+        if (isMobile) {
+            state.panes.right.mode = 'vds';
+        }
+        activatePane(isMobile ? 'right' : 'left', false);
         renderAllPanes();
+        setupMobileToolbar();
 
         await loadTransferPreferences();
         await loadHosts();
         for (const key of paneKeys) {
             const pane = getPaneState(key);
             if (!pane) continue;
+
+            if (isMobile && key === 'left') {
+                continue;
+            }
 
             if (pane.mode === 'vds') {
                 if (!pane.sessionId) {

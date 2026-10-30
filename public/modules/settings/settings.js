@@ -332,6 +332,35 @@
             if (sftpOverwriteConfirmToggle) {
                 sftpOverwriteConfirmToggle.checked = !data.sftpSettings || data.sftpSettings.confirmOverwriteOnConflict !== false;
             }
+
+            // Terminal settings
+            if (window.electronAPI && window.electronAPI.connection && window.electronAPI.connection.getSettings) {
+                try {
+                    const termSettings = await window.electronAPI.connection.getSettings();
+                    if (termSettings) {
+                        const isMobile = Boolean(window.TermixAndroid);
+                        const fontSizeInput = document.getElementById('terminal-font-size');
+                        if (fontSizeInput) {
+                            const current = isMobile
+                                ? (Number(termSettings.mobileFontSize) || 11)
+                                : (Number(termSettings.fontSize) || 14);
+                            fontSizeInput.value = Number.isFinite(current) && current >= 6
+                                ? current
+                                : (isMobile ? 11 : 14);
+                        }
+                        const cursorBlinkToggle = document.getElementById('terminal-cursor-blink-toggle');
+                        if (cursorBlinkToggle && termSettings.cursorBlink !== undefined) {
+                            cursorBlinkToggle.checked = Boolean(termSettings.cursorBlink);
+                        }
+                        const copyPasteToggle = document.getElementById('terminal-copy-paste-toggle');
+                        if (copyPasteToggle && termSettings.rightClickCopyPaste !== undefined) {
+                            copyPasteToggle.checked = Boolean(termSettings.rightClickCopyPaste);
+                        }
+                    }
+                } catch (termErr) {
+                    console.warn('Failed to load terminal settings:', termErr);
+                }
+            }
             await loadUpdateState(data.updateSettings && data.updateSettings.autoUpdateEnabled);
         } catch (err) {
             console.error('Failed to load settings:', err);
@@ -572,6 +601,31 @@
         btn.style.opacity = '0.8';
 
         try {
+            const fontSizeInput = document.getElementById('terminal-font-size');
+            const cursorBlinkToggle = document.getElementById('terminal-cursor-blink-toggle');
+            const copyPasteToggle = document.getElementById('terminal-copy-paste-toggle');
+            if (fontSizeInput && window.electronAPI && window.electronAPI.connection && window.electronAPI.connection.saveSettings) {
+                const rawSize = Number(fontSizeInput.value);
+                const isMobile = Boolean(window.TermixAndroid);
+                const fontSizeVal = Number.isFinite(rawSize) && rawSize >= 6 && rawSize <= 48
+                    ? Math.round(rawSize)
+                    : (isMobile ? 11 : 14);
+                try {
+                    const payload = {
+                        cursorBlink: cursorBlinkToggle ? Boolean(cursorBlinkToggle.checked) : true,
+                        rightClickCopyPaste: copyPasteToggle ? Boolean(copyPasteToggle.checked) : true
+                    };
+                    if (isMobile) {
+                        payload.mobileFontSize = fontSizeVal;
+                    } else {
+                        payload.fontSize = fontSizeVal;
+                    }
+                    await window.electronAPI.connection.saveSettings(payload);
+                } catch (termSaveErr) {
+                    console.warn('Failed to save terminal settings:', termSaveErr);
+                }
+            }
+
             await window.electronAPI.settings.saveSettings(settings);
             btn.innerHTML = '<i class="fa-solid fa-check"></i> Saved!';
             btn.style.background = '#a6e3a1';

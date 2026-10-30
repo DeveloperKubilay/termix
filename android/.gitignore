@@ -1,0 +1,8 @@
+/.gradle/
+/.cxx/
+/local.properties
+/**/build/
+/**/.cxx/
+/runtime/bin/
+/runtime/include/
+/app/src/main/assets/backend/node_modules/

@@ -35,6 +35,10 @@ const Drawer = {
     open(title, contentHtml) {
         if (title) this.titleElement.textContent = title;
         if (contentHtml) this.contentElement.innerHTML = contentHtml;
+        if (window.TermixMobile) {
+            window.TermixMobile.closeNavigation();
+            window.TermixMobile.applyCapabilities(this.contentElement);
+        }
         this.element.classList.add('open');
         if (this.overlay) this.overlay.classList.add('open');
     },
@@ -570,6 +574,7 @@ const ProfileManager = {
             const response = await fetch('public/modules/profiles/create-user.html');
             const html = await response.text();
             container.innerHTML = html;
+            if (window.TermixMobile) window.TermixMobile.applyCapabilities(container);
 
             // Load Script manually
             const script = document.createElement('script');
@@ -658,6 +663,10 @@ const TabManager = {
         if (this.sidebarToggle) {
             this.sidebarToggle.addEventListener('click', () => {
                 if (!this.sidebar) return;
+                if (window.TermixMobile) {
+                    window.TermixMobile.setNavigation(this.sidebar.classList.contains('collapsed'));
+                    return;
+                }
                 this.sidebar.style.transition = '';
                 const willExpand = this.sidebar.classList.contains('collapsed');
                 if (willExpand) {
@@ -1193,6 +1202,7 @@ const TabManager = {
     },
 
     splitPaneWithTab(tabId, targetPaneId, zone) {
+        if (window.TermixAndroid) return;
         const tab = this.tabs.find(t => t.id === tabId);
         const targetPane = this.panes.get(targetPaneId);
         if (!tab || !targetPane) return;
@@ -1324,7 +1334,7 @@ const TabManager = {
         const tabEl = document.createElement('div');
         tabEl.className = 'tab';
         tabEl.dataset.id = tab.id;
-        tabEl.draggable = true;
+        tabEl.draggable = !window.TermixAndroid;
         tabEl.title = tab.title;
 
         const iconEl = document.createElement('i');
@@ -1348,8 +1358,10 @@ const TabManager = {
         if (tab.closable) {
             const closeEl = document.createElement('i');
             closeEl.className = 'tab-close fa-solid fa-xmark';
+            if (window.TermixMobile) window.TermixMobile.makeButton(closeEl, `Close ${tab.title}`);
             tabEl.appendChild(closeEl);
         }
+        if (window.TermixMobile) window.TermixMobile.makeButton(tabEl, tab.title);
 
         tabEl.addEventListener('dragstart', (e) => {
             tabEl.classList.add('dragging');
@@ -1453,6 +1465,10 @@ const TabManager = {
 
     updateSidebarState() {
         if (!this.sidebar) return;
+        if (window.TermixAndroid) {
+            if (this.sidebarToggle) this.sidebarToggle.style.display = 'flex';
+            return;
+        }
 
         // If split screen is active (more than 1 pane), do not auto-toggle sidebar
         if (this.panes && this.panes.size > 1) {
@@ -1782,7 +1798,8 @@ const ModuleLoader = {
 
             const html = await response.text();
             this.container.innerHTML = html;
-            
+            if (window.TermixMobile) window.TermixMobile.applyCapabilities(this.container);
+
             if (this.moduleScript) {
                 this.moduleScript.remove();
             }
@@ -1800,7 +1817,7 @@ const ModuleLoader = {
 };
 window.ModuleLoader = ModuleLoader;
 
-document.addEventListener('DOMContentLoaded', () => {
+function bootTermix() {
     if (window.ThemeManager) window.ThemeManager.init();
     Drawer.init();
     AppNotify.init();
@@ -1813,6 +1830,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (window.AiManager) window.AiManager.init();
     if (window.ProfileManager) window.ProfileManager.init();
     TerminalLauncher.init();
+    if (window.TermixMobile) window.TermixMobile.init();
 
     window.addEventListener('beforeunload', () => {
         if (window.TabManager && Array.isArray(window.TabManager.tabs)) {
@@ -1825,4 +1843,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
     });
-});
+}
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootTermix, { once: true });
+else bootTermix();

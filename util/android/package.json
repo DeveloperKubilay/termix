@@ -1,0 +1,20 @@
+{
+  "name": "termix-android-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Portable backend and locally bundled browser assets for Termix Android",
+  "engines": {
+    "node": ">=18.20.4"
+  },
+  "dependencies": {
+    "@fontsource/jetbrains-mono": "5.2.8",
+    "@fortawesome/fontawesome-free": "6.7.2",
+    "markdown-it": "14.3.2",
+    "ssh2": "1.17.0",
+    "tar": "7.5.21",
+    "xterm": "5.3.0",
+    "xterm-addon-fit": "0.8.0",
+    "xterm-addon-unicode11": "0.6.0",
+    "xterm-addon-webgl": "0.16.0"
+  }
+}

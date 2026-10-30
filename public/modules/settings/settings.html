@@ -110,7 +110,45 @@
                 </div>
             </div>
 
-            <!-- 2. Update Center -->
+            <!-- 2. Terminal Settings -->
+            <div class="card settings-card" id="terminal-settings-card">
+                <h3 class="card-title">
+                    <i class="fa-solid fa-terminal"></i> Terminal
+                </h3>
+                <div class="settings-inline-pref">
+                    <div class="form-group" style="margin-bottom: 12px;">
+                        <label class="field-label" for="terminal-font-size">Font Size (px)</label>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <input type="number" id="terminal-font-size" min="6" max="36" step="1" value="11" style="width: 100px;">
+                            <span class="card-help" style="margin: 0; font-size: 12px;">Default font size (10-12px on mobile, 14px on desktop).</span>
+                        </div>
+                    </div>
+
+                    <label class="settings-toggle-card" for="terminal-cursor-blink-toggle">
+                        <span class="switch">
+                            <input type="checkbox" id="terminal-cursor-blink-toggle" checked>
+                            <span class="slider"></span>
+                        </span>
+                        <span class="toggle-text">
+                            <span class="toggle-title">Cursor Blinking</span>
+                            <span class="toggle-subtitle">Blink cursor when idle.</span>
+                        </span>
+                    </label>
+
+                    <label class="settings-toggle-card" for="terminal-copy-paste-toggle">
+                        <span class="switch">
+                            <input type="checkbox" id="terminal-copy-paste-toggle" checked>
+                            <span class="slider"></span>
+                        </span>
+                        <span class="toggle-text">
+                            <span class="toggle-title">Copy Selection & Right-Click Paste</span>
+                            <span class="toggle-subtitle">Auto-copy selected text to clipboard.</span>
+                        </span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- 3. Update Center -->
             <div class="card settings-card update-card">
                 <div class="update-header">
                     <div>
