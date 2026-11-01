@@ -620,10 +620,15 @@ h1 {
     min-height: 220px;
 }
 
-.feature-grid,
-.download-grid {
+.feature-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+}
+
+.download-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 18px;
 }
 

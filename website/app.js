@@ -25,6 +25,12 @@ const fallbackRelease = {
             browser_download_url: "https://github.com/DeveloperKubilay/termix/releases/download/v1.0.13/Termix-1.0.13-mac-arm64.dmg",
             size: 139688413,
             download_count: 0
+        },
+        {
+            name: "Termix-1.0.13-android-arm64.apk",
+            browser_download_url: "https://github.com/DeveloperKubilay/termix/releases/download/v1.0.13/Termix-1.0.13-android-arm64.apk",
+            size: 47185920,
+            download_count: 0
         }
     ]
 };
@@ -47,6 +53,12 @@ const platforms = [
         label: "macOS",
         title: "Apple Silicon DMG",
         description: "Direct DMG build for macOS devices with a native desktop install flow."
+    },
+    {
+        id: "android",
+        label: "Android",
+        title: "Standalone APK",
+        description: "Mobile preview for Android 8.0+ devices with full SSH/SFTP and document transfer support."
     }
 ];
 
@@ -97,7 +109,7 @@ function initReveal() {
 }
 
 async function hydrateLatestRelease() {
-    const url = `https://api.github.com/repos/${repo.owner}/${repo.name}/releases/latest`;
+    const url = `https://api.github.com/repos/${repo.owner}/${repo.name}/releases?per_page=10`;
 
     try {
         const response = await fetch(url, {
@@ -111,11 +123,54 @@ async function hydrateLatestRelease() {
         }
 
         const data = await response.json();
-        if (!data || !Array.isArray(data.assets)) {
-            throw new Error("Latest release payload is missing assets.");
+        const releases = Array.isArray(data) ? data : (data && Array.isArray(data.assets) ? [data] : []);
+        if (releases.length === 0) {
+            throw new Error("Release payload contains no releases.");
         }
 
-        renderRelease(data, { source: "live" });
+        const isDesktopAsset = (a) => {
+            const n = String(a && a.name ? a.name : "").toLowerCase();
+            return n.endsWith(".exe") || n.endsWith(".appimage") || n.endsWith(".dmg") || n.includes("-win-") || n.includes("-linux-") || n.includes("-mac-");
+        };
+
+        const isAndroidAsset = (a) => {
+            const n = String(a && a.name ? a.name : "").toLowerCase();
+            return n.endsWith(".apk");
+        };
+
+        const desktopRelease = releases.find((r) => Array.isArray(r.assets) && r.assets.some(isDesktopAsset)) || releases[0];
+        const androidRelease = releases.find((r) => Array.isArray(r.assets) && r.assets.some(isAndroidAsset));
+
+        const combinedAssets = [];
+        const seen = new Set();
+        const primaryRelease = releases[0];
+
+        const addAssets = (rel) => {
+            if (!rel || !Array.isArray(rel.assets)) return;
+            for (const asset of rel.assets) {
+                if (!seen.has(asset.name)) {
+                    seen.add(asset.name);
+                    combinedAssets.push({
+                        ...asset,
+                        release_html_url: rel.html_url
+                    });
+                }
+            }
+        };
+
+        addAssets(desktopRelease);
+        addAssets(androidRelease);
+        addAssets(primaryRelease);
+
+        const composite = {
+            ...primaryRelease,
+            tag_name: desktopRelease.tag_name || primaryRelease.tag_name,
+            html_url: desktopRelease.html_url || primaryRelease.html_url,
+            published_at: desktopRelease.published_at || primaryRelease.published_at,
+            assets: combinedAssets
+        };
+
+        renderRelease(composite, { source: "live" });
     } catch (error) {
         console.warn("Falling back to pinned release:", error);
         renderRelease(fallbackRelease, { source: "fallback" });
@@ -136,7 +191,7 @@ function renderRelease(release, options = {}) {
     if (elements.releaseDate) elements.releaseDate.textContent = published;
     if (elements.releaseStatusDate) elements.releaseStatusDate.textContent = published;
     if (elements.releaseBuilds) {
-        elements.releaseBuilds.textContent = `${availableCount} installer${availableCount === 1 ? "" : "s"}`;
+        elements.releaseBuilds.textContent = `${availableCount} package${availableCount === 1 ? "" : "s"}`;
     }
 
     if (elements.releasePageLink) {
@@ -173,8 +228,8 @@ function renderRelease(release, options = {}) {
 
     if (elements.heroDownloadNote) {
         elements.heroDownloadNote.textContent = recommendedCard.asset
-            ? `${source === "live" ? "Latest stable desktop build resolved automatically." : "Pinned stable desktop build is shown."} ${recommendedCard.asset.name} • ${formatBytes(recommendedCard.asset.size)}.`
-            : `${source === "live" ? "Latest stable release detected." : "Pinned stable release is shown."} Open the release notes to choose the correct installer.`;
+            ? `${source === "live" ? "Latest stable build resolved automatically." : "Pinned stable build is shown."} ${recommendedCard.asset.name} • ${formatBytes(recommendedCard.asset.size)}.`
+            : `${source === "live" ? "Latest stable release detected." : "Pinned stable release is shown."} Open the release notes to choose the correct package.`;
     }
 
     if (elements.downloadGrid) {
@@ -228,6 +283,10 @@ function matchesPlatform(asset, platformId) {
         return name.includes("-mac-") || name.endsWith(".dmg");
     }
 
+    if (platformId === "android") {
+        return name.endsWith(".apk");
+    }
+
     return false;
 }
 
@@ -238,6 +297,10 @@ function scoreAsset(asset, platformId) {
     if (platformId === "windows" && name.endsWith(".exe")) score += 5;
     if (platformId === "linux" && name.endsWith(".appimage")) score += 5;
     if (platformId === "macos" && name.endsWith(".dmg")) score += 5;
+    if (platformId === "android") {
+        if (name.endsWith(".apk")) score += 5;
+        if (name.includes("universal") || name.includes("arm64") || name.includes("preview") || name.includes("release")) score += 3;
+    }
     if (/(x64|x86_64|amd64)/i.test(name)) score += 2;
     if (/(arm64|aarch64)/i.test(name)) score += 2;
 
@@ -249,6 +312,7 @@ function renderCard(card, releaseUrl) {
     const safeTitle = escapeHtml(card.platform.title);
     const safeDescription = escapeHtml(card.platform.description);
     const recommendedBadge = card.recommended ? '<span class="download-badge">Recommended</span>' : "";
+    const cardReleaseUrl = (card.asset && card.asset.release_html_url) || releaseUrl;
 
     if (!card.asset) {
         return `
@@ -264,7 +328,7 @@ function renderCard(card, releaseUrl) {
                 <div class="download-empty">
                     No direct installer was detected for this platform in the latest stable release. Open the release notes to inspect the available assets manually.
                 </div>
-                <a class="button secondary" href="${escapeHtml(releaseUrl)}" target="_blank" rel="noreferrer">Open release notes</a>
+                <a class="button secondary" href="${escapeHtml(cardReleaseUrl)}" target="_blank" rel="noreferrer">Open release notes</a>
             </article>
         `;
     }
@@ -326,6 +390,7 @@ function detectPlatform() {
         .join(" ")
         .toLowerCase();
 
+    if (signature.includes("android")) return "android";
     if (signature.includes("mac")) return "macos";
     if (signature.includes("win")) return "windows";
     if (signature.includes("linux") || signature.includes("x11")) return "linux";
@@ -366,7 +431,9 @@ function extractArch(name) {
     if (/arm64|aarch64/i.test(value)) return "ARM64";
     if (/x86_64|x64|amd64/i.test(value)) return "x64";
     if (/universal/i.test(value)) return "Universal";
-    return "Desktop build";
+    if (/armeabi-v7a|armv7/i.test(value)) return "ARMv7";
+    if (/\.apk$/i.test(value)) return "APK";
+    return "Installer";
 }
 
 function escapeHtml(value) {
