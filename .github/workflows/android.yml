@@ -2,22 +2,6 @@ name: Android APK Preview
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ main ]
-    paths:
-      - 'android/**'
-      - 'util/android/**'
-      - 'public/**'
-      - 'tests/android/**'
-      - '.github/workflows/android.yml'
-  pull_request:
-    branches: [ main ]
-    paths:
-      - 'android/**'
-      - 'util/android/**'
-      - 'public/**'
-      - 'tests/android/**'
-      - '.github/workflows/android.yml'
 
 permissions:
   contents: read
