@@ -56,6 +56,12 @@ Termix Android, masaüstü veya harici köprü sunucusu gerektirmeyen **tamamen 
    ```bash
    npm ci
    ```
+   Android paketlerini ayrı lock dosyasındaki sürümlerle yükleyin. Yerel native
+   eklentiler Android paketine alınmadığından kurulum scriptleri ve isteğe bağlı
+   bağımlılıklar çalıştırılmaz:
+   ```bash
+   npm ci --prefix util/android --ignore-scripts --omit=optional
+   ```
 
 2. Birim ve sözleşme testlerini çalıştırın:
    ```bash
