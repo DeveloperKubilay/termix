@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
-const { Server, utils } = require('../../util/android/node_modules/ssh2');
+const { Server, utils } = require('ssh2');
 const { STATUS_CODE, OPEN_MODE } = utils.sftp;
 
 function createFixture(options = {}) {
