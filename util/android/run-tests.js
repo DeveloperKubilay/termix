@@ -15,8 +15,14 @@ const testFiles = [
     'tests/android/backend-registry.test.js',
     'tests/android/backend-ssh-fixture.test.js',
     'tests/android/backend-transport.test.js',
+    'tests/android/host-trust.test.js',
+    'tests/android/trust-ui.test.js',
     'tests/android/mobile-terminal.test.js',
-    'tests/android/bridge.test.js'
+    'tests/android/settings-ui.test.js',
+    'tests/android/keychain-ui.test.js',
+    'tests/android/bridge.test.js',
+    'tests/android/exit-theme.test.js',
+    'tests/android/transfers.test.js'
 ];
 
 const result = spawnSync(process.execPath, ['--test', ...testFiles], {

@@ -1,7 +1,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { FILES_DIR, DATA_ROOT } = require('../../paths');
+const { FILES_DIR, DATA_ROOT, PROFILES_DIR } = require('../../paths');
 const db = require('../../profile-db');
 const profiles = require('../../profile-manager');
 const defaults = require('../../profile-defaults');
@@ -10,6 +10,7 @@ const { decrypt } = require('../../crypto');
 const { safePath } = require('./sandbox');
 const { HostTrust } = require('./trust');
 const { TerminalSessions } = require('./sessions');
+const { createTransferManager } = require('./transfers');
 
 const STAGING_ROOT = path.join(DATA_ROOT, 'local', 'staging');
 const CAPABILITIES = Object.freeze({ ssh: true, sftp: true, profiles: true, keychain: true, knownHosts: true, snippets: true, local: false, serial: false, mcp: false, updater: false, cloud: false, ai: false, portForwarding: false });
@@ -67,6 +68,64 @@ function keyFiles() {
     return entries;
 }
 
+function isKeyInUseByAnyHost(target) {
+    const relPath = path.relative(FILES_DIR, target);
+    const baseName = path.basename(target);
+    const allHostLists = [
+        { profileName: db.get('name') || 'Current', hosts: db.get('hosts') }
+    ];
+
+    let registry;
+    try {
+        registry = profiles.getProfiles();
+    } catch (err) {
+        return `Cannot safely verify key usage: unable to inspect registered profiles (${err.message || err}).`;
+    }
+
+    const activeId = registry && registry.activeProfileId;
+    const registeredProfiles = (registry && Array.isArray(registry.profiles)) ? registry.profiles : [];
+
+    for (const p of registeredProfiles) {
+        if (!p || !p.id || p.id === activeId) continue;
+        const pPath = path.join(PROFILES_DIR, `${p.id}.json`);
+        try {
+            if (!fs.existsSync(pPath)) {
+                return `Cannot safely verify key usage: profile file for "${p.name || p.id}" not found on disk.`;
+            }
+            const raw = fs.readFileSync(pPath, 'utf8');
+            const data = JSON.parse(raw);
+            if (!data || typeof data !== 'object') {
+                return `Cannot safely verify key usage: invalid data in profile "${p.name || p.id}".`;
+            }
+            allHostLists.push({ profileName: p.name || p.id, hosts: Array.isArray(data.hosts) ? data.hosts : [] });
+        } catch (err) {
+            return `Cannot safely verify key usage: unable to read profile "${p.name || p.id}" (${err.message || err}).`;
+        }
+    }
+
+    for (const { profileName, hosts } of allHostLists) {
+        if (!Array.isArray(hosts)) continue;
+        for (const host of hosts) {
+            if (host && host.certPath) {
+                const cp = String(host.certPath).trim();
+                let matches = false;
+                if (cp === target || cp === relPath || cp === baseName) {
+                    matches = true;
+                } else {
+                    try {
+                        const resolved = path.isAbsolute(cp) ? path.resolve(cp) : safePath(FILES_DIR, cp);
+                        if (resolved === target) matches = true;
+                    } catch (_) {}
+                }
+                if (matches) {
+                    return `Cannot delete key: referenced by saved host "${host.name || host.address || host.id}" in profile "${profileName}".`;
+                }
+            }
+        }
+    }
+    return null;
+}
+
 function createRegistry(emit) {
     let closed = false;
     let activeTransfers = 0;
@@ -76,25 +135,38 @@ function createRegistry(emit) {
                 emit('android:service-state', {
                     terminals: terminals.sessions.size,
                     sftp: sftpControllers.size,
-                    transfers: activeTransfers
+                    transfers: activeTransfers + transfers.getActiveCount()
                 });
             } catch (_) {}
         }
     };
     const trust = new HostTrust(emit);
+    const transfers = createTransferManager(emit, { onCountChange: () => notifyServiceState() });
     const terminals = new TerminalSessions(emit, trust, { onCountChange: () => notifyServiceState() });
     const sftpControllers = new Map();
     const event = { sender: { send: (channel, payload) => { if (!closed) emit(channel, payload); }, isDestroyed: () => closed } };
     const disconnectSftp = async (id) => {
+        transfers.unregisterSession(String(id));
         const controller = sftpControllers.get(String(id));
         if (controller) controller.abort();
         sftpControllers.delete(String(id));
         notifyServiceState();
         return sftp.disconnect(id);
     };
+    const stopActiveConnections = async () => {
+        terminals.stopAll();
+        trust.close();
+        await transfers.cancelAll();
+        for (const controller of sftpControllers.values()) controller.abort();
+        sftpControllers.clear();
+        await sftp.disconnectAll();
+        notifyServiceState();
+        emit('android:all-connections-stopped', {});
+    };
     const closeConnections = async () => {
         terminals.close();
         trust.close();
+        await transfers.cancelAll();
         for (const controller of sftpControllers.values()) controller.abort();
         sftpControllers.clear();
         await sftp.disconnectAll();
@@ -102,7 +174,9 @@ function createRegistry(emit) {
     };
     const handlers = new Map(Object.entries(COMMANDS).map(([channel, command]) => [channel, (...args) => command(FILES_DIR, ...args, event)]));
     handlers.set('android:get-capabilities', () => CAPABILITIES);
-    handlers.set('android:trust-host-key', (payload) => trust.approve(payload));
+    handlers.set('android:transfer-prepare', (payload) => transfers.prepare(payload));
+    handlers.set('android:transfer-cancel', (payload) => transfers.cancel(payload && payload.transferId));
+    handlers.set('android:transfer-status', (payload) => transfers.status(payload && payload.transferId));
     handlers.set('android:download-stage', async (payload = {}) => {
         if (payload && payload.action === 'cleanup' && payload.stageId) {
             try {
@@ -173,6 +247,40 @@ function createRegistry(emit) {
             return { success: true };
         } catch (err) { return { success: false, error: err.message }; }
     });
+    const deleteKeyHandler = async (name) => {
+        try {
+            const target = keyPath(name);
+            let stat;
+            try {
+                stat = fs.lstatSync(target);
+            } catch (err) {
+                if (err.code === 'ENOENT') {
+                    return { success: false, error: 'Key file not found.' };
+                }
+                throw err;
+            }
+            if (stat.isSymbolicLink()) {
+                return { success: false, error: 'Cannot delete symbolic links.' };
+            }
+            if (stat.isDirectory()) {
+                return { success: false, error: 'Cannot delete directories.' };
+            }
+            if (!stat.isFile()) {
+                return { success: false, error: 'Target is not a regular file.' };
+            }
+
+            const inUseReason = isKeyInUseByAnyHost(target);
+            if (inUseReason) {
+                return { success: false, error: inUseReason };
+            }
+
+            await fs.promises.unlink(target);
+            return { success: true };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    };
+    handlers.set('keychain:delete-key-file', deleteKeyHandler);
     handlers.set('sftp:connect', async (hostId) => {
         const hosts = db.get('hosts');
         const stored = (Array.isArray(hosts) ? hosts : []).find((host) => String(host.id) === String(hostId));
@@ -181,7 +289,26 @@ function createRegistry(emit) {
         const sessionId = require('crypto').randomUUID();
         const controller = new AbortController();
         sftpControllers.set(sessionId, controller);
-        const result = await sftp.connect(hostId, { host, sessionId, signal: controller.signal, hostVerifier: trust.verifier(host, { sessionId, signal: controller.signal }) });
+        let result;
+        try {
+            result = await sftp.connect(hostId, {
+                host,
+                sessionId,
+                signal: controller.signal,
+                hostVerifier: trust.verifier(host, { sessionId, signal: controller.signal }),
+                onSessionReady: (sess) => {
+                    transfers.registerSession(sessionId, sess);
+                },
+                onSessionClose: () => {
+                    transfers.unregisterSession(sessionId);
+                }
+            });
+        } catch (err) {
+            controller.abort();
+            sftpControllers.delete(sessionId);
+            notifyServiceState();
+            throw err;
+        }
         if (!result.success || closed) {
             controller.abort();
             sftpControllers.delete(sessionId);
@@ -194,7 +321,7 @@ function createRegistry(emit) {
     });
     handlers.set('sftp:disconnect', disconnectSftp);
     handlers.set('android:stop-all-connections', async () => {
-        await closeConnections();
+        await stopActiveConnections();
         return { success: true };
     });
     const baseCopyItems = handlers.get('sftp:copy-items');
@@ -227,7 +354,8 @@ function createRegistry(emit) {
             if (!['term-input', 'term-resize', 'term-close'].includes(channel)) throw unsupported();
             if (!closed) terminals.send(channel, payload);
         },
-        async close() { closed = true; await closeConnections(); }
+        transfers,
+        async close() { closed = true; await closeConnections(); await transfers.close(); }
     };
 }
 module.exports = { createRegistry, CAPABILITIES };

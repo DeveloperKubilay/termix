@@ -3,7 +3,6 @@
     const aiUrl = document.getElementById('ai-url');
     const aiBody = document.getElementById('ai-body');
     const aiHeaders = document.getElementById('ai-headers');
-    const btnToggleTheme = document.getElementById('btn-toggle-theme');
     const btnDeleteAccount = document.getElementById('btn-delete-account');
     const deleteAccountPanel = document.getElementById('delete-account-panel');
     const deleteAccountMessage = document.getElementById('delete-account-message');
@@ -52,7 +51,6 @@
     let activeProfileName = 'this account';
     let profileCount = 0;
     let updateState = null;
-    let isThemeSaveInProgress = false;
     let isDeleteInProgress = false;
 
     const deleteButtonDefaults = {
@@ -62,7 +60,20 @@
     };
 
     function normalizeUiTheme(theme) {
-        return String(theme || '').trim().toLowerCase() === 'modern' ? 'modern' : 'classic';
+        return 'modern';
+    }
+
+    function isAndroidClient() {
+        return Boolean(window.TermixAndroid);
+    }
+
+    function isCapabilitySupported(name) {
+        if (!isAndroidClient()) return true;
+        return Boolean(
+            window.TermixAndroid
+            && typeof window.TermixAndroid.hasCapability === 'function'
+            && window.TermixAndroid.hasCapability(name)
+        );
     }
 
     let selectedUiTheme = normalizeUiTheme(
@@ -70,31 +81,11 @@
         || (window.ThemeManager ? window.ThemeManager.getCurrentTheme() : 'modern')
     );
 
-    function renderThemeButton() {
-        if (!btnToggleTheme) return;
-        const isClassic = selectedUiTheme === 'classic';
-        btnToggleTheme.innerHTML = isClassic
-            ? '<i class="fa-solid fa-palette"></i> Theme: Classic'
-            : '<i class="fa-solid fa-palette"></i> Theme: Modern';
-    }
-
     function applyUiTheme(theme, options = {}) {
         const next = normalizeUiTheme(theme);
         selectedUiTheme = window.ThemeManager
             ? window.ThemeManager.apply(next, options)
             : next;
-        renderThemeButton();
-    }
-
-    async function persistUiTheme(theme) {
-        if (!window.electronAPI || !window.electronAPI.settings || !window.electronAPI.settings.saveSettings) {
-            return false;
-        }
-
-        await window.electronAPI.settings.saveSettings({
-            uiTheme: normalizeUiTheme(theme)
-        });
-        return true;
     }
 
     function getProfileMeta(type) {
@@ -214,7 +205,7 @@
     }
 
     async function loadUpdateState(initialAutoUpdateEnabled) {
-        if (!window.electronAPI.settings || !window.electronAPI.settings.getUpdateSettings) {
+        if (!isCapabilitySupported('updater') || !window.electronAPI.settings || !window.electronAPI.settings.getUpdateSettings) {
             renderUpdateState({
                 supported: false,
                 autoUpdateEnabled: Boolean(initialAutoUpdateEnabled),
@@ -312,7 +303,6 @@
                 || document.documentElement.getAttribute('data-theme')
             );
             applyUiTheme(selectedUiTheme, { persist: true });
-            renderThemeButton();
             renderDeletePanelMessage();
             renderDeleteButtonState();
             setDeletePanelVisible(false);
@@ -338,7 +328,7 @@
                 try {
                     const termSettings = await window.electronAPI.connection.getSettings();
                     if (termSettings) {
-                        const isMobile = Boolean(window.TermixAndroid);
+                        const isMobile = isAndroidClient();
                         const fontSizeInput = document.getElementById('terminal-font-size');
                         if (fontSizeInput) {
                             const current = isMobile
@@ -390,31 +380,6 @@
             window.notifyUser('Failed to open config file: ' + err.message, 'error');
         }
     });
-
-    if (btnToggleTheme) {
-        btnToggleTheme.addEventListener('click', async () => {
-            if (isThemeSaveInProgress) return;
-
-            const previousTheme = selectedUiTheme;
-            const next = selectedUiTheme === 'classic' ? 'modern' : 'classic';
-            applyUiTheme(next, { persist: true });
-
-            isThemeSaveInProgress = true;
-            btnToggleTheme.style.pointerEvents = 'none';
-            btnToggleTheme.style.opacity = '0.78';
-
-            try {
-                await persistUiTheme(next);
-            } catch (err) {
-                applyUiTheme(previousTheme, { persist: true });
-                window.notifyUser('Theme save failed: ' + err.message, 'error');
-            } finally {
-                isThemeSaveInProgress = false;
-                btnToggleTheme.style.pointerEvents = 'auto';
-                btnToggleTheme.style.opacity = '1';
-            }
-        });
-    }
 
     if (btnDeleteAccount) {
         btnDeleteAccount.addEventListener('click', () => {
@@ -522,59 +487,67 @@
 
     document.getElementById('btn-save-settings').addEventListener('click', async function () {
         const btn = this;
-        const aiUrlWrapper = aiUrl.parentElement;
-        aiUrlWrapper.style.borderColor = 'var(--border)';
-        aiBody.style.borderColor = 'var(--border)';
-        aiHeaders.style.borderColor = 'var(--border)';
+        const isMobile = isAndroidClient();
+        const supportsAi = isCapabilitySupported('ai');
 
-        let urlVal = aiUrl.value.trim();
-        if (urlVal && !/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(urlVal)) {
-            urlVal = `http://${urlVal}`;
-            aiUrl.value = urlVal;
-        }
+        let aiSettingsPayload = null;
 
-        if (urlVal) {
-            try {
-                new URL(urlVal);
-            } catch (_) {
-                aiUrlWrapper.style.borderColor = '#ff4444';
-                return;
+        if (supportsAi) {
+            const aiUrlWrapper = aiUrl ? aiUrl.parentElement : null;
+            if (aiUrlWrapper) aiUrlWrapper.style.borderColor = 'var(--border)';
+            if (aiBody) aiBody.style.borderColor = 'var(--border)';
+            if (aiHeaders) aiHeaders.style.borderColor = 'var(--border)';
+
+            let urlVal = aiUrl ? aiUrl.value.trim() : '';
+            if (urlVal && !/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(urlVal)) {
+                urlVal = `http://${urlVal}`;
+                if (aiUrl) aiUrl.value = urlVal;
             }
-        }
 
-        let body = {};
-        const bodyVal = aiBody.value.trim();
-        if (bodyVal) {
-            try {
-                body = JSON.parse(bodyVal);
-            } catch (_) {
-                aiBody.style.borderColor = '#ff4444';
-                return;
+            if (urlVal) {
+                try {
+                    new URL(urlVal);
+                } catch (_) {
+                    if (aiUrlWrapper) aiUrlWrapper.style.borderColor = '#ff4444';
+                    return;
+                }
             }
-        } else {
-            aiBody.value = '{}';
-        }
 
-        let headers = {};
-        const hVal = aiHeaders.value.trim();
-        if (hVal) {
-            try {
-                headers = JSON.parse(hVal);
-            } catch (_) {
-                aiHeaders.style.borderColor = '#ff4444';
-                return;
+            let body = {};
+            const bodyVal = aiBody ? aiBody.value.trim() : '';
+            if (bodyVal) {
+                try {
+                    body = JSON.parse(bodyVal);
+                } catch (_) {
+                    if (aiBody) aiBody.style.borderColor = '#ff4444';
+                    return;
+                }
+            } else if (aiBody) {
+                aiBody.value = '{}';
             }
-        } else {
-            aiHeaders.value = '{}';
-        }
 
-        const settings = {
-            ai: {
-                method: aiMethod.value,
+            let headers = {};
+            const hVal = aiHeaders ? aiHeaders.value.trim() : '';
+            if (hVal) {
+                try {
+                    headers = JSON.parse(hVal);
+                } catch (_) {
+                    if (aiHeaders) aiHeaders.style.borderColor = '#ff4444';
+                    return;
+                }
+            } else if (aiHeaders) {
+                aiHeaders.value = '{}';
+            }
+
+            aiSettingsPayload = {
+                method: aiMethod ? aiMethod.value : 'GET',
                 url: urlVal,
                 body,
                 headers
-            },
+            };
+        }
+
+        const settings = {
             sftpSettings: {
                 confirmOverwriteOnConflict: sftpOverwriteConfirmToggle
                     ? Boolean(sftpOverwriteConfirmToggle.checked)
@@ -592,6 +565,10 @@
             uiTheme: selectedUiTheme
         };
 
+        if (supportsAi && aiSettingsPayload) {
+            settings.ai = aiSettingsPayload;
+        }
+
         const originalText = btn.innerHTML;
         const originalBg = btn.style.background;
         const originalColor = btn.style.color;
@@ -604,29 +581,56 @@
             const fontSizeInput = document.getElementById('terminal-font-size');
             const cursorBlinkToggle = document.getElementById('terminal-cursor-blink-toggle');
             const copyPasteToggle = document.getElementById('terminal-copy-paste-toggle');
-            if (fontSizeInput && window.electronAPI && window.electronAPI.connection && window.electronAPI.connection.saveSettings) {
-                const rawSize = Number(fontSizeInput.value);
-                const isMobile = Boolean(window.TermixAndroid);
-                const fontSizeVal = Number.isFinite(rawSize) && rawSize >= 6 && rawSize <= 48
-                    ? Math.round(rawSize)
-                    : (isMobile ? 11 : 14);
-                try {
-                    const payload = {
-                        cursorBlink: cursorBlinkToggle ? Boolean(cursorBlinkToggle.checked) : true,
-                        rightClickCopyPaste: copyPasteToggle ? Boolean(copyPasteToggle.checked) : true
-                    };
-                    if (isMobile) {
-                        payload.mobileFontSize = fontSizeVal;
-                    } else {
-                        payload.fontSize = fontSizeVal;
+            const rawSize = fontSizeInput ? Number(fontSizeInput.value) : NaN;
+            const fontSizeVal = Number.isFinite(rawSize) && rawSize >= 6 && rawSize <= 48
+                ? Math.round(rawSize)
+                : (isMobile ? 11 : 14);
+
+            const terminalPayload = {
+                cursorBlink: cursorBlinkToggle ? Boolean(cursorBlinkToggle.checked) : true,
+                rightClickCopyPaste: copyPasteToggle ? Boolean(copyPasteToggle.checked) : true
+            };
+            if (isMobile) {
+                terminalPayload.mobileFontSize = fontSizeVal;
+            } else {
+                terminalPayload.fontSize = fontSizeVal;
+            }
+
+            if ((fontSizeInput || isMobile) && window.electronAPI && window.electronAPI.connection && window.electronAPI.connection.saveSettings) {
+                if (isMobile) {
+                    const termResult = await window.electronAPI.connection.saveSettings(terminalPayload);
+                    if (termResult && termResult.success === false) {
+                        throw new Error((termResult && (termResult.message || termResult.error)) || 'Failed to save terminal settings');
                     }
-                    await window.electronAPI.connection.saveSettings(payload);
-                } catch (termSaveErr) {
-                    console.warn('Failed to save terminal settings:', termSaveErr);
+                } else {
+                    try {
+                        await window.electronAPI.connection.saveSettings(terminalPayload);
+                    } catch (termSaveErr) {
+                        console.warn('Failed to save terminal settings:', termSaveErr);
+                    }
                 }
             }
 
-            await window.electronAPI.settings.saveSettings(settings);
+            const saveResult = await window.electronAPI.settings.saveSettings(settings);
+            if (saveResult && saveResult.success === false) {
+                throw new Error((saveResult && (saveResult.message || saveResult.error)) || 'Failed to save settings');
+            }
+
+            if (isMobile) {
+                try {
+                    const EventConstructor = typeof CustomEvent === 'function'
+                        ? CustomEvent
+                        : (window.CustomEvent || null);
+                    if (EventConstructor && typeof window.dispatchEvent === 'function') {
+                        window.dispatchEvent(new EventConstructor('termix:terminal-settings-changed', {
+                            detail: terminalPayload
+                        }));
+                    }
+                } catch (evtErr) {
+                    console.warn('Failed to dispatch terminal settings event:', evtErr);
+                }
+            }
+
             btn.innerHTML = '<i class="fa-solid fa-check"></i> Saved!';
             btn.style.background = '#a6e3a1';
             btn.style.color = '#1e1e2e';
@@ -863,7 +867,6 @@
     }
 
     setupUpdaterEventBridge();
-    renderThemeButton();
     renderDeleteButtonState();
     loadSettings();
     loadMcpSettings();

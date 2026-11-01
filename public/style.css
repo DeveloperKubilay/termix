@@ -1,17 +1,4 @@
 :root {
-    --bg-dark: #1e1e2e;
-    --bg-sidebar: #181825;
-    --bg-card: #313244;
-    --text-main: #cdd6f4;
-    --text-muted: #a6adc8;
-    --accent: #89b4fa;
-    --border: #45475a;
-    --text-color: var(--text-main);
-    --border-color: var(--border);
-    --accent-color: var(--accent);
-}
-
-:root[data-theme="modern"] {
     --bg-dark: #1a1f2b;
     --bg-sidebar: #141a25;
     --bg-card: #2a3142;
@@ -27,6 +14,9 @@
     --bg-glow-soft: rgba(127, 178, 255, 0.12);
     --shadow-soft: 0 10px 26px rgba(7, 11, 19, 0.28);
     --shadow-card: 0 18px 36px rgba(7, 11, 19, 0.4);
+    --text-color: var(--text-main);
+    --border-color: var(--border);
+    --accent-color: var(--accent);
 }
 
 * {

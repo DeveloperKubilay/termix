@@ -95,6 +95,19 @@ function createFixture(options = {}) {
         sftp.on('RENAME', (id, from, to) => operation(id, () => { fs.renameSync(resolveRemote(from), resolveRemote(to)); sftp.status(id, STATUS_CODE.OK); }));
         sftp.on('SETSTAT', (id) => sftp.status(id, STATUS_CODE.OK));
         sftp.on('FSETSTAT', (id) => sftp.status(id, STATUS_CODE.OK));
+        sftp.on('EXTENDED', (id, type, data) => operation(id, () => {
+            if (!options.disablePosixRename && type === 'posix-rename@openssh.com') {
+                let p = 0;
+                const oldLen = data.readUInt32BE(p); p += 4;
+                const oldPath = data.toString('utf8', p, p + oldLen); p += oldLen;
+                const newLen = data.readUInt32BE(p); p += 4;
+                const newPath = data.toString('utf8', p, p + newLen);
+                fs.renameSync(resolveRemote(oldPath), resolveRemote(newPath));
+                sftp.status(id, STATUS_CODE.OK);
+                return;
+            }
+            sftp.status(id, STATUS_CODE.OP_UNSUPPORTED);
+        }));
         sftp.on('close', () => { for (const entry of handles.values()) { if (entry.fd !== undefined) { try { fs.closeSync(entry.fd); } catch (_) {} } } handles.clear(); });
     }
 

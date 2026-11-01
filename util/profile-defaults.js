@@ -81,7 +81,7 @@ const DEFAULT_MCP_SETTINGS = {
     allowExistingSessions: true
 };
 
-const UI_THEMES = ['classic', 'modern'];
+const UI_THEMES = ['modern'];
 const DEFAULT_UI_THEME = 'modern';
 const LEGACY_THEME_MAP = {
     ocean: 'modern',

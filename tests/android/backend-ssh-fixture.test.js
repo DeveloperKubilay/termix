@@ -53,7 +53,7 @@ test('real SSH terminal and SFTP with host trust work against isolated fixture',
             }, { clientRequestId: 'req-ssh-1' }]
         });
 
-        // 2. Wait for connected status directly (auto-trusted host key)
+        // First use pins the disposable fixture automatically, without a prompt.
         let connRes = null;
         for (let i = 0; i < 40; i++) {
             connRes = responses.get('conn-1');
@@ -62,6 +62,7 @@ test('real SSH terminal and SFTP with host trust work against isolated fixture',
         }
         assert.ok(connRes && connRes.result, 'SSH connection failed');
         assert.equal(connRes.result.status, 'connected');
+        assert.equal(events.some(event => event.channel === 'android:host-key'), false);
         const sessionId = connRes.result.sessionId;
 
         // 5. Send terminal input and verify data echoed
@@ -153,6 +154,57 @@ test('real SSH terminal and SFTP with host trust work against isolated fixture',
         assert.ok(listAfterRename && listAfterRename.result && listAfterRename.result.success);
         assert.ok(listAfterRename.result.entries.some((e) => e.name === 'moved-hello.txt'));
         assert.ok(!listAfterRename.result.entries.some((e) => e.name === 'hello.txt'));
+
+        // 8b. Test server-side cross-directory move via destinationPath
+        client.send({
+            type: 'request',
+            id: 'sftp-mkdir-sub',
+            channel: 'sftp:create-directory',
+            args: [{ side: 'remote', sessionId: sftpSessionId, parentPath: '/', name: 'sub' }]
+        });
+        for (let i = 0; i < 40; i++) {
+            if (responses.has('sftp-mkdir-sub')) break;
+            await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+
+        client.send({
+            type: 'request',
+            id: 'sftp-move-destpath',
+            channel: 'sftp:rename-item',
+            args: [{
+                side: 'remote',
+                sessionId: sftpSessionId,
+                path: '/moved-hello.txt',
+                destinationPath: '/sub/server-moved.txt'
+            }]
+        });
+        for (let i = 0; i < 40; i++) {
+            if (responses.has('sftp-move-destpath')) break;
+            await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        const moveDestRes = responses.get('sftp-move-destpath');
+        assert.ok(moveDestRes && moveDestRes.result && moveDestRes.result.success, 'SFTP server-side move failed');
+        assert.equal(moveDestRes.result.newPath, '/sub/server-moved.txt');
+
+        // Move back to root
+        client.send({
+            type: 'request',
+            id: 'sftp-move-back',
+            channel: 'sftp:rename-item',
+            args: [{
+                side: 'remote',
+                sessionId: sftpSessionId,
+                path: '/sub/server-moved.txt',
+                destinationPath: '/moved-hello.txt'
+            }]
+        });
+        for (let i = 0; i < 40; i++) {
+            if (responses.has('sftp-move-back')) break;
+            await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        const moveBackRes = responses.get('sftp-move-back');
+        assert.ok(moveBackRes && moveBackRes.result && moveBackRes.result.success, 'SFTP server-side move back failed');
+        assert.equal(moveBackRes.result.newPath, '/moved-hello.txt');
 
         // 9. Test streaming remote-to-local staging copy (copyItems)
         const stagingDir = path.join(root, 'local', 'staging', 'fixture-stage');

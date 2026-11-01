@@ -1825,6 +1825,101 @@
         return true;
     }
 
+    async function executeMoveToPane(payload, destinationPaneKey, destinationPathOverride, successMessage) {
+        const destinationPane = getPaneState(destinationPaneKey);
+        if (!destinationPane) return false;
+
+        const destinationSide = getPaneSide(destinationPane);
+        const destinationPath = destinationPathOverride || destinationPane.path;
+        if (!destinationPath) {
+            setStatus('Destination folder is required.', 'error');
+            return false;
+        }
+
+        const sourceSide = payload.sourceSide;
+        const sourceSessionId = payload.sourceSessionId;
+        const destinationSessionId = destinationSide === 'remote' ? destinationPane.sessionId : null;
+
+        if (payload.items.some((item) => isPathInsideOrSame(destinationPath, item.path))) {
+            setStatus('Cannot move a folder into itself.', 'error');
+            return false;
+        }
+
+        if (state.preferences.confirmOverwriteOnConflict) {
+            try {
+                const dryRunResult = await sftpApi.copyItems({
+                    sourceSide,
+                    destinationSide,
+                    sourceSessionId,
+                    destinationSessionId,
+                    destinationPath,
+                    items: payload.items,
+                    dryRun: true,
+                    conflictPolicy: 'error'
+                });
+                if (dryRunResult && dryRunResult.hasConflicts) {
+                    const decision = await confirmOverwriteConflicts(dryRunResult.conflicts);
+                    if (!decision || !decision.confirmed) {
+                        setStatus('Move cancelled.', 'info');
+                        return false;
+                    }
+                    if (decision.checked) {
+                        try {
+                            await persistOverwritePromptPreference(false);
+                        } catch (prefErr) {
+                            console.warn('Failed to persist overwrite prompt setting:', prefErr);
+                        }
+                    }
+                }
+            } catch (err) {
+                console.warn('Move conflict check warning:', err);
+            }
+        }
+
+        setStatus('Moving item(s)...', 'info');
+
+        let movedCount = 0;
+        for (const item of payload.items) {
+            const itemName = item.name || getItemNameForPath(payload.sourcePaneKey, item.path);
+            let targetItemPath;
+            if (destinationSide === 'local') {
+                const sep = destinationPath.includes('\\') ? '\\' : '/';
+                targetItemPath = destinationPath.endsWith(sep) ? `${destinationPath}${itemName}` : `${destinationPath}${sep}${itemName}`;
+            } else {
+                targetItemPath = destinationPath.endsWith('/') ? `${destinationPath}${itemName}` : `${destinationPath}/${itemName}`;
+            }
+
+            if (item.path === targetItemPath) {
+                continue;
+            }
+
+            const res = await sftpApi.renameItem({
+                side: destinationSide,
+                sessionId: destinationSessionId,
+                path: item.path,
+                destinationPath: targetItemPath,
+                overwrite: true
+            });
+
+            if (!res || res.success === false) {
+                const errMessage = res && res.message ? res.message : 'Failed to move file.';
+                setStatus(`Move failed: ${errMessage}`, 'error');
+                await refreshPane(payload.sourcePaneKey);
+                await refreshPane(destinationPaneKey);
+                return false;
+            }
+            movedCount++;
+        }
+
+        await refreshPane(payload.sourcePaneKey);
+        if (payload.sourcePaneKey !== destinationPaneKey) {
+            await refreshPane(destinationPaneKey);
+        }
+
+        setStatus(successMessage || `${movedCount} item(s) moved.`, 'success');
+        return true;
+    }
+
     async function pasteToPane(key) {
         const destinationPane = getPaneState(key);
         if (!destinationPane) return;
@@ -1851,6 +1946,24 @@
                     return;
                 }
             }
+        }
+
+        const destinationSide = getPaneSide(destinationPane);
+        const sourceSide = clipboardSnapshot.sourceSide;
+        const sourceSessionId = clipboardSnapshot.sourceSessionId;
+        const destinationSessionId = destinationSide === 'remote' ? destinationPane.sessionId : null;
+
+        const isSameSessionRemote = isCut && sourceSide === 'remote' && destinationSide === 'remote'
+            && Boolean(sourceSessionId && destinationSessionId && sourceSessionId === destinationSessionId);
+        const isSameLocal = isCut && sourceSide === 'local' && destinationSide === 'local';
+        const canAtomicMove = isSameSessionRemote || isSameLocal;
+
+        if (canAtomicMove) {
+            const success = await executeMoveToPane(clipboardSnapshot, key, null, `${clipboardSnapshot.items.length} item(s) moved.`);
+            if (success) {
+                state.clipboard = null;
+            }
+            return;
         }
 
         const success = await executeCopyToPane(clipboardSnapshot, key, null, `${clipboardSnapshot.items.length} item(s) pasted.`);
@@ -2630,70 +2743,14 @@
         const fileName = getItemNameForPath(paneKey, targetPath) || 'download';
         setStatus(`Indirme hazirlaniyor: ${fileName}...`, 'info');
 
-        let stageInfo = null;
         try {
-            if (!window.TermixAndroid || typeof window.TermixAndroid.invoke !== 'function') {
-                throw new Error('Android yerel disa aktarma koprusu bulunamadi.');
-            }
-
-            try {
-                stageInfo = await window.TermixAndroid.invoke('android:download-stage');
-            } catch (err) {
-                throw new Error(`Hazirlama dizini olusturulamadi: ${err && err.message ? err.message : err}`);
-            }
-
-            if (!stageInfo || !stageInfo.success || !stageInfo.stageDir) {
-                throw new Error(stageInfo && stageInfo.message ? stageInfo.message : 'Hazirlama (staging) dizini alinamadi.');
-            }
-
-            const stageDir = stageInfo.stageDir;
-            const stagedFilePath = `${stageDir.replace(/[/\\]+$/, '')}/${fileName}`;
-
-            setStatus(`Uzak sunucudan aliniyor: ${fileName}...`, 'info');
-            const copyResult = await sftpApi.copyItems({
-                sourceSide: 'remote',
-                destinationSide: 'local',
-                sourceSessionId: pane.sessionId,
-                destinationSessionId: null,
-                destinationPath: stageDir,
-                items: [{ path: targetPath, isDirectory: false }],
-                conflictPolicy: 'overwrite'
+            const result = await runAndroidDocumentTransfer({
+                direction: 'download', sessionId: pane.sessionId, remotePath: targetPath, name: fileName
             });
-
-            if (!copyResult || !copyResult.success) {
-                throw new Error(copyResult && copyResult.message ? copyResult.message : 'Hazirlama kopyalamasi basarisiz oldu.');
-            }
-
-            setStatus(`Cihaza kaydediliyor: ${fileName}...`, 'info');
-            let exportResult = null;
-            if (window.TermixAndroid && typeof window.TermixAndroid.invoke === 'function') {
-                exportResult = await window.TermixAndroid.invoke('native:export-file', {
-                    localPath: stagedFilePath,
-                    name: fileName
-                });
-            } else {
-                throw new Error('Android yerel disa aktarma koprusu bulunamadi.');
-            }
-
-            if (exportResult && exportResult.cancelled) {
-                setStatus('Indirme iptal edildi.', 'info');
-            } else if (exportResult && exportResult.success) {
-                const bytes = exportResult.bytes ? ` (${formatSize(exportResult.bytes)})` : '';
-                setStatus(`Indirildi: ${fileName}${bytes}`, 'success');
-            } else {
-                throw new Error('Disa aktarma tamamlanamadi.');
-            }
+            if (result.cancelled) setStatus('Indirme iptal edildi.', 'info');
+            else setStatus(`Indirildi: ${fileName} (${formatSize(result.bytes)})`, 'success');
         } catch (err) {
             setStatus(`Indirme basarisiz (${fileName}): ${err.message}`, 'error');
-        } finally {
-            if (stageInfo && stageInfo.stageId && window.TermixAndroid && typeof window.TermixAndroid.invoke === 'function') {
-                try {
-                    await window.TermixAndroid.invoke('android:download-stage', {
-                        action: 'cleanup',
-                        stageId: stageInfo.stageId
-                    });
-                } catch (_) {}
-            }
         }
     }
 
@@ -3198,6 +3255,21 @@
                     return;
                 }
 
+                const destPaneState = getPaneState(key);
+                const destinationSide = destPaneState ? getPaneSide(destPaneState) : null;
+                const sourceSide = payload.sourceSide;
+                const sourceSessionId = payload.sourceSessionId;
+                const destinationSessionId = destinationSide === 'remote' && destPaneState ? destPaneState.sessionId : null;
+                const isSameSessionRemote = isMove && sourceSide === 'remote' && destinationSide === 'remote'
+                    && Boolean(sourceSessionId && destinationSessionId && sourceSessionId === destinationSessionId);
+                const isSameLocal = isMove && sourceSide === 'local' && destinationSide === 'local';
+                const canAtomicMove = isSameSessionRemote || isSameLocal;
+
+                if (canAtomicMove) {
+                    await executeMoveToPane(payload, key, destinationPath, 'Move completed.');
+                    return;
+                }
+
                 const success = await executeCopyToPane(
                     payload,
                     key,
@@ -3555,6 +3627,96 @@
         window.addEventListener('blur', blurHandle);
     }
 
+    const androidTransfers = new Map();
+    const pendingDirectionPickers = new Set();
+
+    function showAndroidTransfer(payload) {
+        if (!payload?.transferId || !['upload', 'download'].includes(payload.direction)) return;
+        const terminal = ['completed', 'failed', 'cancelled'].includes(payload.state);
+        const transferUi = getTransferUi(payload.direction);
+        if (!transferUi?.root) return;
+        let entry = androidTransfers.get(payload.transferId);
+        if (!entry && terminal) return;
+        if (!entry) {
+            entry = { ...payload };
+            androidTransfers.set(payload.transferId, entry);
+        }
+        Object.assign(entry, payload);
+        transferUi.root.hidden = terminal;
+        if (transferUi.label) transferUi.label.textContent = `${getTransferDirectionLabel(payload.direction)}: ${entry.name || ''}`;
+        const percent = payload.totalBytes > 0 ? clampPercent(payload.bytes / payload.totalBytes * 100) : 0;
+        if (transferUi.text) transferUi.text.textContent = payload.totalBytes > 0 ? `${Math.round(percent)}%` : formatSize(payload.bytes || 0);
+        if (transferUi.fill) transferUi.fill.style.width = `${percent}%`;
+        let cancel = transferUi.root.querySelector('.android-transfer-cancel');
+        if (!cancel) {
+            cancel = document.createElement('button');
+            cancel.className = 'btn android-transfer-cancel';
+            cancel.type = 'button';
+            cancel.textContent = 'Cancel';
+            cancel.addEventListener('click', async () => {
+                const transferId = cancel.dataset.transferId;
+                cancel.disabled = true;
+                const outcomes = await Promise.allSettled([
+                    window.TermixAndroid.invoke('android:transfer-cancel', { transferId }),
+                    window.TermixAndroid.invoke('native:transfer-cancel', { transferId })
+                ]);
+                const failure = outcomes.find(result => result.status === 'rejected' || (result.status === 'fulfilled' && result.value?.success === false));
+                if (failure) {
+                    const msg = failure.status === 'rejected' ? failure.reason.message : (failure.value?.message || 'Iptal basarisiz');
+                    setStatus(`Iptal/temizlik tamamlanamadi: ${msg}`, 'error');
+                }
+            });
+            transferUi.root.appendChild(cancel);
+        }
+        cancel.dataset.transferId = payload.transferId;
+        cancel.disabled = terminal;
+        if (terminal) {
+            androidTransfers.delete(payload.transferId);
+            if (payload.error) setStatus(String(payload.error), 'error');
+        }
+    }
+
+    async function runAndroidDocumentTransfer(options) {
+        if (pendingDirectionPickers.has(options.direction) || [...androidTransfers.values()].some(item => item.direction === options.direction)) {
+            throw new Error('Bu yonde zaten bir aktarim var. Tamamlanmasini bekleyin.');
+        }
+        pendingDirectionPickers.add(options.direction);
+        const android = window.TermixAndroid;
+        let documentHandle;
+        let prepared;
+        let succeeded = false;
+        try {
+            documentHandle = await android.invoke(options.direction === 'upload'
+                ? 'native:pick-upload-file' : 'native:create-download-document', { name: options.name });
+            if (documentHandle?.cancelled) return { cancelled: true };
+            if (!documentHandle?.success || !documentHandle.handle) throw new Error('Dosya secimi basarisiz.');
+            const name = documentHandle.name || options.name || 'upload';
+            prepared = await android.invoke('android:transfer-prepare', {
+                ...options, name, size: documentHandle.size ?? null
+            });
+            if (!prepared?.success || !prepared.transferId) throw new Error(prepared?.message || 'Aktarim hazirlanamadi.');
+            showAndroidTransfer({ ...prepared, name, bytes: 0, totalBytes: prepared.size, state: 'prepared' });
+            const result = await android.invoke('native:transfer-run', { ...prepared, handle: documentHandle.handle });
+            if (!result?.success) throw new Error(result?.message || 'Aktarim tamamlanamadi.');
+            succeeded = true;
+            return { ...result, name };
+        } finally {
+            pendingDirectionPickers.delete(options.direction);
+            if (!succeeded && documentHandle?.handle) {
+                const results = await Promise.allSettled([
+                    android.invoke('native:transfer-cancel', { handle: documentHandle.handle, transferId: prepared?.transferId }),
+                    ...(prepared?.transferId ? [android.invoke('android:transfer-cancel', { transferId: prepared.transferId })] : [])
+                ]);
+                const failed = results.find(result => result.status === 'rejected' || (result.status === 'fulfilled' && result.value?.success === false));
+                if (failed) {
+                    const msg = failed.status === 'rejected' ? failed.reason.message : (failed.value?.message || 'Bilinmeyen temizlik hatasi');
+                    window.notifyUser?.(`Yarim dosya temizligi tamamlanamadi: ${msg}`, 'error');
+                }
+            }
+            if (prepared?.transferId) showAndroidTransfer({ ...prepared, state: succeeded ? 'completed' : 'failed' });
+        }
+    }
+
     function setupCopyProgressBridge() {
         if (!window.__termixSftpCopyProgressBridgeReady) {
             window.__termixSftpCopyProgressBridgeReady = true;
@@ -3563,6 +3725,22 @@
                     window.__termixSftpCopyProgressHandler(payload);
                 }
             });
+        }
+
+        if (window.TermixAndroid) {
+            if (!window.__termixAndroidTransferBridgeReady) {
+                window.__termixAndroidTransferBridgeReady = true;
+                window.electronAPI.on('android:transfer-progress', (_event, payload) => {
+                    window.__termixAndroidTransferHandler?.(payload);
+                });
+            }
+            window.__termixAndroidTransferHandler = payload => {
+                if (document.getElementById('sftp-pane-left')) showAndroidTransfer(payload);
+            };
+            window.TermixAndroid.invoke('android:transfer-status').then(result => {
+                const transfers = Array.isArray(result) ? result : result?.transfers || [];
+                transfers.forEach(showAndroidTransfer);
+            }).catch(error => setStatus(`Aktarim durumu alinamadi: ${error.message}`, 'error'));
         }
 
         window.__termixSftpCopyProgressHandler = (payload) => {
@@ -3602,50 +3780,16 @@
                     return;
                 }
 
-                // If running on Android, use native streaming document picker with atomic staging
                 if (window.TermixAndroid && typeof window.TermixAndroid.invoke === 'function') {
-                    let pickResult = null;
                     try {
-                        pickResult = await window.TermixAndroid.invoke('native:pick-upload-file');
-                        if (!pickResult || pickResult.cancelled) {
-                            return;
-                        }
-                        if (!pickResult.success || !pickResult.localPath) {
-                            throw new Error(pickResult && pickResult.message ? pickResult.message : 'Dosya secimi basarisiz.');
-                        }
-
-                        const fileName = pickResult.name || 'upload';
-                        const currentPath = pane.path || '/';
-                        setStatus(`Yukleniyor: ${fileName}...`, 'info');
-
-                        const copyResult = await sftpApi.copyItems({
-                            sourceSide: 'local',
-                            destinationSide: 'remote',
-                            sourceSessionId: null,
-                            destinationSessionId: pane.sessionId,
-                            destinationPath: currentPath,
-                            items: [{ path: pickResult.localPath, isDirectory: false }],
-                            conflictPolicy: 'overwrite'
+                        const result = await runAndroidDocumentTransfer({
+                            direction: 'upload', sessionId: pane.sessionId, remotePath: pane.path || '/'
                         });
-
-                        if (!copyResult || !copyResult.success) {
-                            throw new Error(copyResult && copyResult.message ? copyResult.message : 'Yukleme basarisiz oldu.');
-                        }
-
-                        const sizeStr = pickResult.bytes ? ` (${formatSize(pickResult.bytes)})` : '';
-                        setStatus(`Yuklendi: ${fileName}${sizeStr}`, 'success');
+                        if (result.cancelled) return;
+                        setStatus(`Yuklendi: ${result.name} (${formatSize(result.bytes)})`, 'success');
                         await refreshPane('right', pane.path);
                     } catch (err) {
                         setStatus(`Yukleme basarisiz: ${err.message}`, 'error');
-                    } finally {
-                        if (pickResult && pickResult.stageId) {
-                            try {
-                                await window.TermixAndroid.invoke('android:download-stage', {
-                                    action: 'cleanup',
-                                    stageId: pickResult.stageId
-                                });
-                            } catch (_) {}
-                        }
                     }
                     return;
                 }
@@ -3838,9 +3982,19 @@
         setupCopyProgressBridge();
         bindGlobalShortcuts();
 
+        if (window.electronAPI && typeof window.electronAPI.on === 'function') {
+            window.electronAPI.on('android:all-connections-stopped', async () => {
+                await disconnectPane('left', true);
+                await disconnectPane('right', true);
+            });
+        }
+
         const isMobile = Boolean(window.TermixAndroid || document.documentElement.classList.contains('termix-android'));
         if (isMobile) {
             state.panes.right.mode = 'vds';
+            if (window.TermixAndroid && typeof window.TermixAndroid.invoke === 'function') {
+                window.TermixAndroid.invoke('native:request-notifications').catch(() => {});
+            }
         }
         activatePane(isMobile ? 'right' : 'left', false);
         renderAllPanes();

@@ -13,7 +13,7 @@ html.termix-android {
     width: 100%;
     height: var(--android-height, 100dvh);
     min-height: 0;
-    padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    padding: 0;
     margin: 0;
     overscroll-behavior: none;
 }
@@ -186,7 +186,7 @@ html.termix-android {
     right: -110%;
     width: 100%;
     height: var(--android-height, 100dvh);
-    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    padding: 0;
     border-left: 0;
     transition: right 160ms ease;
 }
@@ -194,7 +194,11 @@ html.termix-android {
 .termix-android .drawer-header { flex-shrink: 0; padding: 6px 12px; min-height: 56px; }
 .termix-android .drawer-actions { gap: 2px; }
 .termix-android .drawer-actions > i { display: inline-flex; width: 44px; min-height: 44px; align-items: center; justify-content: center; margin: 0 !important; }
-.termix-android .drawer-content { padding: 16px; min-height: 0; overscroll-behavior: contain; scroll-padding-block: 16px; }
+.termix-android .drawer-content { padding: 8px 16px 16px; min-height: 0; overscroll-behavior: contain; scroll-padding-block: 16px; }
+.termix-android .key-actions { opacity: 1 !important; gap: 8px; }
+.termix-android .key-actions button { min-width: 44px; min-height: 44px; }
+.termix-android .key-item > div:first-child { min-width: 0; overflow-wrap: anywhere; }
+.termix-android .cert-import-item > i { position: static; inset: auto; transform: none; flex-shrink: 0; }
 .termix-android .drawer-content input,
 .termix-android .drawer-content textarea { scroll-margin: 20px; }
 .termix-android .drawer-content .toggle-password { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; right: 0 !important; }
@@ -232,6 +236,33 @@ html.termix-android {
 .termix-android .android-terminal-body .xterm-screen {
     touch-action: none !important;
 }
+.termix-android .android-terminal-body {
+    user-select: none;
+    -webkit-user-select: none;
+    overscroll-behavior: contain;
+}
+.termix-android .android-selection-handle {
+    position: absolute;
+    z-index: 5;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -8px);
+    touch-action: none;
+}
+.termix-android .android-selection-handle[hidden] { display: none; }
+.termix-android .android-selection-handle::after {
+    content: '';
+    position: absolute;
+    top: 8px;
+    left: 12px;
+    width: 20px;
+    height: 24px;
+    background: var(--accent);
+    border: 1px solid var(--bg-dark);
+    border-radius: 0 0 12px 12px;
+}
+.termix-android .android-selection-handle-start { transform: translate(-100%, -8px); }
+.termix-android .android-selection-handle-end { transform: translate(0, -8px); }
 .termix-android .android-terminal-toolbar {
     flex: 0 0 var(--android-toolbar-height);
     height: var(--android-toolbar-height);
@@ -245,6 +276,27 @@ html.termix-android {
 }
 .termix-android .android-terminal-toolbar button { border: 1px solid var(--border); border-radius: 5px; background: var(--bg-card); color: var(--text-main); font-size: 13px; padding: 0 2px; min-width: 0; min-height: 44px; touch-action: none; user-select: none; -webkit-user-select: none; }
 .termix-android .android-terminal-toolbar button[aria-pressed="true"] { background: var(--accent); color: var(--bg-dark); }
+@media (orientation: landscape) {
+    .termix-android .pane-tabbar {
+        height: 38px !important;
+        min-height: 38px !important;
+        max-height: 38px !important;
+    }
+    .termix-android .tab {
+        height: 38px !important;
+        min-height: 38px !important;
+        max-height: 38px !important;
+        padding: 0 8px 0 10px !important;
+    }
+    .termix-android .sidebar-toggle {
+        height: 38px !important;
+        min-height: 38px !important;
+        max-height: 38px !important;
+        width: 38px !important;
+        flex: 0 0 38px !important;
+    }
+    .termix-android .android-terminal-toolbar { display: none !important; }
+}
 .termix-android .android-terminal .xterm-helper-textarea { autocapitalize: off; }
 @media (prefers-reduced-motion: reduce) {
     .termix-android .sidebar, .termix-android .right-drawer { transition: none; }

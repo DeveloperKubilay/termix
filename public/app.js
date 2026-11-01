@@ -56,7 +56,7 @@ const Drawer = {
 window.Drawer = Drawer;
 
 const ThemeManager = {
-    themes: ['classic', 'modern'],
+    themes: ['modern'],
     defaultTheme: 'modern',
     storageKey: 'termix-ui-theme',
     currentTheme: 'modern',
@@ -105,7 +105,7 @@ const ThemeManager = {
             cachedTheme = localStorage.getItem(this.storageKey);
         } catch (_) {}
 
-        this.apply(cachedTheme, { persist: false });
+        this.apply(cachedTheme, { persist: true });
         return this.currentTheme;
     },
 

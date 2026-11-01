@@ -21,7 +21,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** Process-owned Node lifecycle and private, bounded length-prefixed JSON transport. */
+/** Process-owned Node lifecycle, direct document transfer management, and private length-prefixed JSON transport. */
 final class RuntimeController {
     static final int MAX_FRAME = 4 * 1024 * 1024;
     interface Listener {
@@ -30,6 +30,7 @@ final class RuntimeController {
     }
 
     private final Context context;
+    private final DocumentTransfers documentTransfers;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final AtomicBoolean started = new AtomicBoolean();
     private final ThreadPoolExecutor writer = new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS,
@@ -44,7 +45,14 @@ final class RuntimeController {
     private boolean failed;
     private String ready;
 
-    RuntimeController(Context context) { this.context = context.getApplicationContext(); }
+    RuntimeController(Context context) {
+        this.context = context.getApplicationContext();
+        this.documentTransfers = new DocumentTransfers(this.context);
+    }
+
+    DocumentTransfers documentTransfers() {
+        return documentTransfers;
+    }
 
     void start() {
         if (!started.compareAndSet(false, true)) return;
@@ -162,6 +170,7 @@ final class RuntimeController {
     }
 
     private void closeSocket() {
+        documentTransfers.cancelAll();
         main.post(() -> {
             ready = null;
             pending.clear();
@@ -175,6 +184,7 @@ final class RuntimeController {
     }
 
     void stopAllConnections() {
+        documentTransfers.cancelAll();
         send("{\"type\":\"request\",\"id\":\"service-stop-all\",\"channel\":\"android:stop-all-connections\",\"args\":[]}");
     }
 

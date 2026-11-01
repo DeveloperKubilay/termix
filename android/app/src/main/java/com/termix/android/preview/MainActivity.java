@@ -8,7 +8,9 @@ import android.content.Intent;
 import android.database.Cursor;
 import android.graphics.Color;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
 import android.view.View;
 import android.view.WindowManager;
@@ -35,26 +37,19 @@ import org.json.JSONObject;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.LinkOption;
-import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.Collections;
-import java.util.UUID;
 
 public final class MainActivity extends Activity implements RuntimeController.Listener {
     private static final String ORIGIN = "https://appassets.androidplatform.net";
     private static final String INDEX = ORIGIN + "/assets/web/index.html";
     private static final int IMPORT_KEY = 2001;
     private static final int FILE_CHOOSER = 2002;
-    private static final int EXPORT_FILE = 2003;
+    private static final int CREATE_DOWNLOAD_DOCUMENT = 2003;
     private static final int PICK_UPLOAD_FILE = 2004;
     private static final int PERMISSION_REQUEST_NOTIFICATIONS = 3001;
     private WebView webView;
@@ -66,10 +61,9 @@ public final class MainActivity extends Activity implements RuntimeController.Li
     private Object importRequestId;
     private JavaScriptReplyProxy importProxy;
     private ValueCallback<Uri[]> fileUploadCallback;
-    private Object exportRequestId;
-    private JavaScriptReplyProxy exportProxy;
-    private File exportSourceFile;
-    private String exportDisplayName;
+    private Object createDocRequestId;
+    private JavaScriptReplyProxy createDocProxy;
+    private String createDocProposedName;
     private Object uploadRequestId;
     private JavaScriptReplyProxy uploadProxy;
 
@@ -100,11 +94,6 @@ public final class MainActivity extends Activity implements RuntimeController.Li
         webView = new WebView(this);
         layout.addView(webView, new LinearLayout.LayoutParams(-1, 0, 1));
         setContentView(layout);
-        if (android.os.Build.VERSION.SDK_INT >= 33) {
-            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, PERMISSION_REQUEST_NOTIFICATIONS);
-            }
-        }
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
             onStatus("This Android System WebView lacks secure WebMessageListener. Update WebView; no insecure bridge fallback is provided.", true);
             return;
@@ -202,79 +191,6 @@ public final class MainActivity extends Activity implements RuntimeController.Li
                 && (uri.getPort() == -1 || uri.getPort() == 443) && uri.getUserInfo() == null;
     }
 
-    File getStagingRoot() throws IOException {
-        File staging = new File(getFilesDir(), "data/local/staging");
-        if (!staging.isDirectory() && !staging.mkdirs()) {
-            throw new IOException("Cannot create staging directory.");
-        }
-        return staging;
-    }
-
-    static void validateStagingPath(File stagingRoot, File sourceFile) throws IOException, SecurityException {
-        if (stagingRoot == null || sourceFile == null) {
-            throw new IllegalArgumentException("Staging root and source file must not be null.");
-        }
-        Path rootNorm = stagingRoot.toPath().toAbsolutePath().normalize();
-        Path canonRootNorm = stagingRoot.getCanonicalFile().toPath().toAbsolutePath().normalize();
-        Path sourceNorm = sourceFile.toPath().toAbsolutePath().normalize();
-
-        Path effectiveRoot = sourceNorm.startsWith(rootNorm) ? rootNorm
-                : (sourceNorm.startsWith(canonRootNorm) ? canonRootNorm : null);
-        if (effectiveRoot == null || sourceNorm.equals(effectiveRoot)) {
-            throw new SecurityException("Path is outside dedicated staging root.");
-        }
-
-        Path current = sourceNorm;
-        while (current != null) {
-            if (Files.isSymbolicLink(current)) {
-                throw new SecurityException("Symbolic links are not allowed in staging path: " + current);
-            }
-            if (current.equals(effectiveRoot)) {
-                break;
-            }
-            current = current.getParent();
-        }
-
-        if (!Files.exists(sourceNorm, LinkOption.NOFOLLOW_LINKS)) {
-            throw new FileNotFoundException("Staged file does not exist.");
-        }
-        if (Files.isSymbolicLink(sourceNorm)) {
-            throw new SecurityException("Staged item must not be a symbolic link.");
-        }
-        if (!Files.isRegularFile(sourceNorm, LinkOption.NOFOLLOW_LINKS)) {
-            throw new IOException("Staged item must be a regular file.");
-        }
-
-        File canonicalRoot = stagingRoot.getCanonicalFile();
-        File canonicalSource = sourceFile.getCanonicalFile();
-        String rootCanonStr = canonicalRoot.getPath();
-        if (!rootCanonStr.endsWith(File.separator)) {
-            rootCanonStr += File.separator;
-        }
-        if (!canonicalSource.getPath().startsWith(rootCanonStr)) {
-            throw new SecurityException("Canonical path escapes dedicated staging root.");
-        }
-        if (Files.isSymbolicLink(canonicalSource.toPath())) {
-            throw new SecurityException("Symbolic links are not allowed in canonical staging path.");
-        }
-        if (!Files.isRegularFile(canonicalSource.toPath(), LinkOption.NOFOLLOW_LINKS)) {
-            throw new IOException("Canonical staged item must be a regular file.");
-        }
-    }
-
-    private void cleanupExportSource() {
-        if (exportSourceFile != null) {
-            try {
-                if (exportSourceFile.exists()) exportSourceFile.delete();
-                File parent = exportSourceFile.getParentFile();
-                File stagingRoot = getStagingRoot().getCanonicalFile();
-                if (parent != null && !parent.getCanonicalFile().equals(stagingRoot) && parent.isDirectory()) {
-                    parent.delete();
-                }
-            } catch (Exception ignored) {}
-        }
-    }
-
     private void nativeRequest(JSONObject frame, JavaScriptReplyProxy proxy) throws Exception {
         Object id = frame.get("id");
         JSONArray args = frame.optJSONArray("args");
@@ -306,6 +222,17 @@ public final class MainActivity extends Activity implements RuntimeController.Li
                 respond(proxy, id, JSONObject.NULL, null);
                 break;
             }
+            case "native:request-notifications": {
+                if (android.os.Build.VERSION.SDK_INT >= 33) {
+                    if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                        requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, PERMISSION_REQUEST_NOTIFICATIONS);
+                        respond(proxy, id, new JSONObject().put("requested", true).put("granted", false), null);
+                        break;
+                    }
+                }
+                respond(proxy, id, new JSONObject().put("requested", false).put("granted", true), null);
+                break;
+            }
             case "native:import-key": {
                 if (importRequestId != null) {
                     respond(proxy, id, null, "A key import is already open.");
@@ -317,75 +244,16 @@ public final class MainActivity extends Activity implements RuntimeController.Li
                 intent.setType("*/*");
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
                 intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    try {
+                        intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, Uri.parse("content://com.android.providers.downloads.documents/document/downloads"));
+                    } catch (Exception ignored) {}
+                }
                 try { startActivityForResult(intent, IMPORT_KEY); }
                 catch (Exception exception) {
                     importRequestId = null;
                     importProxy = null;
                     respond(proxy, id, null, exception.getMessage());
-                }
-                break;
-            }
-            case "native:export-file": {
-                if (exportRequestId != null) {
-                    respond(proxy, id, null, "A file export is already in progress.");
-                    break;
-                }
-                String localPath = null;
-                String name = null;
-                JSONObject options = args.optJSONObject(0);
-                if (options != null) {
-                    localPath = options.optString("localPath", null);
-                    name = options.optString("name", null);
-                } else {
-                    localPath = args.optString(0, null);
-                    if (args.length() > 1) name = args.optString(1, null);
-                }
-                if (localPath == null || localPath.trim().isEmpty()) {
-                    respond(proxy, id, null, "localPath is required for file export.");
-                    break;
-                }
-                File stagingRoot;
-                File sourceFile;
-                try {
-                    stagingRoot = getStagingRoot();
-                    sourceFile = new File(localPath).getAbsoluteFile();
-                    validateStagingPath(stagingRoot, sourceFile);
-                } catch (Exception ex) {
-                    respond(proxy, id, null, "Invalid export path: " + ex.getMessage());
-                    break;
-                }
-
-                if (name == null || name.trim().isEmpty()) {
-                    name = sourceFile.getName();
-                }
-                name = name.replaceAll("[/\\\\:*?\"<>|]", "_").trim();
-                if (name.isEmpty()) name = "download";
-
-                exportRequestId = id;
-                exportProxy = proxy;
-                exportSourceFile = sourceFile;
-                exportDisplayName = name;
-
-                Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
-                intent.addCategory(Intent.CATEGORY_OPENABLE);
-                String mimeType = "*/*";
-                int dot = name.lastIndexOf('.');
-                if (dot > 0 && dot < name.length() - 1) {
-                    String ext = name.substring(dot + 1).toLowerCase();
-                    String guessed = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext);
-                    if (guessed != null && !guessed.isEmpty()) mimeType = guessed;
-                }
-                intent.setType(mimeType);
-                intent.putExtra(Intent.EXTRA_TITLE, name);
-                try {
-                    startActivityForResult(intent, EXPORT_FILE);
-                } catch (Exception exception) {
-                    cleanupExportSource();
-                    exportRequestId = null;
-                    exportProxy = null;
-                    exportSourceFile = null;
-                    exportDisplayName = null;
-                    respond(proxy, id, null, "Failed to open document creator: " + exception.getMessage());
                 }
                 break;
             }
@@ -399,7 +267,12 @@ public final class MainActivity extends Activity implements RuntimeController.Li
                 Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
                 intent.setType("*/*");
-                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    try {
+                        intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, Uri.parse("content://com.android.providers.downloads.documents/document/downloads"));
+                    } catch (Exception ignored) {}
+                }
                 try {
                     startActivityForResult(intent, PICK_UPLOAD_FILE);
                 } catch (Exception exception) {
@@ -407,6 +280,85 @@ public final class MainActivity extends Activity implements RuntimeController.Li
                     uploadProxy = null;
                     respond(proxy, id, null, "Failed to open document picker: " + exception.getMessage());
                 }
+                break;
+            }
+            case "native:create-download-document": {
+                if (createDocRequestId != null) {
+                    respond(proxy, id, null, "A download document creation is already in progress.");
+                    break;
+                }
+                String name = null;
+                JSONObject options = args.optJSONObject(0);
+                if (options != null) {
+                    name = options.optString("name", null);
+                } else if (args.length() > 0) {
+                    name = args.optString(0, null);
+                }
+                if (name == null || name.trim().isEmpty()) {
+                    name = "download";
+                }
+                name = name.replaceAll("[/\\\\:*?\"<>|\\x00-\\x1F]", "_").trim();
+                if (name.isEmpty()) name = "download";
+
+                createDocRequestId = id;
+                createDocProxy = proxy;
+                createDocProposedName = name;
+
+                Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+                String mimeType = "*/*";
+                int dot = name.lastIndexOf('.');
+                if (dot > 0 && dot < name.length() - 1) {
+                    String ext = name.substring(dot + 1).toLowerCase();
+                    String guessed = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext);
+                    if (guessed != null && !guessed.isEmpty()) mimeType = guessed;
+                }
+                intent.setType(mimeType);
+                intent.putExtra(Intent.EXTRA_TITLE, name);
+                try {
+                    startActivityForResult(intent, CREATE_DOWNLOAD_DOCUMENT);
+                } catch (Exception exception) {
+                    createDocRequestId = null;
+                    createDocProxy = null;
+                    createDocProposedName = null;
+                    respond(proxy, id, null, "Failed to open document creator: " + exception.getMessage());
+                }
+                break;
+            }
+            case "native:transfer-run": {
+                JSONObject runOptions = args.optJSONObject(0);
+                if (runOptions == null) {
+                    respond(proxy, id, null, "transfer-run requires an options object.");
+                    break;
+                }
+                runtime.documentTransfers().runTransfer(runOptions, new DocumentTransfers.Callback() {
+                    @Override
+                    public void onSuccess(JSONObject result) {
+                        runOnUiThread(() -> respond(proxy, id, result, null));
+                    }
+
+                    @Override
+                    public void onError(String error) {
+                        runOnUiThread(() -> respond(proxy, id, null, error));
+                    }
+                });
+                break;
+            }
+            case "native:transfer-cancel": {
+                String idOrHandle = null;
+                JSONObject cancelOptions = args.optJSONObject(0);
+                if (cancelOptions != null) {
+                    idOrHandle = cancelOptions.optString("transferId", null);
+                    if (idOrHandle == null || idOrHandle.isEmpty()) {
+                        idOrHandle = cancelOptions.optString("handle", null);
+                    }
+                } else if (args.length() > 0) {
+                    idOrHandle = args.optString(0, null);
+                }
+                boolean cancelled = runtime.documentTransfers().cancelTransfer(idOrHandle);
+                JSONObject result = new JSONObject().put("success", true).put("cancelled", cancelled);
+                respond(proxy, id, result, null);
                 break;
             }
             default:
@@ -441,20 +393,59 @@ public final class MainActivity extends Activity implements RuntimeController.Li
             importRequestId = null;
             importProxy = null;
             if (resultCode != RESULT_OK || data == null || data.getData() == null) {
-                respond(proxy, id, JSONObject.NULL, null);
+                try {
+                    JSONObject result = new JSONObject().put("cancelled", true);
+                    respond(proxy, id, result, null);
+                } catch (Exception ignored) {}
                 return;
             }
             Uri uri = data.getData();
             new Thread(() -> {
                 File destination = null;
                 try {
-                    String name = "private-key";
+                    String originalName = "private-key";
                     try (Cursor cursor = getContentResolver().query(uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
-                        if (cursor != null && cursor.moveToFirst() && !cursor.isNull(0)) name = cursor.getString(0);
+                        if (cursor != null && cursor.moveToFirst() && !cursor.isNull(0)) {
+                            originalName = cursor.getString(0);
+                        }
                     }
+                    if (originalName == null || originalName.trim().isEmpty()) {
+                        originalName = "private-key";
+                    }
+                    originalName = new File(originalName).getName();
+                    originalName = originalName.replaceAll("[/\\\\:*?\"<>|\\x00-\\x1F]", "_").trim();
+                    if (originalName.isEmpty()) originalName = "private-key";
+
+                    String baseName = originalName;
+                    String extension = ".key";
+                    int lastDot = originalName.lastIndexOf('.');
+                    if (lastDot > 0 && lastDot < originalName.length() - 1) {
+                        String ext = originalName.substring(lastDot + 1).toLowerCase();
+                        if (ext.matches("^(pem|key|pub|ppk|cer|crt|pfx)$")) {
+                            baseName = originalName.substring(0, lastDot);
+                            extension = "." + ext;
+                        } else {
+                            baseName = originalName;
+                            extension = ".key";
+                        }
+                    } else if (lastDot == 0) {
+                        baseName = originalName.substring(1);
+                        if (baseName.isEmpty()) baseName = "private-key";
+                        extension = ".key";
+                    }
+
                     File directory = new File(getFilesDir(), "data/files");
                     if (!directory.isDirectory() && !directory.mkdirs()) throw new IOException("Cannot create private key directory.");
-                    destination = new File(directory, UUID.randomUUID().toString() + ".key");
+
+                    String candidateName = baseName + extension;
+                    destination = new File(directory, candidateName);
+                    int counter = 1;
+                    while (!destination.createNewFile()) {
+                        candidateName = baseName + "-" + counter + extension;
+                        destination = new File(directory, candidateName);
+                        counter++;
+                    }
+
                     try (InputStream input = getContentResolver().openInputStream(uri);
                          FileOutputStream output = new FileOutputStream(destination)) {
                         if (input == null) throw new IOException("Cannot open selected key.");
@@ -466,33 +457,31 @@ public final class MainActivity extends Activity implements RuntimeController.Li
                             if (total > 2 * 1024 * 1024) throw new IOException("Selected key exceeds 2 MiB.");
                             output.write(buffer, 0, count);
                         }
+                        output.flush();
                     }
                     destination.setReadable(false, false);
                     destination.setWritable(false, false);
                     if (!destination.setReadable(true, true) || !destination.setWritable(true, true)) {
                         throw new IOException("Cannot restrict imported key permissions.");
                     }
-                    JSONObject result = new JSONObject().put("name", name).put("path", destination.getAbsolutePath());
+                    JSONObject result = new JSONObject().put("name", destination.getName()).put("path", destination.getAbsolutePath());
                     runOnUiThread(() -> respond(proxy, id, result, null));
                 } catch (Exception exception) {
-                    if (destination != null) destination.delete();
+                    if (destination != null && destination.exists()) destination.delete();
                     runOnUiThread(() -> respond(proxy, id, null, "Key import failed: " + exception.getMessage()));
                 }
             }, "termix-key-import").start();
             return;
         }
-        if (requestCode == EXPORT_FILE && exportRequestId != null) {
-            Object id = exportRequestId;
-            JavaScriptReplyProxy proxy = exportProxy;
-            File source = exportSourceFile;
-            String name = exportDisplayName;
-            exportRequestId = null;
-            exportProxy = null;
-            exportSourceFile = null;
-            exportDisplayName = null;
+        if (requestCode == CREATE_DOWNLOAD_DOCUMENT && createDocRequestId != null) {
+            Object id = createDocRequestId;
+            JavaScriptReplyProxy proxy = createDocProxy;
+            String proposedName = createDocProposedName;
+            createDocRequestId = null;
+            createDocProxy = null;
+            createDocProposedName = null;
 
             if (resultCode != RESULT_OK || data == null || data.getData() == null) {
-                if (source != null && source.exists()) source.delete();
                 try {
                     JSONObject result = new JSONObject().put("cancelled", true);
                     respond(proxy, id, result, null);
@@ -500,43 +489,10 @@ public final class MainActivity extends Activity implements RuntimeController.Li
                 return;
             }
 
-            Uri targetUri = data.getData();
-            new Thread(() -> {
-                try {
-                    File stagingRoot = getStagingRoot();
-                    validateStagingPath(stagingRoot, source);
-
-                    long total = 0;
-                    try (InputStream input = new FileInputStream(source);
-                         OutputStream output = getContentResolver().openOutputStream(targetUri, "w")) {
-                        if (output == null) throw new IOException("Cannot open destination document output stream.");
-                        byte[] buffer = new byte[65536];
-                        int count;
-                        while ((count = input.read(buffer)) != -1) {
-                            output.write(buffer, 0, count);
-                            total += count;
-                            if (Thread.currentThread().isInterrupted()) {
-                                throw new IOException("File export thread was interrupted.");
-                            }
-                        }
-                        output.flush();
-                    }
-                    if (source != null && source.exists()) source.delete();
-                    try {
-                        File parent = source != null ? source.getParentFile() : null;
-                        File canonStagingRoot = stagingRoot.getCanonicalFile();
-                        if (parent != null && !parent.getCanonicalFile().equals(canonStagingRoot) && parent.isDirectory()) {
-                            parent.delete();
-                        }
-                    } catch (Exception ignored) {}
-                    long bytesWritten = total;
-                    JSONObject result = new JSONObject().put("success", true).put("name", name).put("bytes", bytesWritten);
-                    runOnUiThread(() -> respond(proxy, id, result, null));
-                } catch (Exception exception) {
-                    if (source != null && source.exists()) source.delete();
-                    runOnUiThread(() -> respond(proxy, id, null, "Export failed: " + exception.getMessage()));
-                }
-            }, "termix-file-export").start();
+            Uri uri = data.getData();
+            int flags = data.getFlags();
+            DocumentTransfers.CreateDocResult docResult = runtime.documentTransfers().registerDownloadUri(uri, proposedName, flags);
+            respond(proxy, id, docResult.toJsonObject(), null);
             return;
         }
         if (requestCode == PICK_UPLOAD_FILE && uploadRequestId != null) {
@@ -554,59 +510,9 @@ public final class MainActivity extends Activity implements RuntimeController.Li
             }
 
             Uri uri = data.getData();
-            new Thread(() -> {
-                File stagedFile = null;
-                File stageDir = null;
-                try {
-                    String name = "upload";
-                    try (Cursor cursor = getContentResolver().query(uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
-                        if (cursor != null && cursor.moveToFirst() && !cursor.isNull(0)) {
-                            name = cursor.getString(0);
-                        }
-                    }
-                    if (name == null || name.trim().isEmpty()) name = "upload";
-                    name = name.replaceAll("[/\\\\:*?\"<>|]", "_").trim();
-                    if (name.isEmpty()) name = "upload";
-
-                    File stagingRoot = getStagingRoot();
-                    String stageId = "upload-" + UUID.randomUUID().toString();
-                    stageDir = new File(stagingRoot, stageId);
-                    if (!stageDir.isDirectory() && !stageDir.mkdirs()) {
-                        throw new IOException("Cannot create staging directory.");
-                    }
-                    stagedFile = new File(stageDir, name);
-
-                    long totalBytes = 0;
-                    try (InputStream in = getContentResolver().openInputStream(uri);
-                         OutputStream out = new FileOutputStream(stagedFile)) {
-                        if (in == null) throw new IOException("Cannot open selected file input stream.");
-                        byte[] buffer = new byte[65536];
-                        int count;
-                        while ((count = in.read(buffer)) != -1) {
-                            out.write(buffer, 0, count);
-                            totalBytes += count;
-                            if (Thread.currentThread().isInterrupted()) {
-                                throw new IOException("File staging thread was interrupted.");
-                            }
-                        }
-                        out.flush();
-                    }
-
-                    validateStagingPath(stagingRoot, stagedFile);
-
-                    JSONObject result = new JSONObject()
-                            .put("success", true)
-                            .put("name", name)
-                            .put("bytes", totalBytes)
-                            .put("localPath", stagedFile.getAbsolutePath())
-                            .put("stageId", stageId);
-                    runOnUiThread(() -> respond(proxy, id, result, null));
-                } catch (Exception exception) {
-                    if (stagedFile != null && stagedFile.exists()) stagedFile.delete();
-                    if (stageDir != null && stageDir.exists()) stageDir.delete();
-                    runOnUiThread(() -> respond(proxy, id, null, "Upload staging failed: " + exception.getMessage()));
-                }
-            }, "termix-file-stage-upload").start();
+            int flags = data.getFlags();
+            DocumentTransfers.PickResult pickResult = runtime.documentTransfers().registerUploadUri(uri, flags);
+            respond(proxy, id, pickResult.toJsonObject(), null);
             return;
         }
     }

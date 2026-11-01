@@ -1580,10 +1580,18 @@ async function connect(hostId, options = {}) {
 
                     sessions.set(sessionId, session);
                     startSessionKeepalive(session);
+                    if (typeof options.onSessionReady === 'function') {
+                        try {
+                            options.onSessionReady({ sessionId, sftp, conn, homePath, hostId: normalizeId(host.id), host });
+                        } catch (_) {}
+                    }
 
                     conn.on('close', () => {
                         clearSessionKeepalive(session);
                         sessions.delete(sessionId);
+                        if (typeof options.onSessionClose === 'function') {
+                            try { options.onSessionClose({ sessionId }); } catch (_) {}
+                        }
                     });
 
                     finish({
@@ -2162,7 +2170,8 @@ async function renameItem(payload = {}) {
     try {
         const side = normalizeSide(payload.side);
         const sourcePathInput = String(payload.path || '').trim();
-        const newName = sanitizeEntryName(payload.newName);
+        const hasDestinationPath = Boolean(payload.destinationPath && String(payload.destinationPath).trim());
+        const newName = hasDestinationPath ? '' : sanitizeEntryName(payload.newName);
 
         if (!sourcePathInput) {
             return { success: false, message: 'Item path is required.' };
@@ -2174,7 +2183,9 @@ async function renameItem(payload = {}) {
                 throw new Error('Root folder cannot be renamed.');
             }
 
-            const destinationPath = path.join(path.dirname(sourcePath), newName);
+            const destinationPath = hasDestinationPath
+                ? normalizeLocalPath(payload.destinationPath)
+                : path.join(path.dirname(sourcePath), newName);
             const isExactSamePath = sourcePath === destinationPath;
             const isCaseOnlyLocalRename = process.platform === 'win32'
                 && sourcePath.toLowerCase() === destinationPath.toLowerCase()
@@ -2190,7 +2201,11 @@ async function renameItem(payload = {}) {
             }
 
             if (!isCaseOnlyLocalRename && await localExists(destinationPath)) {
-                throw new Error('A file or folder with this name already exists.');
+                if (payload.overwrite) {
+                    await removeLocalPath(destinationPath);
+                } else {
+                    throw new Error('A file or folder with this name already exists.');
+                }
             }
 
             await fs.promises.rename(sourcePath, destinationPath);
@@ -2211,10 +2226,12 @@ async function renameItem(payload = {}) {
             throw new Error('Remote root folder cannot be renamed.');
         }
 
-        const destinationPath = normalizeRemotePath(
-            path.posix.join(path.posix.dirname(sourcePath), newName),
-            '/'
-        );
+        const destinationPath = hasDestinationPath
+            ? normalizeRemotePath(payload.destinationPath, '/')
+            : normalizeRemotePath(
+                path.posix.join(path.posix.dirname(sourcePath), newName),
+                '/'
+            );
 
         if (sourcePath === destinationPath) {
             return {
@@ -2226,7 +2243,11 @@ async function renameItem(payload = {}) {
         }
 
         if (await remoteExists(session.sftp, destinationPath)) {
-            throw new Error('A file or folder with this name already exists.');
+            if (payload.overwrite) {
+                await removeRemotePath(session.sftp, destinationPath, session);
+            } else {
+                throw new Error('A file or folder with this name already exists.');
+            }
         }
 
         await sftpRename(session.sftp, sourcePath, destinationPath);

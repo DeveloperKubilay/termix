@@ -54,9 +54,11 @@ class TerminalSessions {
             record.connection = connection;
             return { status: 'connected', sessionId };
         } catch (err) {
+            const wasCancelled = controller.signal.aborted;
+            controller.abort();
             this.sessions.delete(sessionId);
             this._notifyCount();
-            return { status: 'error', message: controller.signal.aborted ? 'SSH connection cancelled.' : err.message };
+            return { status: 'error', message: wasCancelled ? 'SSH connection cancelled.' : err.message };
         }
     }
     send(channel, payload = {}) {
@@ -67,7 +69,10 @@ class TerminalSessions {
                     this.sessions.delete(id);
                     this._notifyCount();
                     record.controller.abort();
-                    if (record.connection) record.connection.end();
+                    if (record.connection) {
+                        try { record.connection.end(); } catch (_) {}
+                    }
+                    this.emit('term-disconnected', { sessionId: id, message: 'Session closed.' });
                 }
             }
             return;
@@ -84,9 +89,24 @@ class TerminalSessions {
             record.connection.write({ type: 'resize', cols, rows, width: 0, height: 0 });
         }
     }
+    stopAll() {
+        const sessionIds = [...this.sessions.keys()];
+        for (const id of sessionIds) {
+            const record = this.sessions.get(id);
+            this.sessions.delete(id);
+            if (record) {
+                record.controller.abort();
+                if (record.connection) {
+                    try { record.connection.end(); } catch (_) {}
+                }
+            }
+            this.emit('term-disconnected', { sessionId: id, message: 'Connection stopped.' });
+        }
+        this._notifyCount();
+    }
     close() {
         this.closed = true;
-        for (const id of [...this.sessions.keys()]) this.send('term-close', { sessionId: id });
+        this.stopAll();
     }
 }
 module.exports = { TerminalSessions };

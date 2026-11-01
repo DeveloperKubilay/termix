@@ -3,47 +3,42 @@ const crypto = require('crypto');
 const db = require('../../profile-db');
 
 class HostTrust {
-    constructor(emit, { timeoutMs = 60000 } = {}) {
-        this.emit = emit;
-        this.timeoutMs = timeoutMs;
-        this.pending = new Map();
-    }
+    constructor(emit) { this.emit = emit; }
+
     verifier(host, { sessionId, signal } = {}) {
         // ssh2 uses function arity to distinguish sync vs async hostVerifier.
         return (rawKey, callback) => {
-            if (signal && signal.aborted) return callback(false);
+            if (signal?.aborted) return callback(false);
             const address = String(host.address || '').trim();
             const port = Number(host.port || 22);
-            const key = Buffer.isBuffer(rawKey) ? rawKey.toString('hex') : String(rawKey || '');
-            const fingerprint = `SHA256:${crypto.createHash('sha256').update(Buffer.isBuffer(rawKey) ? rawKey : Buffer.from(key, 'hex')).digest('base64').replace(/=+$/, '')}`;
+            const bytes = Buffer.isBuffer(rawKey) ? rawKey : Buffer.from(String(rawKey || ''), 'hex');
+            if (!address || !bytes.length) return callback(false);
+            const key = bytes.toString('hex');
+            const fingerprint = `SHA256:${crypto.createHash('sha256').update(bytes).digest('base64').replace(/=+$/, '')}`;
+            let changed = false;
             try {
-                const current = db.get('knownHosts');
-                const hosts = Array.isArray(current) ? current : [];
-                const index = hosts.findIndex((item) => item.address === address && Number(item.port) === port);
-                const previous = index !== -1 ? hosts[index] : null;
-                const record = {
-                    address,
-                    port,
-                    key,
-                    fingerprint,
-                    firstSeen: previous ? previous.firstSeen : Date.now(),
-                    lastUpdated: Date.now()
-                };
-                if (index === -1) {
-                    hosts.push(record);
+                const profilePath = db.getActiveProfilePath();
+                const stored = db.get('knownHosts');
+                const hosts = Array.isArray(stored) ? stored : [];
+                const previous = hosts.find(item => item.address === address && Number(item.port) === port);
+                if (previous) {
+                    changed = previous.key !== key;
                 } else {
-                    hosts[index] = record;
+                    // Automatic first-use pinning avoids a prompt, but cannot authenticate
+                    // the first connection independently of the network it uses.
+                    if (signal?.aborted || db.getActiveProfilePath() !== profilePath) return callback(false);
+                    hosts.push({ address, port, key, fingerprint, firstSeen: Date.now(), lastUpdated: Date.now() });
+                    db.set('knownHosts', hosts);
                 }
-                db.set('knownHosts', hosts);
-            } catch (_) {}
-            return callback(true);
+            } catch (_) { return callback(false); }
+            callback(!changed && !signal?.aborted);
+            if (changed) {
+                try { this.emit('android:host-key', { sessionId, address, port, fingerprint, changed: true }); }
+                catch (_) {}
+            }
         };
     }
-    approve(payload = {}) {
-        return { success: true };
-    }
-    close() {
-        this.pending.clear();
-    }
+
+    close() {}
 }
 module.exports = { HostTrust };

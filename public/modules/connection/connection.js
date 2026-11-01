@@ -4,8 +4,6 @@ window.ConnectionModule = {
         const TERMINAL_FONT_FAMILY = '"JetBrains Mono", monospace';
         const DEFAULT_TAB_FONT_SCALE = 1.1;
         const CONNECT_MESSAGE_DELAY_MS = 250;
-        const IDLE_RECONNECT_THRESHOLD_MS = 30000;
-        const QUICK_RECONNECT_DELAY_MS = 1500;
         const RETRY_RECONNECT_DELAY_MS = 5000;
         const CONNECT_RETRY_DELAYS_MS = [1000, 3000, 10000, 20000];
         let isUserDisconnected = false;
@@ -33,7 +31,6 @@ window.ConnectionModule = {
         let resizeObserver = null;
         const aiContextSourceId = `terminal:${tabId}`;
         let lastSelectionForAi = null;
-        let lastActivityAt = Date.now();
         let reconnectTimerId = null;
         let connectRetryTimerId = null;
         let restartHandler = null;
@@ -76,10 +73,6 @@ window.ConnectionModule = {
                     }
                 }));
             } catch (_) {}
-        };
-
-        const markActivity = () => {
-            lastActivityAt = Date.now();
         };
 
         const clearReconnectTimer = () => {
@@ -398,10 +391,10 @@ window.ConnectionModule = {
         let connectRetryAttempt = 0;
         const sendTerminalInput = data => {
             if (isUserDisconnected || !currentSessionId) return;
-            markActivity();
+
             window.electronAPI.send('term-input', { sessionId: currentSessionId, data });
         };
-        if (window.TermixMobile) mobileToolbar = window.TermixMobile.attachTerminal(container, term, sendTerminalInput, sendResize);
+        if (window.TermixMobile) mobileToolbar = window.TermixMobile.attachTerminal(container, term, sendTerminalInput, sendResize, TerminalSettings);
         pendingCleanup = () => {
             clearTimeout(msgTimer);
             clearOsc52Listener();
@@ -474,12 +467,12 @@ window.ConnectionModule = {
         if (didRenderConnectMsg) {
             term.clear();
         }
-        markActivity();
+
 
         // Backend -> Frontend (Output)
         const outputHandler = (event, msg) => {
             if (msg && msg.sessionId === currentSessionId) {
-                markActivity();
+
                 term.write(msg.data, () => {
                     if (isAndroid) {
                         try { term.scrollToBottom(); } catch (_) {}
@@ -527,73 +520,36 @@ window.ConnectionModule = {
                 clearReconnectTimer();
                 clearRestartHandler();
 
+                if (msg.exitCode === 0) {
+                    window.TabManager.closeTab(tabId);
+                    return;
+                }
+
                 const disconnectMessage = toText(msg.message);
                 if (isAndroid) {
                     currentSessionId = null;
-                    if (window.TabManager && typeof window.TabManager.closeTab === 'function') {
-                        window.TabManager.closeTab(tabId);
-                        return;
-                    }
                     term.writeln('');
                     term.writeln(`Session ended.${disconnectMessage ? ' ' + disconnectMessage : ''}`);
                     term.writeln('Close this tab and select the host to reconnect.');
                     return;
                 }
-                const idleForMs = Date.now() - lastActivityAt;
-                const lowerDisconnectMessage = disconnectMessage.toLowerCase();
-                const shouldQuickReconnect = msg.exitCode === 0 && (
-                    idleForMs >= IDLE_RECONNECT_THRESHOLD_MS
-                    || lowerDisconnectMessage.includes('idle')
-                    || lowerDisconnectMessage.includes('timeout')
-                );
-
-                if (shouldQuickReconnect) {
-                    term.writeln('');
-                    term.writeln('\x1b[33mSession closed while idle. Reconnecting...\x1b[0m');
-                    reconnectTimerId = setTimeout(() => {
-                        reconnectTimerId = null;
-                        if (isUserDisconnected) return;
-                        triggerReload().catch(e => {
-                            if (!isUserDisconnected) term.writeln(`\x1b[31mReconnect failed: ${e && e.message ? e.message : e}\x1b[0m`);
-                        });
-                    }, QUICK_RECONNECT_DELAY_MS);
-                } else if (msg.exitCode === 0) {
-                    term.writeln('');
-                    term.writeln('\x1b[33mSession ended.\x1b[0m');
-                    term.writeln('Press Enter to restart...');
-                    focusTerminal();
-                    
-                    restartHandler = term.onData(data => {
-                        if (isUserDisconnected) {
-                            clearRestartHandler();
-                            return;
-                        }
-                        if (typeof data === 'string' && (data.includes('\r') || data.includes('\n'))) {
-                            clearRestartHandler();
-                            term.writeln('Restarting...');
-                            triggerReload().catch(e => {
-                                if (!isUserDisconnected) term.writeln(`\x1b[31mRestart failed: ${e && e.message ? e.message : e}\x1b[0m`);
-                            });
-                        }
+                term.clear();
+                const messageSuffix = disconnectMessage ? ` ${disconnectMessage}` : '';
+                term.writeln(`\x1b[31mConnection lost (Code: ${msg.exitCode ?? 'unknown'}). Retrying in 5 seconds...${messageSuffix}\x1b[0m`);
+                reconnectTimerId = setTimeout(() => {
+                    reconnectTimerId = null;
+                    if (isUserDisconnected) return;
+                    triggerReload().catch(e => {
+                        if (!isUserDisconnected) term.writeln(`\x1b[31mReconnect failed: ${e && e.message ? e.message : e}\x1b[0m`);
                     });
-                } else {
-                    term.clear();
-                    const messageSuffix = disconnectMessage ? ` ${disconnectMessage}` : '';
-                    term.writeln(`\x1b[31mConnection lost (Code: ${msg.exitCode ?? 'unknown'}). Retrying in 5 seconds...${messageSuffix}\x1b[0m`);
-                    reconnectTimerId = setTimeout(() => {
-                        reconnectTimerId = null;
-                        if (isUserDisconnected) return;
-                        triggerReload().catch(e => {
-                            if (!isUserDisconnected) term.writeln(`\x1b[31mReconnect failed: ${e && e.message ? e.message : e}\x1b[0m`);
-                        });
-                    }, RETRY_RECONNECT_DELAY_MS);
-                }
+                }, RETRY_RECONNECT_DELAY_MS);
             }
         };
 
         // Frontend -> Backend (Input)
         term.onData(data => {
-            sendTerminalInput(mobileToolbar ? mobileToolbar.filterInput(data) : data);
+            const filtered = mobileToolbar ? mobileToolbar.filterInput(data) : data;
+            if (filtered) sendTerminalInput(filtered);
         });
 
         const isEditableElement = (element) => {
@@ -636,7 +592,6 @@ window.ConnectionModule = {
                 return;
             }
 
-            markActivity();
             window.electronAPI.send('term-input', { sessionId: currentSessionId, data });
         };
 
@@ -685,7 +640,7 @@ window.ConnectionModule = {
         const readyHandler = (event, msg) => {
             if (msg && msg.sessionId === currentSessionId) {
                 clearReconnectTimer();
-                markActivity();
+
                 sendResize();
                 scheduleTerminalFocus();
             }

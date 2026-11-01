@@ -636,6 +636,7 @@
                 });
             }
 
+            const isAndroid = Boolean(window.TermixAndroid);
             const certInput = document.querySelector('input[placeholder="Certificate, FIDO2"]');
             const tagsInput = document.querySelector('input[placeholder="Tags"]');
             const portInput = document.getElementById('host-port');
@@ -660,11 +661,18 @@
                 if (passwordInput) passwordInput.value = hostToEdit.password || '';
                 if (certInput) {
                     if (hostToEdit.certPath) {
-                        const matchingKey = keys.find(k => k.path === hostToEdit.certPath);
-                        certInput.value = matchingKey ? matchingKey.name : hostToEdit.certPath;
-                        certInput.dataset.fullPath = hostToEdit.certPath;
+                        if (isAndroid) {
+                            const matchingKey = keys.find(k => k.path === hostToEdit.certPath || k.relativePath === hostToEdit.certPath || k.name === hostToEdit.certPath);
+                            certInput.value = matchingKey ? matchingKey.name : hostToEdit.certPath;
+                            certInput.dataset.fullPath = matchingKey ? matchingKey.path : hostToEdit.certPath;
+                        } else {
+                            const matchingKey = keys.find(k => k.path === hostToEdit.certPath);
+                            certInput.value = matchingKey ? matchingKey.name : hostToEdit.certPath;
+                            certInput.dataset.fullPath = hostToEdit.certPath;
+                        }
                     } else {
                         certInput.value = '';
+                        if (isAndroid) delete certInput.dataset.fullPath;
                     }
                 }
                 
@@ -846,7 +854,35 @@
                             dropdown.appendChild(item);
                         });
                     }
-                    
+
+                    if (isAndroid && window.TermixAndroid && typeof window.TermixAndroid.invoke === 'function') {
+                        const importItem = document.createElement('div');
+                        importItem.className = 'cert-import-item';
+                        importItem.innerHTML = '<i class="fa-solid fa-plus" style="margin-right: 8px; color: #89b4fa;"></i>Import New Key...';
+                        importItem.style.cssText = 'padding: 10px 12px; color: #89b4fa; cursor: pointer; font-size: 14px; border-top: 1px solid #313244; display: flex; align-items: center; transition: background 0.2s;';
+                        importItem.addEventListener('click', async (e) => {
+                            e.stopPropagation();
+                            dropdown.style.display = 'none';
+                            try {
+                                const res = await window.TermixAndroid.invoke('native:import-key');
+                                if (res && !res.cancelled && res.path) {
+                                    const latestKeys = await window.electronAPI.keychain.getKeyFiles() || [];
+                                    keys.length = 0;
+                                    keys.push(...latestKeys);
+                                    const found = keys.find(k => k.path === res.path) || { name: res.name, path: res.path };
+                                    certInput.value = found.name;
+                                    certInput.dataset.fullPath = found.path;
+                                }
+                            } catch (err) {
+                                console.error('Key import error in hosts drawer:', err);
+                                if (window.notifyUser) window.notifyUser('Key import failed: ' + (err.message || err), 'error');
+                            }
+                        });
+                        importItem.addEventListener('mouseover', () => importItem.style.background = '#313244');
+                        importItem.addEventListener('mouseout', () => importItem.style.background = 'transparent');
+                        dropdown.appendChild(importItem);
+                    }
+
                     if (dropdown.children.length > 0) {
                         dropdown.style.display = 'block';
                     } else {
@@ -855,7 +891,22 @@
                 }
 
                 certInput.addEventListener('focus', () => renderCertDropdown(certInput.value));
-                certInput.addEventListener('input', () => renderCertDropdown(certInput.value));
+                if (isAndroid) {
+                    certInput.addEventListener('input', () => {
+                        const typed = certInput.value.trim();
+                        const match = keys.find(k => k.name === typed || k.path === typed || k.relativePath === typed);
+                        if (match) {
+                            certInput.dataset.fullPath = match.path;
+                        } else if (!typed) {
+                            delete certInput.dataset.fullPath;
+                        } else {
+                            certInput.dataset.fullPath = typed;
+                        }
+                        renderCertDropdown(certInput.value);
+                    });
+                } else {
+                    certInput.addEventListener('input', () => renderCertDropdown(certInput.value));
+                }
                 
                 document.addEventListener('click', (e) => {
                     if (!container.contains(e.target)) {

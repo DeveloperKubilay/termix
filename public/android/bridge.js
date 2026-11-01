@@ -9,7 +9,8 @@
     const MAX_EARLY_BYTES = 1024 * 1024;
     const eventChannels = new Set([
         'term-data', 'ssh-ready', 'term-error', 'term-disconnected',
-        'sftp:copy-progress', 'android:host-key'
+        'sftp:copy-progress', 'android:host-key', 'android:transfer-progress',
+        'android:all-connections-stopped'
     ]);
     const listeners = new Map();
     const earlyEvents = new Map();
@@ -52,8 +53,9 @@
         if (pending.size >= MAX_PENDING) throw transportError('Too many pending Android requests.', 'BUSY');
         const id = `web-${++sequence}`;
         return new Promise((resolve, reject) => {
-            // The system document picker may stay open as long as the user needs.
-            const timer = channel === 'native:export-file' ? null : global.setTimeout(() => {
+            // Pickers wait for the user; transfers have native idle/cancellation deadlines.
+            const waitsForNative = ['native:export-file', 'native:import-key', 'native:pick-upload-file', 'native:create-download-document', 'native:transfer-run'].includes(channel);
+            const timer = waitsForNative ? null : global.setTimeout(() => {
                 pending.delete(id);
                 reject(transportError(`Android request timed out: ${channel}`, 'TIMEOUT'));
             }, channel === 'connection:connect' || channel === 'sftp:connect' ? 120000 : 60000);
@@ -141,7 +143,7 @@
         hosts: ['get-data', 'set-data', 'get-tags', 'add-tag', 'delete-tag', 'get-serial-ports', 'update-terminal-font-size'],
         connection: ['connect', 'get-settings', 'save-settings'],
         profiles: ['get-profiles', 'create-profile', 'switch-profile', 'delete-profile'],
-        keychain: ['get-key-files', 'read-key-file', 'save-key-file', 'open-files-folder'],
+        keychain: ['get-key-files', 'read-key-file', 'save-key-file', 'delete-key-file', 'open-files-folder'],
         'known-hosts': ['get-hosts', 'delete-host'],
         snippets: ['get-snippets', 'save-snippet', 'delete-snippet', 'import-from-url'],
         sftp: ['connect', 'disconnect', 'list-directory', 'read-file', 'write-file', 'create-file', 'create-directory', 'rename-item', 'delete-items', 'copy-items', 'open-local-folder'],
