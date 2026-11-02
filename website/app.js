@@ -313,10 +313,11 @@ function renderCard(card, releaseUrl) {
     const safeDescription = escapeHtml(card.platform.description);
     const recommendedBadge = card.recommended ? '<span class="download-badge">Recommended</span>' : "";
     const cardReleaseUrl = (card.asset && card.asset.release_html_url) || releaseUrl;
+    const androidClass = card.platform.id === "android" ? " download-card-android" : "";
 
     if (!card.asset) {
         return `
-            <article class="download-card${card.recommended ? " recommended" : ""}">
+            <article class="download-card${androidClass}${card.recommended ? " recommended" : ""}">
                 <div class="download-top">
                     <div>
                         <div class="download-os">${safePlatform}</div>
@@ -348,21 +349,27 @@ function renderCard(card, releaseUrl) {
         }
     ];
 
-    const metaHtml = meta.map((item) => `
+    const metaHtml = meta.filter((item) => card.platform.id !== "android" || item.label !== "Asset").map((item) => `
         <div class="download-meta-item">
             <span>${escapeHtml(item.label)}</span>
             <span>${escapeHtml(item.value)}</span>
         </div>
     `).join("");
 
-    const alternateHtml = card.alternates.length
+    const alternateHtml = card.platform.id !== "android" && card.alternates.length
         ? `<div class="download-links">${card.alternates.map((asset) => `
             <a href="${escapeHtml(asset.browser_download_url)}" target="_blank" rel="noreferrer">${escapeHtml(asset.name)}</a>
         `).join("")}</div>`
         : "";
+    const downloads = card.platform.id === "android" ? [card.asset, ...card.alternates] : [card.asset];
+    const downloadHtml = downloads.map((asset) => `
+        <a class="button primary" href="${escapeHtml(asset.browser_download_url)}" target="_blank" rel="noreferrer">
+            Download ${escapeHtml(extractArch(asset.name))}
+        </a>
+    `).join("");
 
     return `
-        <article class="download-card${card.recommended ? " recommended" : ""}">
+        <article class="download-card${androidClass}${card.recommended ? " recommended" : ""}">
             <div class="download-top">
                 <div>
                     <div class="download-os">${safePlatform}</div>
@@ -372,9 +379,7 @@ function renderCard(card, releaseUrl) {
             </div>
             <p>${safeDescription}</p>
             <div class="download-meta">${metaHtml}</div>
-            <a class="button primary" href="${escapeHtml(card.asset.browser_download_url)}" target="_blank" rel="noreferrer">
-                Download ${escapeHtml(extractArch(card.asset.name))}
-            </a>
+            ${card.platform.id === "android" ? `<div class="android-download-actions">${downloadHtml}</div>` : downloadHtml}
             ${alternateHtml}
         </article>
     `;
@@ -429,7 +434,8 @@ function formatBytes(bytes) {
 function extractArch(name) {
     const value = String(name || "");
     if (/arm64|aarch64/i.test(value)) return "ARM64";
-    if (/x86_64|x64|amd64/i.test(value)) return "x64";
+    if (/x86_64/i.test(value)) return "x86_64";
+    if (/x64|amd64/i.test(value)) return "x64";
     if (/universal/i.test(value)) return "Universal";
     if (/armeabi-v7a|armv7/i.test(value)) return "ARMv7";
     if (/\.apk$/i.test(value)) return "APK";

@@ -628,8 +628,25 @@ h1 {
 
 .download-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 18px;
+}
+
+.download-card-android {
+    grid-column: 1 / -1;
+}
+
+.android-download-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: auto;
+}
+
+.android-download-actions .button {
+    flex: 1;
+    background: #38dbc0;
+    color: #062127;
 }
 
 .feature-card {
