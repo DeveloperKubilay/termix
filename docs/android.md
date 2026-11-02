@@ -109,6 +109,6 @@ adb shell am start -n com.termix.android.preview/.MainActivity
 
 Başarılı derlemeden sonra ayrı yayınlama işi, GitHub'ın mevcut Latest release'ini kontrol eder. Release yayımlanmış/stable olmalı; `latest.yml`, `latest-linux.yml`, `latest-mac.yml` ve Windows/Linux/macOS paketlerini içermelidir. Uygun release yoksa yayınlama başarısız olur; oluşturulmuş Actions artifact'i korunur.
 
-APK, commit kimliği ve workflow çalışma/deneme numarası içeren benzersiz bir `Termix-android-preview-…-arm64-v8a-x86_64.apk` adıyla mevcut release'e eklenir. Yeni release oluşturulmaz; etiket, Latest durumu, masaüstü paketleri ve güncelleme metadata dosyaları değiştirilmez. Aynı adlı dosya varsa üzerine yazılmaz. Release etiketi Android uygulamasının iç sürümünü değiştirmez.
+APK, masaüstü release sürümü ve Android workflow'unun kendi çalışma numarasıyla adlandırılır: `Termix-android-v1.0.60.12.apk`. Sonraki Android çalışması `.13.apk` üretir; aynı çalışmayı yeniden denemek numarayı değiştirmez. Aynı adlı dosya varsa üzerine yazılmadan yayınlama durdurulur. Yeni release oluşturulmaz; etiket, Latest durumu, masaüstü paketleri ve güncelleme metadata dosyaları değiştirilmez. Dosya adı Android uygulamasının iç sürümünü değiştirmez.
 
 Yalnız yayınlama işine `contents: write` izni verilir. Workflow'u manuel çalıştırmak APK'nın mevcut release'e yayımlanmasını da başlatır.

@@ -2,7 +2,7 @@
 
 const fs = require('node:fs');
 
-async function publishApk({ github, context, apkPath, runAttempt = process.env.GITHUB_RUN_ATTEMPT, log = console.log }) {
+async function publishApk({ github, context, apkPath, runNumber = process.env.GITHUB_RUN_NUMBER, log = console.log }) {
     const apk = fs.readFileSync(apkPath);
     if (!apk.length) throw new Error('Android APK is empty.');
 
@@ -23,12 +23,12 @@ async function publishApk({ github, context, apkPath, runAttempt = process.env.G
         }
     }
 
-    const { runId, sha } = context;
-    const attempt = runAttempt;
-    if (!/^\d+$/.test(String(runId)) || !/^\d+$/.test(attempt || '') || !/^[a-f0-9]{40}$/i.test(sha || '')) {
-        throw new Error('Missing or invalid GitHub build identity.');
+    const version = /^v?((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))$/.exec(release.tag_name || '');
+    if (!version) throw new Error('Desktop release tag must be a stable numeric version.');
+    if (!/^[1-9]\d*$/.test(String(runNumber))) {
+        throw new Error('Missing or invalid Android build number.');
     }
-    const name = `Termix-android-preview-${sha.slice(0, 12)}-${runId}-${attempt}-arm64-v8a-x86_64.apk`;
+    const name = `Termix-android-v${version[1]}.${runNumber}.apk`;
     if (assets.some(asset => asset.name === name)) {
         throw new Error(`Release already contains ${name}; existing assets will not be replaced.`);
     }

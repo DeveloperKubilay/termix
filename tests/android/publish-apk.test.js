@@ -18,8 +18,8 @@ function fixture(t, { release = {}, names = desktopNames, apk = 'test-apk', asse
     const listReleaseAssets = () => {};
     const options = {
         apkPath,
-        context: { repo: { owner: 'test-owner', repo: 'test-repo' }, runId: 123, sha: 'a'.repeat(40) },
-        runAttempt: '2',
+        context: { repo: { owner: 'test-owner', repo: 'test-repo' } },
+        runNumber: '12',
         log: () => {},
         github: {
             rest: { repos: {
@@ -47,7 +47,7 @@ test('APK publishing only adds a uniquely named asset to the existing desktop re
     const { calls, options } = fixture(t);
     const result = await publishApk(options);
     assert.deepEqual(result, {
-        tag: 'v1.0.60', name: 'Termix-android-preview-aaaaaaaaaaaa-123-2-arm64-v8a-x86_64.apk'
+        tag: 'v1.0.60', name: 'Termix-android-v1.0.60.12.apk'
     });
     assert.deepEqual(calls.map(call => call.method), ['getLatestRelease', 'uploadReleaseAsset']);
     assert.deepEqual(calls[0].parameters, { owner: 'test-owner', repo: 'test-repo' });
@@ -75,19 +75,30 @@ test('APK publishing refuses drafts, prereleases, empty APKs and asset listing f
 
 test('APK publishing never replaces an existing asset', async t => {
     const { calls, options } = fixture(t, {
-        names: [...desktopNames, 'Termix-android-preview-aaaaaaaaaaaa-123-2-arm64-v8a-x86_64.apk']
+        names: [...desktopNames, 'Termix-android-v1.0.60.12.apk']
     });
     await assert.rejects(publishApk(options), /existing assets will not be replaced/);
     assert.ok(calls.every(call => call.method !== 'uploadReleaseAsset'));
 });
 
-test('APK publishing rejects invalid build identities', async t => {
-    for (const identity of [{ runId: undefined }, { sha: 'invalid' }, { runAttempt: undefined }]) {
+test('APK publishing rejects invalid Android build numbers', async t => {
+    for (const runNumber of ['', '0', '01', '-1', '1.2', '12/other', null]) {
         const { calls, options } = fixture(t);
-        if ('runId' in identity) options.context.runId = identity.runId;
-        if ('sha' in identity) options.context.sha = identity.sha;
-        if ('runAttempt' in identity) options.runAttempt = '';
-        await assert.rejects(publishApk(options), /build identity/);
+        options.runNumber = runNumber;
+        await assert.rejects(publishApk(options), /build number/);
+        assert.ok(calls.every(call => call.method !== 'uploadReleaseAsset'));
+    }
+});
+
+test('APK publishing accepts desktop versions with or without the v prefix', async t => {
+    const { options } = fixture(t, { release: { tag_name: '1.0.60' } });
+    assert.equal((await publishApk(options)).name, 'Termix-android-v1.0.60.12.apk');
+});
+
+test('APK publishing rejects malformed or prerelease version tags', async t => {
+    for (const tag_name of ['', 'latest', 'v1.0', 'v01.0.60', 'v1.0.60-beta', 'v1.0.60/other']) {
+        const { calls, options } = fixture(t, { release: { tag_name } });
+        await assert.rejects(publishApk(options), /release tag/);
         assert.ok(calls.every(call => call.method !== 'uploadReleaseAsset'));
     }
 });
