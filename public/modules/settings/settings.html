@@ -108,7 +108,7 @@
             </div>
 
             <!-- 2. Terminal Settings -->
-            <div class="card settings-card" id="terminal-settings-card">
+            <div class="card settings-card" id="terminal-settings-card" hidden>
                 <h3 class="card-title">
                     <i class="fa-solid fa-terminal"></i> Terminal
                 </h3>
@@ -117,7 +117,7 @@
                         <label class="field-label" for="terminal-font-size">Font Size (px)</label>
                         <div style="display: flex; align-items: center; gap: 10px;">
                             <input type="number" id="terminal-font-size" min="6" max="36" step="1" value="11" style="width: 100px;">
-                            <span class="card-help" style="margin: 0; font-size: 12px;">Default font size (10-12px on mobile, 14px on desktop).</span>
+                            <span class="card-help" style="margin: 0; font-size: 12px;">Default mobile font size: 11px.</span>
                         </div>
                     </div>
 
@@ -327,6 +327,10 @@
         display: flex;
         flex-direction: column;
         gap: 20px;
+    }
+
+    #terminal-settings-card[hidden] {
+        display: none !important;
     }
 
     .settings-card {

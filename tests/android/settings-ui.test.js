@@ -242,6 +242,36 @@ function runSettings(env) {
     vm.runInNewContext(SETTINGS_JS_CODE, context);
 }
 
+test('Terminal preferences card is hidden by default and only shown on Android', () => {
+    const html = fs.readFileSync(path.join(__dirname, '../../public/modules/settings/settings.html'), 'utf8');
+    assert.match(html, /id="terminal-settings-card" hidden/);
+    assert.match(html, /#terminal-settings-card\[hidden\]\s*\{\s*display: none !important;/);
+
+    for (const isAndroid of [false, true]) {
+        const env = createEnvironment({ isAndroid });
+        runSettings(env);
+        assert.equal(env.getOrCreateElement('terminal-settings-card').hidden, !isAndroid);
+    }
+});
+
+test('Desktop settings does not load Android terminal preferences', async () => {
+    let terminalLoadCalls = 0;
+    const env = createEnvironment({
+        isAndroid: false,
+        electronAPIOverrides: {
+            connection: {
+                getSettings: async () => {
+                    terminalLoadCalls += 1;
+                    return {};
+                }
+            }
+        }
+    });
+    runSettings(env);
+    await new Promise(r => setImmediate(r));
+    assert.equal(terminalLoadCalls, 0);
+});
+
 test('Android save: skips AI validation, omits ai and updateSettings, preserves terminal settings, and dispatches termix:terminal-settings-changed', async () => {
     let savedSettingsPayload = null;
     let savedConnectionPayload = null;
@@ -439,7 +469,7 @@ test('Desktop save: preserves AI validation and halts on invalid AI JSON body', 
     assert.equal(settingsSaved, false, 'Desktop save must not proceed when AI body is invalid');
 });
 
-test('Desktop save: includes AI payload, uses fontSize, and does not dispatch Android terminal event', async () => {
+test('Desktop save: includes AI payload without writing Android terminal preferences', async () => {
     let savedSettingsPayload = null;
     let savedConnectionPayload = null;
 
@@ -480,10 +510,7 @@ test('Desktop save: includes AI payload, uses fontSize, and does not dispatch An
     assert.deepEqual(JSON.parse(JSON.stringify(savedSettingsPayload.ai.body)), { model: 'qwen2.5' });
     assert.deepEqual(JSON.parse(JSON.stringify(savedSettingsPayload.ai.headers)), { Authorization: 'Bearer 123' });
 
-    // Desktop uses fontSize, not mobileFontSize
-    assert.ok(savedConnectionPayload, 'Connection payload must be saved');
-    assert.equal(savedConnectionPayload.fontSize, 16);
-    assert.equal('mobileFontSize' in savedConnectionPayload, false);
+    assert.equal(savedConnectionPayload, null, 'Desktop settings must not write hidden Android terminal preferences');
 
     // Desktop does not dispatch Android CustomEvent
     const termEvent = env.dispatchedEvents.find(e => e.type === 'termix:terminal-settings-changed');
@@ -491,13 +518,15 @@ test('Desktop save: includes AI payload, uses fontSize, and does not dispatch An
     assert.ok(btnSave.innerHTML.includes('Saved'), 'Desktop save button should show Saved!');
 });
 
-test('Desktop save: terminal save failure is tolerated and does not block main settings save', async () => {
+test('Desktop save: never calls the Android terminal preferences API', async () => {
     let settingsSaved = false;
+    let terminalSaveCalls = 0;
 
     const env = createEnvironment({
         isAndroid: false, // Desktop
         onConnectionSaveSettings: async () => {
-            throw new Error('Desktop terminal IPC warning');
+            terminalSaveCalls += 1;
+            throw new Error('Desktop must not reach this API');
         },
         onSaveSettings: async () => {
             settingsSaved = true;
@@ -513,7 +542,8 @@ test('Desktop save: terminal save failure is tolerated and does not block main s
     await Promise.resolve();
     await new Promise(r => setImmediate(r));
 
-    assert.equal(settingsSaved, true, 'Desktop should proceed with settings save even if terminal save warns');
+    assert.equal(terminalSaveCalls, 0, 'Desktop must not save Android terminal preferences');
+    assert.equal(settingsSaved, true, 'Desktop should save its own settings');
     assert.ok(btnSave.innerHTML.includes('Saved'), 'Desktop button should show Saved!');
 });
 

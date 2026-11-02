@@ -67,6 +67,9 @@
         return Boolean(window.TermixAndroid);
     }
 
+    const terminalSettingsCard = document.getElementById('terminal-settings-card');
+    if (terminalSettingsCard) terminalSettingsCard.hidden = !isAndroidClient();
+
     function isCapabilitySupported(name) {
         if (!isAndroidClient()) return true;
         return Boolean(
@@ -324,19 +327,16 @@
             }
 
             // Terminal settings
-            if (window.electronAPI && window.electronAPI.connection && window.electronAPI.connection.getSettings) {
+            if (isAndroidClient() && window.electronAPI && window.electronAPI.connection && window.electronAPI.connection.getSettings) {
                 try {
                     const termSettings = await window.electronAPI.connection.getSettings();
                     if (termSettings) {
-                        const isMobile = isAndroidClient();
                         const fontSizeInput = document.getElementById('terminal-font-size');
                         if (fontSizeInput) {
-                            const current = isMobile
-                                ? (Number(termSettings.mobileFontSize) || 11)
-                                : (Number(termSettings.fontSize) || 14);
+                            const current = Number(termSettings.mobileFontSize) || 11;
                             fontSizeInput.value = Number.isFinite(current) && current >= 6
                                 ? current
-                                : (isMobile ? 11 : 14);
+                                : 11;
                         }
                         const cursorBlinkToggle = document.getElementById('terminal-cursor-blink-toggle');
                         if (cursorBlinkToggle && termSettings.cursorBlink !== undefined) {
@@ -584,30 +584,18 @@
             const rawSize = fontSizeInput ? Number(fontSizeInput.value) : NaN;
             const fontSizeVal = Number.isFinite(rawSize) && rawSize >= 6 && rawSize <= 48
                 ? Math.round(rawSize)
-                : (isMobile ? 11 : 14);
+                : 11;
 
             const terminalPayload = {
+                mobileFontSize: fontSizeVal,
                 cursorBlink: cursorBlinkToggle ? Boolean(cursorBlinkToggle.checked) : true,
                 rightClickCopyPaste: copyPasteToggle ? Boolean(copyPasteToggle.checked) : true
             };
-            if (isMobile) {
-                terminalPayload.mobileFontSize = fontSizeVal;
-            } else {
-                terminalPayload.fontSize = fontSizeVal;
-            }
 
-            if ((fontSizeInput || isMobile) && window.electronAPI && window.electronAPI.connection && window.electronAPI.connection.saveSettings) {
-                if (isMobile) {
-                    const termResult = await window.electronAPI.connection.saveSettings(terminalPayload);
-                    if (termResult && termResult.success === false) {
-                        throw new Error((termResult && (termResult.message || termResult.error)) || 'Failed to save terminal settings');
-                    }
-                } else {
-                    try {
-                        await window.electronAPI.connection.saveSettings(terminalPayload);
-                    } catch (termSaveErr) {
-                        console.warn('Failed to save terminal settings:', termSaveErr);
-                    }
+            if (isMobile && window.electronAPI && window.electronAPI.connection && window.electronAPI.connection.saveSettings) {
+                const termResult = await window.electronAPI.connection.saveSettings(terminalPayload);
+                if (termResult && termResult.success === false) {
+                    throw new Error((termResult && (termResult.message || termResult.error)) || 'Failed to save terminal settings');
                 }
             }
 
