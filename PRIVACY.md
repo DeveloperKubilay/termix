@@ -1,4 +1,52 @@
-# Termix Gizlilik Politikası
+# Termix Privacy Policy
+
+[English](#english) · [Türkçe](#türkçe)
+
+## English
+
+**Last updated: November 2, 2026**
+
+Termix is an open-source SSH and SFTP application built around local operation, with security and privacy as priorities. Its core approach is to keep your connection details and application data under your control. This policy covers the desktop and Android versions of Termix.
+
+### Local operation and data privacy
+
+**Termix does not send your information to servers owned by Termix or its developers, collect that information, or use it for its own purposes.** During local use, your connection details, passwords, SSH keys, and application settings remain on your device.
+
+SSH and SFTP operations take place between your device and the servers you choose to connect to. Termix does not require a relay server operated by its developers for these connections.
+
+Local storage does not mean that all data is separately encrypted. It is important to protect the security of your device and operating system account.
+
+### Optional third-party services
+
+Termix supports **QMM and Firebase integrations**. These features are optional and are not enabled unless you configure them.
+
+If you connect these services, the information required for the relevant feature is shared with your chosen service. These systems are not a centralized cloud service provided by Termix.
+
+How third-party services store, process, and protect data depends on their own terms and configurations. **Termix is not responsible for these services' own data processing, storage, or security practices.** This statement does not exclude responsibilities imposed by applicable law.
+
+### Other optional connections and updates
+
+If you choose to use an external AI provider, the content you submit through the relevant feature is sent to your configured provider and is subject to that provider's privacy terms. Review what you share before sending confidential information.
+
+Update checks and downloads may require network connections to GitHub or the relevant distribution services. These services may process standard connection information, such as your IP address, under their own privacy terms.
+
+These connections do not mean that your local data is uploaded to a server owned by Termix's developers.
+
+### Control over your data
+
+You can manage and delete saved information through the application. Data you transfer to a third-party service may need to be managed separately through that service. Deleting local data does not automatically delete copies held by external services.
+
+### Open source and contact
+
+Termix's source code is open for inspection. For privacy questions, you can contact the project through its repository. Do not share passwords or private keys in public support requests.
+
+**Project and contact:** [github.com/DeveloperKubilay/termix](https://github.com/DeveloperKubilay/termix)
+
+This policy may be updated when the application's features or data handling practices change. The date of the current version is shown above.
+
+---
+
+## Türkçe
 
 **Son güncelleme: 2 Kasım 2026**
 
