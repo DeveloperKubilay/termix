@@ -13,6 +13,7 @@ const env = {
 
 const testFiles = [
     'tests/android/build.test.js',
+    'tests/android/publish-apk.test.js',
     'tests/android/backend-registry.test.js',
     'tests/android/backend-ssh-fixture.test.js',
     'tests/android/backend-transport.test.js',

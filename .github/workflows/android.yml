@@ -70,3 +70,29 @@ jobs:
           name: termix-android-preview-apk
           path: android/app/build/outputs/apk/debug/*.apk
           retention-days: 14
+
+  publish:
+    name: Add APK to latest desktop release
+    needs: test-and-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Download verified APK
+        uses: actions/download-artifact@v4
+        with:
+          name: termix-android-preview-apk
+          path: apk
+
+      - name: Add APK without changing desktop assets
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { publishApk } = require('./util/android/publish-apk');
+            await publishApk({ github, context, apkPath: 'apk/app-debug.apk' });

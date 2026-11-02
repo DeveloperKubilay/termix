@@ -105,4 +105,10 @@ adb shell am start -n com.termix.android.preview/.MainActivity
 ---
 
 ## GitHub Actions Otomasyonu
-`.github/workflows/android.yml` iş akışı, `main` dalına yapılan değişikliklerde ve manuel tetiklemelerde APK derlemesini otomatik gerçekleştirir ve `termix-android-preview-apk` adıyla artifact olarak sunar.
+`.github/workflows/android.yml` yalnız manuel `workflow_dispatch` ile çalışır. ARM64 ve x86_64 içeren tek debug APK üretir ve `termix-android-preview-apk` adıyla 14 gün saklanan artifact olarak sunar.
+
+Başarılı derlemeden sonra ayrı yayınlama işi, GitHub'ın mevcut Latest release'ini kontrol eder. Release yayımlanmış/stable olmalı; `latest.yml`, `latest-linux.yml`, `latest-mac.yml` ve Windows/Linux/macOS paketlerini içermelidir. Uygun release yoksa yayınlama başarısız olur; oluşturulmuş Actions artifact'i korunur.
+
+APK, commit kimliği ve workflow çalışma/deneme numarası içeren benzersiz bir `Termix-android-preview-…-arm64-v8a-x86_64.apk` adıyla mevcut release'e eklenir. Yeni release oluşturulmaz; etiket, Latest durumu, masaüstü paketleri ve güncelleme metadata dosyaları değiştirilmez. Aynı adlı dosya varsa üzerine yazılmaz. Release etiketi Android uygulamasının iç sürümünü değiştirmez.
+
+Yalnız yayınlama işine `contents: write` izni verilir. Workflow'u manuel çalıştırmak APK'nın mevcut release'e yayımlanmasını da başlatır.
