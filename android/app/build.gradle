@@ -30,9 +30,6 @@ android {
         versionCode 1
         versionName '0.1-feasibility'
         buildConfigField 'String', 'BACKEND_ASSET_VERSION', '"' + backendAssetVersion + '"'
-        ndk {
-            abiFilters.addAll(previewAbis)
-        }
         externalNativeBuild {
             cmake {
                 arguments '-DANDROID_STL=c++_shared', '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON'
@@ -64,6 +61,14 @@ android {
     }
     sourceSets {
         main.jniLibs.srcDirs = [rootProject.file('runtime/bin')]
+    }
+    splits {
+        abi {
+            enable true
+            reset()
+            include previewAbis
+            universalApk false
+        }
     }
     packaging {
         jniLibs {

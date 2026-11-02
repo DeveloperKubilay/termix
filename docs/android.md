@@ -83,7 +83,9 @@ Termix Android, masaüstü veya harici köprü sunucusu gerektirmeyen **tamamen 
    npm run android:build:preview
    ```
 
-Çıktı APK dosyası: `android/app/build/outputs/apk/debug/app-debug.apk`
+Çıktı APK dosyaları:
+- ARM64 cihazlar (fiziksel telefonlar): `android/app/build/outputs/apk/debug/app-arm64-v8a-debug.apk` (~62 MB)
+- x86_64 cihazlar (emülatörler/Chromebook): `android/app/build/outputs/apk/debug/app-x86_64-debug.apk` (~66 MB)
 
 ---
 
@@ -91,7 +93,7 @@ Termix Android, masaüstü veya harici köprü sunucusu gerektirmeyen **tamamen 
 
 ADB ile bağlı telefona kurmak için:
 ```bash
-adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+adb install -r android/app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
 adb shell am start -n com.termix.android.preview/.MainActivity
 ```
 
@@ -105,10 +107,10 @@ adb shell am start -n com.termix.android.preview/.MainActivity
 ---
 
 ## GitHub Actions Otomasyonu
-`.github/workflows/android.yml` yalnız manuel `workflow_dispatch` ile çalışır. ARM64 ve x86_64 içeren tek debug APK üretir ve `termix-android-preview-apk` adıyla 14 gün saklanan artifact olarak sunar.
+`.github/workflows/android.yml` yalnız manuel `workflow_dispatch` ile çalışır. ARM64 ve x86_64 mimarileri için ayrı (split) debug APK'ları üretir ve `termix-android-preview-apk` adıyla 14 gün saklanan artifact olarak sunar.
 
 Başarılı derlemeden sonra ayrı yayınlama işi, GitHub'ın mevcut Latest release'ini kontrol eder. Release yayımlanmış/stable olmalı; `latest.yml`, `latest-linux.yml`, `latest-mac.yml` ve Windows/Linux/macOS paketlerini içermelidir. Uygun release yoksa yayınlama başarısız olur; oluşturulmuş Actions artifact'i korunur.
 
-APK, masaüstü release sürümü ve Android workflow'unun kendi çalışma numarasıyla adlandırılır: `Termix-android-v1.0.60.12.apk`. Sonraki Android çalışması `.13.apk` üretir; aynı çalışmayı yeniden denemek numarayı değiştirmez. Aynı adlı dosya varsa üzerine yazılmadan yayınlama durdurulur. Yeni release oluşturulmaz; etiket, Latest durumu, masaüstü paketleri ve güncelleme metadata dosyaları değiştirilmez. Dosya adı Android uygulamasının iç sürümünü değiştirmez.
+APK'lar, masaüstü release sürümü, Android workflow çalışma numarası ve mimari eki ile adlandırılır: `Termix-android-v1.0.60.12-arm64-v8a.apk` ve `Termix-android-v1.0.60.12-x86_64.apk`. Sonraki Android çalışması `.13` üretir; aynı çalışmayı yeniden denemek numarayı değiştirmez. Aynı adlı dosya varsa üzerine yazılmadan yayınlama durdurulur. Yeni release oluşturulmaz; etiket, Latest durumu, masaüstü paketleri ve güncelleme metadata dosyaları değiştirilmez. Dosya adı Android uygulamasının iç sürümünü değiştirmez.
 
-Yalnız yayınlama işine `contents: write` izni verilir. Workflow'u manuel çalıştırmak APK'nın mevcut release'e yayımlanmasını da başlatır.
+Yalnız yayınlama işine `contents: write` izni verilir. Workflow'u manuel çalıştırmak APK'ların mevcut release'e yayımlanmasını da başlatır.

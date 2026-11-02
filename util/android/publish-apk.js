@@ -1,10 +1,40 @@
 'use strict';
 
 const fs = require('node:fs');
+const path = require('node:path');
 
-async function publishApk({ github, context, apkPath, runNumber = process.env.GITHUB_RUN_NUMBER, log = console.log }) {
-    const apk = fs.readFileSync(apkPath);
-    if (!apk.length) throw new Error('Android APK is empty.');
+function formatReleaseAssetName(version, runNumber, filePath) {
+    const basename = path.basename(filePath);
+    const match = /(?:^|[-_.])(arm64-v8a|x86_64|armeabi-v7a|x86)(?:[-_.]|$)/i.exec(basename);
+    if (match) {
+        return `Termix-android-v${version}.${runNumber}-${match[1].toLowerCase()}.apk`;
+    }
+    return `Termix-android-v${version}.${runNumber}.apk`;
+}
+
+function resolveApkFiles({ apkPath, apkPaths }) {
+    if (Array.isArray(apkPaths) && apkPaths.length > 0) {
+        return apkPaths;
+    }
+    if (!apkPath) throw new Error('Missing Android APK path.');
+    if (fs.existsSync(apkPath) && fs.statSync(apkPath).isDirectory()) {
+        const found = fs.readdirSync(apkPath)
+            .filter(name => name.endsWith('.apk'))
+            .sort()
+            .map(name => path.join(apkPath, name));
+        if (!found.length) throw new Error('Android APK directory contains no APK files.');
+        return found;
+    }
+    return [apkPath];
+}
+
+async function publishApk({ github, context, apkPath, apkPaths, runNumber = process.env.GITHUB_RUN_NUMBER, log = console.log }) {
+    const files = resolveApkFiles({ apkPath, apkPaths });
+    const toUpload = files.map(file => {
+        const data = fs.readFileSync(file);
+        if (!data.length) throw new Error(`Android APK is empty: ${path.basename(file)}`);
+        return { file, data };
+    });
 
     const { owner, repo } = context.repo;
     const { data: release } = await github.rest.repos.getLatestRelease({ owner, repo });
@@ -28,18 +58,29 @@ async function publishApk({ github, context, apkPath, runNumber = process.env.GI
     if (!/^[1-9]\d*$/.test(String(runNumber))) {
         throw new Error('Missing or invalid Android build number.');
     }
-    const name = `Termix-android-v${version[1]}.${runNumber}.apk`;
-    if (assets.some(asset => asset.name === name)) {
-        throw new Error(`Release already contains ${name}; existing assets will not be replaced.`);
+
+    for (const item of toUpload) {
+        item.name = formatReleaseAssetName(version[1], runNumber, item.file);
+        if (assets.some(asset => asset.name === item.name)) {
+            throw new Error(`Release already contains ${item.name}; existing assets will not be replaced.`);
+        }
     }
 
-    await github.rest.repos.uploadReleaseAsset({
-        owner, repo, release_id: release.id, name,
-        data: apk,
-        headers: { 'content-type': 'application/vnd.android.package-archive' }
-    });
-    log(`Added ${name} to existing release ${release.tag_name}. Desktop assets and release settings were not changed.`);
-    return { tag: release.tag_name, name };
+    for (const item of toUpload) {
+        await github.rest.repos.uploadReleaseAsset({
+            owner, repo, release_id: release.id, name: item.name,
+            data: item.data,
+            headers: { 'content-type': 'application/vnd.android.package-archive' }
+        });
+        log(`Added ${item.name} to existing release ${release.tag_name}. Desktop assets and release settings were not changed.`);
+    }
+
+    const uploadedNames = toUpload.map(item => item.name);
+    const result = { tag: release.tag_name, name: uploadedNames[0] };
+    if (uploadedNames.length > 1) {
+        result.names = uploadedNames;
+    }
+    return result;
 }
 
-module.exports = { publishApk };
+module.exports = { publishApk, formatReleaseAssetName };

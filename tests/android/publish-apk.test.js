@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { publishApk } = require('../../util/android/publish-apk');
+const { publishApk, formatReleaseAssetName } = require('../../util/android/publish-apk');
 
 const desktopNames = ['latest.yml', 'latest-linux.yml', 'latest-mac.yml', 'Termix.exe', 'Termix.AppImage', 'Termix.dmg'];
 
@@ -101,4 +101,102 @@ test('APK publishing rejects malformed or prerelease version tags', async t => {
         await assert.rejects(publishApk(options), /release tag/);
         assert.ok(calls.every(call => call.method !== 'uploadReleaseAsset'));
     }
+});
+
+test('formatReleaseAssetName appends ABI suffix for split APKs and leaves monolithic clean', () => {
+    assert.equal(formatReleaseAssetName('1.0.60', '12', 'app-arm64-v8a-debug.apk'), 'Termix-android-v1.0.60.12-arm64-v8a.apk');
+    assert.equal(formatReleaseAssetName('1.0.60', '12', 'app-x86_64-debug.apk'), 'Termix-android-v1.0.60.12-x86_64.apk');
+    assert.equal(formatReleaseAssetName('1.0.60', '12', 'app-debug.apk'), 'Termix-android-v1.0.60.12.apk');
+    assert.equal(formatReleaseAssetName('1.0.60', '12', 'Termix.apk'), 'Termix-android-v1.0.60.12.apk');
+});
+
+test('APK publishing uploads all split APKs from a directory with ABI suffixes', async t => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'termix-publish-dir-'));
+    t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+    fs.writeFileSync(path.join(directory, 'app-arm64-v8a-debug.apk'), 'arm64-content');
+    fs.writeFileSync(path.join(directory, 'app-x86_64-debug.apk'), 'x86_64-content');
+
+    const calls = [];
+    const options = {
+        apkPath: directory,
+        context: { repo: { owner: 'test-owner', repo: 'test-repo' } },
+        runNumber: '12',
+        log: () => {},
+        github: {
+            rest: { repos: {
+                async getLatestRelease() {
+                    return { data: { id: 42, tag_name: 'v1.0.60', draft: false, prerelease: false } };
+                },
+                listReleaseAssets: () => {},
+                async uploadReleaseAsset(parameters) {
+                    calls.push(parameters);
+                }
+            } },
+            async paginate() {
+                return desktopNames.map(name => ({ name, size: 100 }));
+            }
+        }
+    };
+
+    const result = await publishApk(options);
+    assert.deepEqual(result, {
+        tag: 'v1.0.60',
+        name: 'Termix-android-v1.0.60.12-arm64-v8a.apk',
+        names: [
+            'Termix-android-v1.0.60.12-arm64-v8a.apk',
+            'Termix-android-v1.0.60.12-x86_64.apk'
+        ]
+    });
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].name, 'Termix-android-v1.0.60.12-arm64-v8a.apk');
+    assert.equal(calls[0].data.toString(), 'arm64-content');
+    assert.equal(calls[1].name, 'Termix-android-v1.0.60.12-x86_64.apk');
+    assert.equal(calls[1].data.toString(), 'x86_64-content');
+});
+
+test('APK publishing rejects directories with no APK files or empty APKs', async t => {
+    const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'termix-empty-dir-'));
+    t.after(() => fs.rmSync(emptyDir, { recursive: true, force: true }));
+    const { options: opt1 } = fixture(t);
+    opt1.apkPath = emptyDir;
+    await assert.rejects(publishApk(opt1), /no APK files/);
+
+    const withEmptyApk = fs.mkdtempSync(path.join(os.tmpdir(), 'termix-empty-apk-'));
+    t.after(() => fs.rmSync(withEmptyApk, { recursive: true, force: true }));
+    fs.writeFileSync(path.join(withEmptyApk, 'app-arm64-v8a-debug.apk'), '');
+    const { options: opt2 } = fixture(t);
+    opt2.apkPath = withEmptyApk;
+    await assert.rejects(publishApk(opt2), /Android APK is empty/);
+});
+
+test('APK publishing rejects upload if any split APK asset already exists on release', async t => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'termix-split-collision-'));
+    t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+    fs.writeFileSync(path.join(directory, 'app-arm64-v8a-debug.apk'), 'arm64');
+    fs.writeFileSync(path.join(directory, 'app-x86_64-debug.apk'), 'x86_64');
+
+    const calls = [];
+    const options = {
+        apkPath: directory,
+        context: { repo: { owner: 'test-owner', repo: 'test-repo' } },
+        runNumber: '12',
+        log: () => {},
+        github: {
+            rest: { repos: {
+                async getLatestRelease() {
+                    return { data: { id: 42, tag_name: 'v1.0.60', draft: false, prerelease: false } };
+                },
+                listReleaseAssets: () => {},
+                async uploadReleaseAsset(parameters) {
+                    calls.push(parameters);
+                }
+            } },
+            async paginate() {
+                return [...desktopNames, 'Termix-android-v1.0.60.12-x86_64.apk'].map(name => ({ name, size: 100 }));
+            }
+        }
+    };
+
+    await assert.rejects(publishApk(options), /Termix-android-v1\.0\.60\.12-x86_64\.apk.*existing assets will not be replaced/);
+    assert.equal(calls.length, 0, 'No files should be uploaded if any asset already exists');
 });
