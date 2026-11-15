@@ -28,6 +28,9 @@ todo
 # Local assistant settings, transcripts and temporary worktrees.
 /.claude/
 
+# Local development notes and internal docs, not for public repo.
+/docs/
+
 # Local private key and signing material.
 *.pem
 *.p12
