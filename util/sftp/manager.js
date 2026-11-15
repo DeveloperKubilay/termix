@@ -20,6 +20,9 @@ const SSH_KEEPALIVE_COUNT_MAX = 6;
 const SFTP_IDLE_PING_INTERVAL_MS = 20000;
 const SFTP_IDLE_PING_MIN_IDLE_MS = 15000;
 const SFTP_TRANSFER_STALL_TIMEOUT_MS = 30000;
+const SFTP_OP_TIMEOUT_MS = 30000;
+const MAX_AUTO_RESUME_ATTEMPTS = 3;
+const AUTO_RESUME_DELAY_MS = 2000;
 // How many files are transferred at once over a single SFTP channel.
 const TRANSFER_CONCURRENCY = 8;
 // Above this many files, one tar stream beats per-file SFTP round trips.
@@ -402,51 +405,89 @@ function sftpRealpath(sftp, targetPath) {
     });
 }
 
-function sftpPing(sftp, targetPath) {
+function withSftpCall(sftp, label, invoke, timeoutMs = SFTP_OP_TIMEOUT_MS) {
     return new Promise((resolve, reject) => {
-        sftp.realpath(targetPath, (err) => {
-            if (err) {
-                reject(err);
-                return;
+        if (!sftp) {
+            reject(new Error('SFTP channel is not available.'));
+            return;
+        }
+
+        let settled = false;
+        let timer = null;
+
+        const cleanup = () => {
+            if (timer) {
+                clearTimeout(timer);
+                timer = null;
             }
-            resolve();
-        });
+            if (typeof sftp.removeListener === 'function') {
+                sftp.removeListener('close', onClose);
+                sftp.removeListener('end', onClose);
+                sftp.removeListener('error', onError);
+            }
+        };
+
+        const settle = (err, value) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            if (err) reject(err);
+            else resolve(value);
+        };
+
+        const onClose = () => {
+            const err = new Error(`SFTP channel closed during ${label}.`);
+            err.code = 'SFTP_CHANNEL_CLOSED';
+            settle(err);
+        };
+
+        const onError = (err) => {
+            settle(err || new Error(`SFTP error during ${label}.`));
+        };
+
+        if (typeof sftp.on === 'function') {
+            sftp.on('close', onClose);
+            sftp.on('end', onClose);
+            sftp.on('error', onError);
+        }
+
+        timer = setTimeout(() => {
+            const err = new Error(`SFTP ${label} timed out after ${Math.round(timeoutMs / 1000)}s.`);
+            err.code = 'SFTP_OP_TIMEOUT';
+            settle(err);
+        }, timeoutMs);
+
+        try {
+            invoke((err, result) => {
+                settle(err || null, result);
+            });
+        } catch (err) {
+            settle(err);
+        }
     });
 }
 
+function sftpPing(sftp, targetPath) {
+    return withSftpCall(sftp, 'ping', (done) => {
+        sftp.realpath(targetPath, (err) => done(err));
+    }, 15000);
+}
+
 function sftpStat(sftp, targetPath) {
-    return new Promise((resolve, reject) => {
-        sftp.stat(targetPath, (err, stats) => {
-            if (err) {
-                reject(err);
-                return;
-            }
-            resolve(stats);
-        });
+    return withSftpCall(sftp, 'stat', (done) => {
+        sftp.stat(targetPath, done);
     });
 }
 
 function sftpLstat(sftp, targetPath) {
-    return new Promise((resolve, reject) => {
-        sftp.lstat(targetPath, (err, stats) => {
-            if (err) {
-                reject(err);
-                return;
-            }
-            resolve(stats);
-        });
+    return withSftpCall(sftp, 'lstat', (done) => {
+        sftp.lstat(targetPath, done);
     });
 }
 
 function sftpChmod(sftp, targetPath, mode) {
-    return new Promise((resolve, reject) => {
-        sftp.chmod(targetPath, mode, (err) => {
-            if (err) {
-                reject(err);
-                return;
-            }
-            resolve();
-        });
+    return withSftpCall(sftp, 'chmod', (done) => {
+        sftp.chmod(targetPath, mode, (err) => done(err));
     });
 }
 
@@ -505,62 +546,38 @@ function execRemoteCommand(conn, command, timeoutMs = 8000) {
 }
 
 function sftpReaddir(sftp, targetPath) {
-    return new Promise((resolve, reject) => {
+    return withSftpCall(sftp, 'readdir', (done) => {
         sftp.readdir(targetPath, (err, list) => {
             if (err) {
-                reject(err);
+                done(err);
                 return;
             }
-            resolve(Array.isArray(list) ? list : []);
+            done(null, Array.isArray(list) ? list : []);
         });
     });
 }
 
 function sftpMkdir(sftp, targetPath) {
-    return new Promise((resolve, reject) => {
-        sftp.mkdir(targetPath, (err) => {
-            if (err) {
-                reject(err);
-                return;
-            }
-            resolve();
-        });
+    return withSftpCall(sftp, 'mkdir', (done) => {
+        sftp.mkdir(targetPath, (err) => done(err));
     });
 }
 
 function sftpRmdir(sftp, targetPath) {
-    return new Promise((resolve, reject) => {
-        sftp.rmdir(targetPath, (err) => {
-            if (err) {
-                reject(err);
-                return;
-            }
-            resolve();
-        });
+    return withSftpCall(sftp, 'rmdir', (done) => {
+        sftp.rmdir(targetPath, (err) => done(err));
     });
 }
 
 function sftpUnlink(sftp, targetPath) {
-    return new Promise((resolve, reject) => {
-        sftp.unlink(targetPath, (err) => {
-            if (err) {
-                reject(err);
-                return;
-            }
-            resolve();
-        });
+    return withSftpCall(sftp, 'unlink', (done) => {
+        sftp.unlink(targetPath, (err) => done(err));
     });
 }
 
 function sftpRename(sftp, sourcePath, destinationPath) {
-    return new Promise((resolve, reject) => {
-        sftp.rename(sourcePath, destinationPath, (err) => {
-            if (err) {
-                reject(err);
-                return;
-            }
-            resolve();
-        });
+    return withSftpCall(sftp, 'rename', (done) => {
+        sftp.rename(sourcePath, destinationPath, (err) => done(err));
     });
 }
 
@@ -746,17 +763,43 @@ function chunkOptionsForSize(size) {
 function copyLocalFileToRemoteWithProgress(sftp, sourcePath, destinationPath, onChunk, knownSize = null) {
     if (IS_ANDROID) sourcePath = normalizeLocalPath(sourcePath);
     return new Promise((resolve, reject) => {
+        if (!sftp) {
+            reject(new Error('SFTP channel is not available.'));
+            return;
+        }
+
         let lastTransferred = 0;
         let settled = false;
         let stallTimer = null;
+
+        const onSftpClose = () => {
+            const err = new Error('Upload interrupted: SFTP channel closed.');
+            err.code = 'SFTP_CHANNEL_CLOSED';
+            settle(err);
+        };
+
+        const onSftpError = (err) => {
+            settle(err || new Error('Upload failed due to SFTP channel error.'));
+        };
 
         const settle = (err) => {
             if (settled) return;
             settled = true;
             clearTimeout(stallTimer);
+            if (typeof sftp.removeListener === 'function') {
+                sftp.removeListener('close', onSftpClose);
+                sftp.removeListener('end', onSftpClose);
+                sftp.removeListener('error', onSftpError);
+            }
             if (err) reject(err);
             else resolve();
         };
+
+        if (typeof sftp.on === 'function') {
+            sftp.on('close', onSftpClose);
+            sftp.on('end', onSftpClose);
+            sftp.on('error', onSftpError);
+        }
 
         const resetStallTimer = () => {
             clearTimeout(stallTimer);
@@ -782,26 +825,56 @@ function copyLocalFileToRemoteWithProgress(sftp, sourcePath, destinationPath, on
             }
         };
 
-        sftp.fastPut(sourcePath, destinationPath, options, (err) => {
-            settle(err || null);
-        });
+        try {
+            sftp.fastPut(sourcePath, destinationPath, options, (err) => {
+                settle(err || null);
+            });
+        } catch (err) {
+            settle(err);
+        }
     });
 }
 
 function copyRemoteFileToLocalWithProgress(sftp, sourcePath, destinationPath, onChunk, knownSize = null) {
     if (IS_ANDROID) destinationPath = normalizeLocalPath(destinationPath);
     return new Promise((resolve, reject) => {
+        if (!sftp) {
+            reject(new Error('SFTP channel is not available.'));
+            return;
+        }
+
         let lastTransferred = 0;
         let settled = false;
         let stallTimer = null;
+
+        const onSftpClose = () => {
+            const err = new Error('Download interrupted: SFTP channel closed.');
+            err.code = 'SFTP_CHANNEL_CLOSED';
+            settle(err);
+        };
+
+        const onSftpError = (err) => {
+            settle(err || new Error('Download failed due to SFTP channel error.'));
+        };
 
         const settle = (err) => {
             if (settled) return;
             settled = true;
             clearTimeout(stallTimer);
+            if (typeof sftp.removeListener === 'function') {
+                sftp.removeListener('close', onSftpClose);
+                sftp.removeListener('end', onSftpClose);
+                sftp.removeListener('error', onSftpError);
+            }
             if (err) reject(err);
             else resolve();
         };
+
+        if (typeof sftp.on === 'function') {
+            sftp.on('close', onSftpClose);
+            sftp.on('end', onSftpClose);
+            sftp.on('error', onSftpError);
+        }
 
         const resetStallTimer = () => {
             clearTimeout(stallTimer);
@@ -827,10 +900,315 @@ function copyRemoteFileToLocalWithProgress(sftp, sourcePath, destinationPath, on
             }
         };
 
-        sftp.fastGet(sourcePath, destinationPath, options, (err) => {
-            settle(err || null);
-        });
+        try {
+            sftp.fastGet(sourcePath, destinationPath, options, (err) => {
+                settle(err || null);
+            });
+        } catch (err) {
+            settle(err);
+        }
     });
+}
+
+function sleepMs(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTransientTransferError(err) {
+    if (!err) return false;
+    const code = String(err.code || '').toUpperCase();
+    if (code === 'STALL_TIMEOUT' || code === 'ECONNRESET' || code === 'ETIMEDOUT' || code === 'EPIPE' || code === 'EAI_AGAIN') {
+        return true;
+    }
+    const msg = String(err.message || '').toLowerCase();
+    return msg.includes('stalled') || msg.includes('timed out') || msg.includes('econnreset');
+}
+
+async function getResumableRemoteOffset(sftp, remotePartPath, expectedSize, sourceMtimeMs = null) {
+    const targetSize = Number(expectedSize || 0);
+    if (!Number.isFinite(targetSize) || targetSize <= 0) return 0;
+
+    try {
+        const stats = await sftpStat(sftp, remotePartPath);
+        if (!stats || attrsIsDirectory(stats)) return 0;
+        const partSize = Number(stats.size || 0);
+        if (!Number.isFinite(partSize) || partSize <= 0 || partSize >= targetSize) return 0;
+
+        if (sourceMtimeMs && Number.isFinite(Number(sourceMtimeMs)) && Number(stats.mtime || 0) > 0) {
+            const sourceSec = Number(sourceMtimeMs) / 1000;
+            // If local source was modified after the partial file was written, do not mix old + new bytes.
+            if (sourceSec > Number(stats.mtime) + 2) {
+                return 0;
+            }
+        }
+        return partSize;
+    } catch (_) {
+        return 0;
+    }
+}
+
+async function getResumableLocalOffset(localPartPath, expectedSize, sourceMtimeMs = null) {
+    const targetSize = Number(expectedSize || 0);
+    if (!Number.isFinite(targetSize) || targetSize <= 0) return 0;
+
+    try {
+        const stats = await fs.promises.stat(localPartPath);
+        if (!stats || stats.isDirectory()) return 0;
+        const partSize = Number(stats.size || 0);
+        if (!Number.isFinite(partSize) || partSize <= 0 || partSize >= targetSize) return 0;
+
+        if (sourceMtimeMs && Number.isFinite(Number(sourceMtimeMs)) && Number(stats.mtimeMs || 0) > 0) {
+            if (Number(sourceMtimeMs) > Number(stats.mtimeMs) + 2000) {
+                return 0;
+            }
+        }
+        return partSize;
+    } catch (_) {
+        return 0;
+    }
+}
+
+function resumeLocalToRemoteStream(sftp, sourcePath, destinationPath, offset, onChunk) {
+    if (IS_ANDROID) sourcePath = normalizeLocalPath(sourcePath);
+    return new Promise((resolve, reject) => {
+        if (!sftp) {
+            reject(new Error('SFTP channel is not available.'));
+            return;
+        }
+
+        let settled = false;
+        let stallTimer = null;
+        let readStream = null;
+        let writeStream = null;
+
+        const onSftpClose = () => {
+            const err = new Error('Upload interrupted: SFTP channel closed.');
+            err.code = 'SFTP_CHANNEL_CLOSED';
+            settle(err);
+        };
+
+        const onSftpError = (err) => {
+            settle(err || new Error('Upload failed due to SFTP channel error.'));
+        };
+
+        const settle = (err) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(stallTimer);
+            if (typeof sftp.removeListener === 'function') {
+                sftp.removeListener('close', onSftpClose);
+                sftp.removeListener('end', onSftpClose);
+                sftp.removeListener('error', onSftpError);
+            }
+            if (err) {
+                try { if (readStream && typeof readStream.destroy === 'function') readStream.destroy(); } catch (_) {}
+                try { if (writeStream && typeof writeStream.destroy === 'function') writeStream.destroy(); } catch (_) {}
+                reject(err);
+            } else {
+                resolve();
+            }
+        };
+
+        if (typeof sftp.on === 'function') {
+            sftp.on('close', onSftpClose);
+            sftp.on('end', onSftpClose);
+            sftp.on('error', onSftpError);
+        }
+
+        const resetStallTimer = () => {
+            clearTimeout(stallTimer);
+            stallTimer = setTimeout(() => {
+                const err = new Error('Upload stalled: no progress for 30 seconds.');
+                err.code = 'STALL_TIMEOUT';
+                settle(err);
+            }, SFTP_TRANSFER_STALL_TIMEOUT_MS);
+        };
+
+        resetStallTimer();
+
+        try {
+            readStream = fs.createReadStream(sourcePath, {
+                start: offset,
+                highWaterMark: 256 * 1024
+            });
+            writeStream = sftp.createWriteStream(destinationPath, {
+                flags: 'r+',
+                start: offset,
+                autoClose: true
+            });
+        } catch (err) {
+            settle(err);
+            return;
+        }
+
+        readStream.on('data', (chunk) => {
+            resetStallTimer();
+            const bytes = chunk ? chunk.length : 0;
+            if (bytes > 0 && typeof onChunk === 'function') onChunk(bytes);
+        });
+        readStream.on('error', (err) => settle(err));
+        writeStream.on('error', (err) => settle(err));
+        writeStream.on('drain', () => resetStallTimer());
+        writeStream.on('finish', () => settle(null));
+        writeStream.on('close', () => settle(null));
+
+        readStream.pipe(writeStream);
+    });
+}
+
+function resumeRemoteToLocalStream(sftp, sourcePath, destinationPath, offset, onChunk) {
+    if (IS_ANDROID) destinationPath = normalizeLocalPath(destinationPath);
+    return new Promise((resolve, reject) => {
+        if (!sftp) {
+            reject(new Error('SFTP channel is not available.'));
+            return;
+        }
+
+        let settled = false;
+        let stallTimer = null;
+        let readStream = null;
+        let writeStream = null;
+
+        const onSftpClose = () => {
+            const err = new Error('Download interrupted: SFTP channel closed.');
+            err.code = 'SFTP_CHANNEL_CLOSED';
+            settle(err);
+        };
+
+        const onSftpError = (err) => {
+            settle(err || new Error('Download failed due to SFTP channel error.'));
+        };
+
+        const settle = (err) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(stallTimer);
+            if (typeof sftp.removeListener === 'function') {
+                sftp.removeListener('close', onSftpClose);
+                sftp.removeListener('end', onSftpClose);
+                sftp.removeListener('error', onSftpError);
+            }
+            if (err) {
+                try { if (readStream && typeof readStream.destroy === 'function') readStream.destroy(); } catch (_) {}
+                try { if (writeStream && typeof writeStream.destroy === 'function') writeStream.destroy(); } catch (_) {}
+                reject(err);
+            } else {
+                resolve();
+            }
+        };
+
+        if (typeof sftp.on === 'function') {
+            sftp.on('close', onSftpClose);
+            sftp.on('end', onSftpClose);
+            sftp.on('error', onSftpError);
+        }
+
+        const resetStallTimer = () => {
+            clearTimeout(stallTimer);
+            stallTimer = setTimeout(() => {
+                const err = new Error('Download stalled: no progress for 30 seconds.');
+                err.code = 'STALL_TIMEOUT';
+                settle(err);
+            }, SFTP_TRANSFER_STALL_TIMEOUT_MS);
+        };
+
+        resetStallTimer();
+
+        try {
+            readStream = sftp.createReadStream(sourcePath, {
+                start: offset,
+                highWaterMark: 256 * 1024
+            });
+            writeStream = fs.createWriteStream(destinationPath, {
+                flags: 'r+',
+                start: offset,
+                autoClose: true
+            });
+        } catch (err) {
+            settle(err);
+            return;
+        }
+
+        readStream.on('data', (chunk) => {
+            resetStallTimer();
+            const bytes = chunk ? chunk.length : 0;
+            if (bytes > 0 && typeof onChunk === 'function') onChunk(bytes);
+        });
+        readStream.on('error', (err) => settle(err));
+        writeStream.on('error', (err) => settle(err));
+        writeStream.on('finish', () => settle(null));
+        writeStream.on('close', () => settle(null));
+
+        readStream.pipe(writeStream);
+    });
+}
+
+async function copyLocalFileResumable(sftp, sourcePath, destinationPath, onChunk, options = {}) {
+    const knownSize = options.knownSize ?? null;
+    const sourceMtimeMs = options.sourceMtimeMs ?? null;
+    const resumable = Boolean(options.resumable);
+    let initialReported = false;
+
+    for (let attempt = 0; attempt <= MAX_AUTO_RESUME_ATTEMPTS; attempt++) {
+        const offset = resumable
+            ? await getResumableRemoteOffset(sftp, destinationPath, knownSize, sourceMtimeMs)
+            : 0;
+
+        if (!initialReported) {
+            initialReported = true;
+            if (offset > 0 && typeof onChunk === 'function') {
+                onChunk(offset);
+            }
+        }
+
+        try {
+            if (offset > 0) {
+                await resumeLocalToRemoteStream(sftp, sourcePath, destinationPath, offset, onChunk);
+            } else {
+                await copyLocalFileToRemoteWithProgress(sftp, sourcePath, destinationPath, onChunk, knownSize);
+            }
+            return;
+        } catch (err) {
+            if (!resumable || attempt >= MAX_AUTO_RESUME_ATTEMPTS || !isTransientTransferError(err)) {
+                throw err;
+            }
+            await sleepMs(AUTO_RESUME_DELAY_MS * (attempt + 1));
+        }
+    }
+}
+
+async function copyRemoteFileResumable(sftp, sourcePath, destinationPath, onChunk, options = {}) {
+    const knownSize = options.knownSize ?? null;
+    const sourceMtimeMs = options.sourceMtimeMs ?? null;
+    const resumable = Boolean(options.resumable);
+    let initialReported = false;
+
+    for (let attempt = 0; attempt <= MAX_AUTO_RESUME_ATTEMPTS; attempt++) {
+        const offset = resumable
+            ? await getResumableLocalOffset(destinationPath, knownSize, sourceMtimeMs)
+            : 0;
+
+        if (!initialReported) {
+            initialReported = true;
+            if (offset > 0 && typeof onChunk === 'function') {
+                onChunk(offset);
+            }
+        }
+
+        try {
+            if (offset > 0) {
+                await resumeRemoteToLocalStream(sftp, sourcePath, destinationPath, offset, onChunk);
+            } else {
+                await copyRemoteFileToLocalWithProgress(sftp, sourcePath, destinationPath, onChunk, knownSize);
+            }
+            return;
+        } catch (err) {
+            if (!resumable || attempt >= MAX_AUTO_RESUME_ATTEMPTS || !isTransientTransferError(err)) {
+                throw err;
+            }
+            await sleepMs(AUTO_RESUME_DELAY_MS * (attempt + 1));
+        }
+    }
 }
 
 function createCopyProgressReporter({ operationId, direction, totalBytes, onProgress }) {
@@ -1117,7 +1495,8 @@ async function collectLocalTree(sourcePath, exclude = null) {
 
     if (!rootStats.isDirectory()) {
         const size = Number(rootStats.size || 0);
-        return { isDirectory: false, dirs: [], files: [{ relative: '', size }], totalBytes: size, skipped: 0 };
+        const mtimeMs = Number(rootStats.mtimeMs || 0);
+        return { isDirectory: false, dirs: [], files: [{ relative: '', size, mtimeMs }], totalBytes: size, skipped: 0 };
     }
 
     const dirs = [];
@@ -1175,7 +1554,8 @@ async function collectRemoteTree(sftp, sourcePath, exclude = null) {
 
     if (!attrsIsDirectory(rootStats)) {
         const size = Number(rootStats.size || 0);
-        return { isDirectory: false, dirs: [], files: [{ relative: '', size }], totalBytes: size, skipped: 0 };
+        const mtimeMs = Number(rootStats.mtime || 0) * 1000;
+        return { isDirectory: false, dirs: [], files: [{ relative: '', size, mtimeMs }], totalBytes: size, skipped: 0 };
     }
 
     const dirs = [];
@@ -1286,11 +1666,17 @@ async function copyLocalToRemote(sftp, sourcePath, destinationPath, progressRepo
 
     if (!tree.isDirectory) {
         await ensureRemoteDir(sftp, path.posix.dirname(destinationPath), knownDirs);
-        await copyLocalFileToRemoteWithProgress(sftp, sourcePath, destinationPath, (bytes) => {
+        const fileMeta = tree.files[0] || {};
+        await copyLocalFileResumable(sftp, sourcePath, destinationPath, (bytes) => {
+            if (options.session) touchSession(options.session);
             if (progressReporter) {
                 progressReporter.advance(bytes, path.basename(sourcePath));
             }
-        }, tree.files[0] ? tree.files[0].size : null);
+        }, {
+            knownSize: fileMeta.size ?? null,
+            sourceMtimeMs: fileMeta.mtimeMs ?? null,
+            resumable: options.resumable !== false
+        });
         return;
     }
 
@@ -1299,6 +1685,7 @@ async function copyLocalToRemote(sftp, sourcePath, destinationPath, progressRepo
         await ensureRemoteDir(sftp, destinationPath, knownDirs);
         await tarTransfer.uploadDirectory(options.session.conn, sourcePath, destinationPath, {
             onBytes: (bytes) => {
+                if (options.session) touchSession(options.session);
                 if (progressReporter) progressReporter.advance(bytes, path.basename(sourcePath));
             },
             filter: exclude
@@ -1325,6 +1712,7 @@ async function copyLocalToRemote(sftp, sourcePath, destinationPath, progressRepo
         const source = path.join(sourcePath, file.relative);
         const target = path.posix.join(destinationPath, file.relative);
         await copyLocalFileToRemoteWithProgress(sftp, source, target, (bytes) => {
+            if (options.session) touchSession(options.session);
             if (progressReporter) {
                 progressReporter.advance(bytes, path.basename(source));
             }
@@ -1338,11 +1726,17 @@ async function copyRemoteToLocal(sftp, sourcePath, destinationPath, progressRepo
 
     if (!tree.isDirectory) {
         await fs.promises.mkdir(path.dirname(destinationPath), { recursive: true });
-        await copyRemoteFileToLocalWithProgress(sftp, sourcePath, destinationPath, (bytes) => {
+        const fileMeta = tree.files[0] || {};
+        await copyRemoteFileResumable(sftp, sourcePath, destinationPath, (bytes) => {
+            if (options.session) touchSession(options.session);
             if (progressReporter) {
                 progressReporter.advance(bytes, path.posix.basename(sourcePath));
             }
-        }, tree.files[0] ? tree.files[0].size : null);
+        }, {
+            knownSize: fileMeta.size ?? null,
+            sourceMtimeMs: fileMeta.mtimeMs ?? null,
+            resumable: options.resumable !== false
+        });
         return;
     }
 
@@ -1350,6 +1744,7 @@ async function copyRemoteToLocal(sftp, sourcePath, destinationPath, progressRepo
         await fs.promises.mkdir(destinationPath, { recursive: true });
         await tarTransfer.downloadDirectory(options.session.conn, sourcePath, destinationPath, {
             onBytes: (bytes) => {
+                if (options.session) touchSession(options.session);
                 if (progressReporter) progressReporter.advance(bytes, path.posix.basename(sourcePath));
             },
             excludePatterns: exclude ? exclude.patterns : []
@@ -1368,6 +1763,7 @@ async function copyRemoteToLocal(sftp, sourcePath, destinationPath, progressRepo
         const source = path.posix.join(sourcePath, file.relative);
         const target = path.join(destinationPath, file.relative);
         await copyRemoteFileToLocalWithProgress(sftp, source, target, (bytes) => {
+            if (options.session) touchSession(options.session);
             if (progressReporter) {
                 progressReporter.advance(bytes, path.posix.basename(source));
             }
@@ -2492,22 +2888,27 @@ async function copyItems(payload = {}, onProgress = null) {
                     if (dryRun) {
                         continue;
                     }
-                    if (!resolvedIsDirectory && targetExists && conflictPolicy === 'overwrite') {
-                        const tempPart = `${targetPath}.termix-part-${Date.now()}`;
-                        try {
-                            await copyLocalToRemote(destinationSession.sftp, sourcePath, tempPart, progressReporter, {
-                                tree: treeCache.get(sourcePath),
-                                knownDirs: knownRemoteDirs,
-                                session: destinationSession,
-                                exclude
-                            });
-                            // Target is only replaced after the new file is 100% written and verified
-                            await removeRemotePath(destinationSession.sftp, targetPath);
-                            await sftpRename(destinationSession.sftp, tempPart, targetPath);
-                        } catch (err) {
-                            try { await removeRemotePath(destinationSession.sftp, tempPart); } catch (_) {}
-                            throw err;
+                    if (!resolvedIsDirectory) {
+                        const tempPart = `${targetPath}.termix-part`;
+                        const cachedTree = treeCache.get(sourcePath);
+                        await copyLocalToRemote(destinationSession.sftp, sourcePath, tempPart, progressReporter, {
+                            tree: cachedTree,
+                            knownDirs: knownRemoteDirs,
+                            session: destinationSession,
+                            exclude,
+                            resumable: true
+                        });
+                        if (cachedTree && cachedTree.files && cachedTree.files[0] && cachedTree.files[0].size != null) {
+                            const remotePartStats = await sftpStat(destinationSession.sftp, tempPart);
+                            if (Number(remotePartStats.size || 0) !== Number(cachedTree.files[0].size)) {
+                                throw new Error(`Upload size mismatch for ${name}: expected ${cachedTree.files[0].size} bytes, got ${remotePartStats.size} bytes.`);
+                            }
                         }
+                        // Target is only replaced after the new file is 100% written and verified
+                        if (targetExists && conflictPolicy === 'overwrite') {
+                            await removeRemotePath(destinationSession.sftp, targetPath);
+                        }
+                        await sftpRename(destinationSession.sftp, tempPart, targetPath);
                     } else {
                         if (targetExists && conflictPolicy === 'overwrite') {
                             await removeRemotePath(destinationSession.sftp, targetPath);
@@ -2523,19 +2924,25 @@ async function copyItems(payload = {}, onProgress = null) {
                     if (dryRun) {
                         continue;
                     }
-                    if (!resolvedIsDirectory && targetExists && conflictPolicy === 'overwrite') {
-                        const tempPart = `${targetPath}.termix-part-${Date.now()}`;
-                        try {
-                            await copyRemoteToLocal(sourceSession.sftp, sourcePath, tempPart, progressReporter, {
-                                tree: treeCache.get(sourcePath),
-                                session: sourceSession,
-                                exclude
-                            });
-                            await fs.promises.rename(tempPart, targetPath);
-                        } catch (err) {
-                            try { await removeLocalPath(tempPart); } catch (_) {}
-                            throw err;
+                    if (!resolvedIsDirectory) {
+                        const tempPart = `${targetPath}.termix-part`;
+                        const cachedTree = treeCache.get(sourcePath);
+                        await copyRemoteToLocal(sourceSession.sftp, sourcePath, tempPart, progressReporter, {
+                            tree: cachedTree,
+                            session: sourceSession,
+                            exclude,
+                            resumable: true
+                        });
+                        if (cachedTree && cachedTree.files && cachedTree.files[0] && cachedTree.files[0].size != null) {
+                            const localPartStats = await fs.promises.stat(tempPart);
+                            if (Number(localPartStats.size || 0) !== Number(cachedTree.files[0].size)) {
+                                throw new Error(`Download size mismatch for ${name}: expected ${cachedTree.files[0].size} bytes, got ${localPartStats.size} bytes.`);
+                            }
                         }
+                        if (targetExists && conflictPolicy === 'overwrite' && await localExists(targetPath)) {
+                            await removeLocalPath(targetPath);
+                        }
+                        await fs.promises.rename(tempPart, targetPath);
                     } else {
                         if (targetExists && conflictPolicy === 'overwrite') {
                             await removeLocalPath(targetPath);

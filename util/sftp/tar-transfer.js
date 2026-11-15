@@ -4,6 +4,7 @@
 const tar = require('tar');
 
 const TAR_EXEC_TIMEOUT_MS = 15000;
+const TAR_STALL_TIMEOUT_MS = 30000;
 
 // Quotes a path for a POSIX shell: wrap in single quotes and escape any of its
 // own single quotes.
@@ -76,12 +77,50 @@ function uploadDirectory(conn, sourcePath, destinationPath, options = {}) {
 
     return new Promise((resolve, reject) => {
         let settled = false;
+        let stallTimer = null;
+        let activeChannel = null;
+        let activePacker = null;
+
+        const onConnClose = () => {
+            finish(new Error('Upload interrupted: SSH connection closed.'));
+        };
+
+        const onConnError = (err) => {
+            finish(err || new Error('Upload failed due to SSH connection error.'));
+        };
+
         const finish = (err, value) => {
             if (settled) return;
             settled = true;
-            if (err) reject(err);
-            else resolve(value);
+            clearTimeout(stallTimer);
+            if (conn && typeof conn.removeListener === 'function') {
+                conn.removeListener('close', onConnClose);
+                conn.removeListener('error', onConnError);
+            }
+            if (err) {
+                try { if (activePacker && typeof activePacker.destroy === 'function') activePacker.destroy(); } catch (_) {}
+                try { if (activeChannel && typeof activeChannel.close === 'function') activeChannel.close(); } catch (_) {}
+                reject(err);
+            } else {
+                resolve(value);
+            }
         };
+
+        const resetStallTimer = () => {
+            clearTimeout(stallTimer);
+            stallTimer = setTimeout(() => {
+                const err = new Error('Tar upload stalled: no progress for 30 seconds.');
+                err.code = 'STALL_TIMEOUT';
+                finish(err);
+            }, TAR_STALL_TIMEOUT_MS);
+        };
+
+        if (conn && typeof conn.on === 'function') {
+            conn.on('close', onConnClose);
+            conn.on('error', onConnError);
+        }
+
+        resetStallTimer();
 
         const command = `tar -xzf - --no-same-owner -C ${shellQuote(destinationPath)}`;
 
@@ -91,11 +130,23 @@ function uploadDirectory(conn, sourcePath, destinationPath, options = {}) {
                 return;
             }
 
+            activeChannel = channel;
             let stderr = '';
-            channel.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+            channel.stderr.on('data', (chunk) => {
+                resetStallTimer();
+                stderr += chunk.toString();
+            });
             // Nothing reads the remote tar's stdout, but it must still be
             // drained or the channel stalls and never closes.
-            channel.on('data', () => {});
+            channel.on('data', () => {
+                resetStallTimer();
+            });
+            channel.on('drain', () => {
+                resetStallTimer();
+            });
+            channel.on('error', (channelErr) => {
+                finish(channelErr || new Error('Remote tar channel error.'));
+            });
 
             channel.on('close', (code) => {
                 const exitCode = Number(code);
@@ -118,14 +169,20 @@ function uploadDirectory(conn, sourcePath, destinationPath, options = {}) {
                     // Report raw (uncompressed) bytes so progress matches the
                     // size the caller measured while walking the tree.
                     onReadEntry: (entry) => {
+                        resetStallTimer();
                         if (onBytes) onBytes(Number(entry.size || 0));
                     },
                     filter: typeof filter === 'function' ? filter : undefined
                 }, ['.']);
+                activePacker = packer;
             } catch (packErr) {
                 finish(packErr);
                 return;
             }
+
+            packer.on('data', () => {
+                resetStallTimer();
+            });
 
             packer.on('error', (packErr) => {
                 try { channel.end(); } catch (_) {}
@@ -147,12 +204,50 @@ function downloadDirectory(conn, sourcePath, destinationPath, options = {}) {
 
     return new Promise((resolve, reject) => {
         let settled = false;
+        let stallTimer = null;
+        let activeChannel = null;
+        let activeExtractor = null;
+
+        const onConnClose = () => {
+            finish(new Error('Download interrupted: SSH connection closed.'));
+        };
+
+        const onConnError = (err) => {
+            finish(err || new Error('Download failed due to SSH connection error.'));
+        };
+
         const finish = (err, value) => {
             if (settled) return;
             settled = true;
-            if (err) reject(err);
-            else resolve(value);
+            clearTimeout(stallTimer);
+            if (conn && typeof conn.removeListener === 'function') {
+                conn.removeListener('close', onConnClose);
+                conn.removeListener('error', onConnError);
+            }
+            if (err) {
+                try { if (activeExtractor && typeof activeExtractor.destroy === 'function') activeExtractor.destroy(); } catch (_) {}
+                try { if (activeChannel && typeof activeChannel.close === 'function') activeChannel.close(); } catch (_) {}
+                reject(err);
+            } else {
+                resolve(value);
+            }
         };
+
+        const resetStallTimer = () => {
+            clearTimeout(stallTimer);
+            stallTimer = setTimeout(() => {
+                const err = new Error('Tar download stalled: no progress for 30 seconds.');
+                err.code = 'STALL_TIMEOUT';
+                finish(err);
+            }, TAR_STALL_TIMEOUT_MS);
+        };
+
+        if (conn && typeof conn.on === 'function') {
+            conn.on('close', onConnClose);
+            conn.on('error', onConnError);
+        }
+
+        resetStallTimer();
 
         const command = `tar -czhf -${buildExcludeArgs(excludePatterns)} -C ${shellQuote(sourcePath)} .`;
 
@@ -162,16 +257,29 @@ function downloadDirectory(conn, sourcePath, destinationPath, options = {}) {
                 return;
             }
 
+            activeChannel = channel;
             let stderr = '';
             let extractFailed = false;
-            channel.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+            channel.stderr.on('data', (chunk) => {
+                resetStallTimer();
+                stderr += chunk.toString();
+            });
+            channel.on('data', () => {
+                resetStallTimer();
+            });
+            channel.on('error', (channelErr) => {
+                extractFailed = true;
+                finish(channelErr || new Error('Remote tar channel error.'));
+            });
 
             const extractor = tar.x({
                 cwd: destinationPath,
                 onReadEntry: (entry) => {
+                    resetStallTimer();
                     if (onBytes) onBytes(Number(entry.size || 0));
                 }
             });
+            activeExtractor = extractor;
 
             extractor.on('error', (extractErr) => {
                 extractFailed = true;
