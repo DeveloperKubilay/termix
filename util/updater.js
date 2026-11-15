@@ -463,6 +463,14 @@ function init() {
     state.lastCheckedAt = settings.lastCheckedAt;
     state.currentVersion = app.getVersion();
 
+    if (process.windowsStore) {
+        state.supported = false;
+        state.status = 'disabled';
+        state.message = 'Updates are managed by the Windows package manager.';
+        emitState();
+        return getState();
+    }
+
     if (!app.isPackaged) {
         state.supported = false;
         state.status = 'disabled';
